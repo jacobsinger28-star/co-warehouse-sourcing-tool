@@ -1,0 +1,12 @@
+[tool.pytest.ini_options]
+# Two test tiers (TEST_ARCHITECTURE.md Layer 0). Tests that need a reachable Postgres
+# are marked `db`; `make test-fast` runs `-m "not db"` (the hermetic ratchet — CI + the
+# local Stop hook run this), `make test-db` runs `-m db`. strict_markers turns a typo'd
+# marker (e.g. @pytest.mark.bd) into a hard collection error instead of a silently-unrun
+# test. NB: it MUST be the ini option below — pytest 9 ignores addopts="--strict-markers"
+# (the override only fires for CLI-parsed flags); verified on pytest 9.0.3.
+testpaths = ["tests"]
+strict_markers = true
+markers = [
+    "db: requires a reachable Postgres (DATABASE_URL); excluded from `make test-fast`.",
+]

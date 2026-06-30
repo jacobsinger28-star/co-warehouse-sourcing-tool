@@ -1,0 +1,18 @@
+# PERSISTENCE: the SQLite DB lives on a Railway volume so scraped listings
+# survive redeploys/restarts. Volumes can't be declared here — create one in
+# the Railway dashboard:
+#   1. Service → Volumes → New Volume, mount path  /data
+#   2. Service → Variables → add  DATA_DIR=/data
+#   3. Redeploy, then click "Run All" once to populate.
+# Without this, the container filesystem is ephemeral and the DB resets to
+# empty on every deploy (see database.py / geocoder.py DATA_DIR handling).
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

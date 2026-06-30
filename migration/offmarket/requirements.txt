@@ -1,0 +1,19 @@
+# Nashville sourcing pipeline — Python deps.
+# Note: sodapy is intentionally absent — data.nashville.gov migrated off Socrata
+# to ArcGIS Hub (see DATA_NOTES.md). We hit ArcGIS REST with plain requests.
+
+requests>=2.32
+PyYAML>=6.0
+pandas>=2.2
+shapely>=2.0            # point-in-polygon (buy-box gate), footprint geometry
+psycopg2-binary>=2.9    # Supabase / Postgres
+python-dotenv>=1.0      # load .env
+anthropic>=0.40         # VLM site assessment (imagery/vlm_score.py)
+pyairtable>=2.3         # Airtable sync
+tenacity>=8.2           # retry/backoff on flaky ArcGIS + API calls
+laspy[lazrs]>=2.5       # decode USGS 3DEP LiDAR (EPT/laz) for clear-height (imagery/lidar_height.py)
+numpy>=1.26             # LiDAR point-cloud math (transitively via pandas, pinned for lidar_height)
+openpyxl>=3.1           # read the Franklin County Auditor bulk CAMA Build.xlsx (ingest/pull_cama_columbus.py)
+
+# dev
+pytest>=8.0

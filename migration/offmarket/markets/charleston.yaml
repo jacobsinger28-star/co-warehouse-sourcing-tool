@@ -1,0 +1,107 @@
+# markets/charleston.yaml — market config for Charleston County, SC (port-logistics market).
+# Endpoints + fields verified live 2026-06-18; data-availability re-audited 2026-06-19. Select
+# with MARKET=charleston.
+#
+# Honest shape of this market (EASE 3/5): the County assessor CAMA is clean and key-free —
+# owner + mailing, use code, REAL sale price + date (SC is a disclosure state), appraisal,
+# acreage, polygon geometry. BUT there is NO assessor building SF (footprint proxy only, like
+# Hamilton/Columbus), NO year_built, NO tax-delinquency field, and NO open code-enforcement
+# feed. So Charleston has NO distress signals — its score rests on owner profile (out-of-state/
+# entity/estate), hold period, and proximity. It's a clean SOURCING layer for the port industrial
+# market, not a distress-ranked one.
+#
+# 2026-06-19 data audit (verified the gaps are STRUCTURAL, not an oversight — checked County
+# ArcGIS [energov/ProVal/footprints], the County's 300+ AGOL services, City of Charleston GIS,
+# the publicaccessnow assessor portal, AND the prcweb Property Record Card app):
+#   * year_built / total appraised value / heated building SF for COMMERCIAL parcels are NOT
+#     published anywhere machine-readable. The assessor portal shows them for RESIDENTIAL only;
+#     the commercial record card is a SCANNED IMAGE. Many big sites are state-assessed by SC DOR
+#     (jurisdiction MCP-STATE-DOR), so the county holds no building value at all. -> footprint
+#     proxy stays the only SF; year_built / assessed_value stay NULL. (Paid data, e.g. Regrid/
+#     ATTOM, is the only route to these.)
+#   * Building permits feed EXISTS + is TMS-keyed (AGOL Building_Permits_2025) but 0 of 510
+#     industrial parcels have a permit (warehouses don't pull them) -> no signal, not wired.
+#   * No code-enforcement / 311 / tax-delinquency feed (county or city).
+# What 2026-06-19 DID add: a per-parcel scrape of the county Property Record Card app for the
+# FULL deed history -> hold_years corrected off the most-recent ARM'S-LENGTH sale (the GIS feed
+# carries recent NOMINAL $1-$10 intra-entity transfers that were collapsing hold). See
+# ingest/pull_assessor_charleston.py + db/migrations/005_assessor_sales.sql + BUILD_LOG.
+
+market: charleston
+db_schema: charleston      # isolated Postgres schema (search_path)
+crs: 4326
+home_state: SC             # mailing state <> this => owner is_out_of_state (normalize.py)
+
+# --- ArcGIS REST sources (verified live 2026-06-18; Charleston County, token-free) ---
+sources:
+  # County "PARCELS WITH ATTRIBUTES" mirror — clean field names (no SDE.* prefixes), full CAMA
+  # except total appraisal (this mirror exposes LAND_APPR only; total value is display-only +
+  # not scored, so we leave assessed_value NULL rather than mislabel land value as total).
+  parcels: "https://gisccapps.charlestoncounty.org/arcgis/rest/services/ENERGOV/energov_ent/MapServer/12"
+  # 2025 building outlines — real footprint SQFT, keyed by PID (DIRECT key join, not spatial).
+  building_footprints: "https://services.arcgis.com/jR9eNCjAkxwH2nLe/arcgis/rest/services/FEATURES_SDE_S_BLDG_2025/FeatureServer/1"
+  # Property Record Card app (NOT ArcGIS — an HTML scrape; URL hardcoded in the script). Per-parcel
+  # deed history -> hold-period correction. https://prcweb.charlestoncounty.org/Home/SearchByParcelID
+  assessor_record_card: "https://prcweb.charlestoncounty.org"
+  # No open code-enforcement / violations feed exists (county or city); none wired (verified 06-19).
+  # Building permits ARE published + TMS-keyed (AGOL Building_Permits_2025) but 0/510 industrial
+  # parcels have one (warehouses don't permit), so there is no permit signal to wire.
+
+# --- gates (overlay weights.yaml). Center = North Charleston / port industrial core; radius is
+#     a SUGGESTION — FOUNDER MUST CONFIRM the buy-box. ---
+gates:
+  min_building_sf: 75000
+  manual_review_sf_floor: 60000
+  max_distance_miles: 18.0          # metro is spread; reach North Charleston + I-26 corridor
+  icbd_center_lat: 32.8546          # North Charleston industrial core (placeholder — founder confirms)
+  icbd_center_lon: -79.9748
+
+# --- land use: Charleston assessor CLASS_CODE stored as "<3-digit> - <label>"; the ingest
+#     extracts the 3-digit prefix and filters on it (CLASS_CODE LIKE '304%' OR '630%'). ---
+land_use:
+  code_field: CLASS_CODE
+  code_is_prefixed: true            # source value is "304 - MFG/INDUST"; we store/match the "304" prefix
+  industrial_codes:
+    "304": MFG/INDUST
+    "630": SPCLTY-WHS
+  excluded_codes: []
+  excluded_structure_types: []
+
+# --- building_sf strategy (footprint proxy — the ONLY SF source here) ---
+building_sf:
+  strategy: footprint_proxy
+  primary_field: null               # no assessor building SF in any open Charleston layer
+  fallback: footprint_proxy         # SUM(building_footprints.area) per PID (direct key join)
+  proxy_note: >
+    No assessor heated/gross SF is published. building_sf = SUM of 2025 building-outline `area`
+    (sqft) joined by PID. Approximate (~= SF single-story; undercounts multi-story). sf_confidence
+    flags every row 'proxy'. Charleston is mostly single-story warehouse, so the proxy is decent.
+
+# --- buy-box geometry (PENDING founder; placeholder circle generated for the first run) ---
+buybox_geojson: imports/charleston_submarkets.geojson
+
+# --- field mapping: Charleston source field -> our normalized column ---
+fields:
+  parcels:
+    apn: PID                        # 10-char numeric TMS (= footprint PID; space-padded -> TRIM)
+    owner: OWNER1
+    owner_2: OWNER2
+    own_addr: MAIL_ST_NO+MAIL_ST_NAME+MAIL_ST_TYPE+MAIL_2ND_ADDR   # composed in ingest
+    own_city: MAIL_CITY
+    own_state: MAIL_STATE           # clean 2-letter -> out-of-state flag (!= SC)
+    own_zip: MAIL_ZIP
+    own_date: RECORDED_DATE         # GIS sale date (epoch ms) -> hold_years SEED; OVERRIDDEN by the
+                                    # record-card deed history (pull_assessor_charleston) when the GIS
+                                    # sale is a nominal transfer or the card has a newer arm's-length one
+    sale_price: SALE_PRICE          # populated (SC disclosure); has nominal $1-$10 intra-LLC transfers
+                                    # -> the record-card scrape recovers the true arm's-length sale/price
+    situs_address: PROP_ST_NO+PROP_ST_NAME+PROP_TYPE               # composed in ingest; PROP_TYPE is
+                                    # the street SUFFIX (ST/AVE/RD) — without it situs was truncated
+                                    # ("4500 LEEDS" not "4500 LEEDS AVE"); '0' street numbers dropped
+    land_use_code: CLASS_CODE       # "304 - ..." -> ingest stores the "304" prefix
+    acres: ACREAGE
+    assessed_value: null            # total appraisal only in the SDE layer; not scored -> NULL
+    year_built: null                # not published -> NULL (no year_built_band / permit anomaly)
+  building_footprints:
+    key_field: PID                  # DIRECT join to parcel PID (not spatial)
+    area_field: area                # footprint sqft (summed per PID as the SF proxy)

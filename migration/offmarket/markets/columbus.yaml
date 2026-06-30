@@ -1,0 +1,112 @@
+# markets/columbus.yaml — market config for Franklin County / Columbus, OH.
+# All endpoints + fields verified live 2026-06-16 (see DATA_NOTES_COLUMBUS.md).
+# Select with MARKET=columbus. Scoring weights stay shared in weights.yaml.
+
+market: columbus
+db_schema: columbus        # isolated Postgres schema (search_path); Nashville is public
+crs: 4326
+home_state: OH             # mailing state <> this => owner is_out_of_state (normalize.py)
+
+# --- ArcGIS REST sources (verified live 2026-06-16) ---
+sources:
+  parcels: "https://gis.franklincountyohio.gov/hosting/rest/services/ParcelFeatures/Parcel_Features/MapServer/0"
+  # No commercial/industrial CAMA SF in any open feature service. building_sf comes from
+  # the footprint proxy now; swap to the Auditor bulk CAMA CSV when obtained (see DATA_NOTES_COLUMBUS.md).
+  building_footprints: "https://gis.franklincountyohio.gov/hosting/rest/services/BaseMap/Reference_Data/MapServer/1"
+  violations: "https://maps2.columbus.gov/arcgis/rest/services/Schemas/BuildingZoning/MapServer/23"
+  permits: "https://services1.arcgis.com/9yy6msODkIBzkUXU/arcgis/rest/services/Building_Permits/FeatureServer/0"
+  # Auditor bulk CAMA "Appraisal" download — the ONLY source of commercial year_built (+ WALLHGT
+  # clear-height, GRADE, PHYCOND). pull_cama_columbus.py auto-discovers the latest <date> Appraisal
+  # folder under <base>/<year>/ and grabs Build.xlsx. Free, no key; needs a browser User-Agent.
+  auditor_cama_base: "https://apps.franklincountyauditor.com/Outside_User_Files"
+
+# --- gates (overlay weights.yaml). Center = Columbus CBD; radius is a SUGGESTION —
+#     FOUNDER MUST CONFIRM the buy-box (center+radius or drawn submarket polygons). ---
+gates:
+  min_building_sf: 75000
+  manual_review_sf_floor: 60000
+  max_distance_miles: 15.0          # wider than Nashville to reach Rickenbacker; founder confirms
+  icbd_center_lat: 39.9612          # Columbus CBD (placeholder — founder confirms)
+  icbd_center_lon: -82.9988
+
+# --- land use: Ohio DTE CLASSCD (3-digit), matched on CODE (DATA_NOTES_COLUMBUS.md) ---
+land_use:
+  code_field: CLASSCD
+  industrial_codes:
+    "300": INDUSTRIAL VACANT LAND
+    "330": MANUFACTURING & ASSEMBLY MEDIUM
+    "340": MANUFACTURING & ASSEMBLY LIGHT
+    "350": INDUSTRIAL WAREHOUSES LIGHT
+    "351": "WAREHOUSE: 6-15% OFC"
+    "352": "WAREHOUSE: 16-25% OFC"
+    "353": "WAREHOUSE: 26-35% OFC"
+    "354": "WAREHOUSE: 36-50% OFC"
+    "356": AUTOMATED WAREHOUSE
+    "358": MULTI-STORY WAREHOUSE
+    "360": INDUSTRIAL TRUCK TERMINALS
+    "391": INDUSTRIAL CONDO
+    "392": INDUSTRIAL FLEX SPACE >50% OFC
+    "399": OTHER INDUSTRIAL STRUCTURES
+    "480": COMMERCIAL WAREHOUSES
+    "488": COMMERCIAL WAREHOUSE >50% OFC
+  excluded_codes:                   # explicitly NOT industrial targets
+    - "481"                         # MINI WAREHOUSE (self-storage competing use)
+  # Columbus parcel data has no per-building StructureType field; exclusion is by code above.
+  excluded_structure_types: []
+
+# --- building_sf strategy (CORRECTED 2026-06-17, BUILD_LOG §16) ---
+building_sf:
+  strategy: assessor_with_footprint_fallback
+  primary_field: BLDGAREA           # authoritative assessor Gross Floor Area (2,363/3,796 populated)
+  fallback: footprint_proxy         # SUM(Shape.STArea()) of footprints within the parcel, ONLY where BLDGAREA null
+  proxy_note: >
+    The footprint proxy is now a fallback, not the primary. Approximate where used: ~= building SF
+    for single-story; undercounts multi-story (code 358). sf_confidence flags 'proxy' rows.
+  swap_to: cama_csv                 # bulk Auditor CAMA would also bring commercial year_built (still missing)
+  cama_field: null
+
+# --- buy-box geometry (PENDING founder; placeholder circle generated for the first run) ---
+buybox_geojson: imports/columbus_submarkets.geojson
+
+# --- field mapping: Columbus source field -> our normalized column ---
+fields:
+  parcels:
+    apn: PARCELID                   # dashed, e.g. 040-005809 (normalize for joins)
+    owner: OWNERNME1
+    owner_2: OWNERNME2
+    own_addr: PSTLADDRES            # tax mailing street
+    own_city_state_zip: PSTLCITYSTZIP   # COMBINED "City ST Zip" — must be PARSED for state
+    own_state: null                 # not a separate field; parse from own_city_state_zip
+    own_date: SALEDATE              # esri date (epoch ms)
+    sale_price: SALEPRICE
+    situs_address: SITEADDRESS
+    land_use_code: CLASSCD
+    land_use_desc: CLASSDSCRP
+    acres: STATEDAREA               # legal acres (ACRES/GIS acres was null on samples)
+    building_sf: BLDGAREA           # assessor Gross Floor Area (authoritative; footprint proxy fallback)
+    assessed_value: TOTVALUEBASE    # appraised total value (~100% populated)
+    # year_built is NOT in the GIS (RESYRBLT is residential-only) but IS in the Auditor bulk CAMA
+    # Build.xlsx (YRBLT) -> loaded by ingest/pull_cama_columbus.py (see sources.auditor_cama_base).
+    year_built: BUILD_XLSX.YRBLT    # commercial year built, from the bulk CAMA Appraisal download
+    clear_height: BUILD_XLSX.WALLHGT  # recorded wall height (ft) -> clear_height_est (bonus)
+  building_footprints:
+    area_field: "Shape.STArea()"    # footprint sqft (SF proxy)
+    roof_height: Roof_Height        # for story estimate
+  violations:                       # Code Enforcement Cases (Accela) — joined SPATIALLY, not by key
+    # The Accela parcel keys do NOT align with the auditor PARCELID (B1_PARCEL_NBR drops the dash;
+    # the 14-digit values seen don't map; COLS_KEY mostly null). The layer carries POINT geometry,
+    # so pull_distress_columbus.py assigns each case to the parcel that ST_Contains its point.
+    join: spatial                   # ST_Contains(parcel.geom, case_point), outSR=4326
+    date: B1_FILE_DD                # filed date -> 24-month scoring window
+    type: B1_PER_TYPE               # case type -> detail string
+    status: B1_APPL_STATUS
+    source_ref: ACA_URL             # direct case link (fallback: layer#case=B1_ALT_ID)
+  permits:                          # Building Permits (Accela) — HAS status, unlike Nashville
+    apn: B1_PARCEL_NBR
+    cols_key: COLS_KEY
+    type: B1_PER_TYPE
+    date_issued: ISSUED_DT
+    status: PERMIT_STATUS           # enables the lapsed/expired-permit signal
+    sqft: SQFT
+    const_cost: G3_VALUE_TTL
+    source_ref: B1_ALT_ID

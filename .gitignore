@@ -1,0 +1,79 @@
+# ─────────────────────────────────────────────────────────────────────
+# SimiCapital Sourcing Platform — ignore rules
+# This project is Railway-bound and merges scraping projects that carry
+# owner/broker PII, scraped DBs, and CoStar/Sabre-licensed data. Treat the
+# repo as PRIVATE. See migration/README.md for provenance + scrub list.
+# ─────────────────────────────────────────────────────────────────────
+
+# Secrets — never commit
+.env
+**/.env
+*.env
+!*.env.example
+
+# Private / PII / licensed — never version, never deploy publicly.
+# All migrated owner data, scraped DBs, lead exports, and the CoStar model live here.
+/private/
+
+# Adaptive-reuse-finder outputs — Category-A PII (real property addresses + owner/
+# CoStar-sourced specs). The folder keeps its own .gitignore too; this is belt-and-
+# suspenders so a sweep CSV or assessment memo can never be tracked from the monorepo.
+/adaptive-reuse-finder/output/*
+!/adaptive-reuse-finder/output/.gitkeep
+!/adaptive-reuse-finder/output/SCHEMA.md
+/adaptive-reuse-finder/data/areas/*
+!/adaptive-reuse-finder/data/areas/.gitkeep
+!/adaptive-reuse-finder/data/areas/EXAMPLE_*.csv
+
+# Scraped DB snapshots (real broker/owner contacts; regrow each scrape)
+*.db
+*.db-shm
+*.db-wal
+*.db.backup-*
+geo_cache.db
+live_listings.db
+
+# Generated real-data export for the frontend (owner/broker PII + licensed
+# fields, built by tools/build_real_data.py from the upstream scraping repos).
+# The app falls back to the committed synthetic src/data.js when this is absent.
+frontend/public/data.real.json
+**/data.real.json
+
+# County-record / lead exports (owner names + mailing addresses)
+columbus_*.csv
+*_ranked_*.csv
+ranked_*.csv
+leads_dialready_*.csv
+skiptrace*.csv
+owners_*.csv
+contact_queue*.csv
+Leads.xlsx
+
+# Office docs (call transcripts, strategy memos)
+*.docx
+*.doc
+*.pptx
+*.ppt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Node / build
+node_modules/
+dist/
+.next/
+build/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# spreadsheets may carry PII — never commit
+*.xlsx
+*.xls

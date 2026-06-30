@@ -1,0 +1,100 @@
+# markets/hamilton.yaml — market config for Cincinnati / Hamilton County, OH (CAGIS).
+# All endpoints + fields verified live 2026-06-18 (see DATA_NOTES_HAMILTON.md).
+# Select with MARKET=hamilton. Scoring weights stay shared in weights.yaml.
+#
+# Shape of this market (like Columbus, not Cuyahoga): the CAGIS countywide parcel layer
+# carries owner/mailing/DTE-class/value/sale/situs + NATIVE distress (DELQ_TAXES, FORECL_FLAG),
+# but NO assessor building SF for industrial (the auditor CAMA building layer is residential
+# living-area only). So building_sf is a FOOTPRINT PROXY summed from the planimetric building
+# layer (which DOES carry a real SQFT field). year_built is also absent from the open feeds
+# (needs the Auditor bulk CAMA) -> NULL for now, like Columbus's first pass.
+# Code-enforcement is joined SPATIALLY (point-in-parcel); it is CITY OF CINCINNATI only.
+
+market: hamilton
+db_schema: hamilton        # isolated Postgres schema (search_path); Nashville is public
+crs: 4326
+home_state: OH             # mailing state <> this => owner is_out_of_state (normalize.py)
+
+# --- ArcGIS REST sources (verified live 2026-06-18; CAGIS server, no key) ---
+sources:
+  # CAGIS countywide cadastral parcels (CLASS is an INTEGER DTE code; owner/value/sale/delq).
+  parcels: "https://cagisonline.hamilton-co.org/arcgis/rest/services/COUNTYWIDE/Cadastral/MapServer/0"
+  # Planimetric building footprints w/ a real SQFT field -> building-SF proxy (no assessor SF).
+  building_footprints: "https://cagisonline.hamilton-co.org/arcgis/rest/services/COUNTYWIDE/PlanimetricLayers/MapServer/6"
+  # City of Cincinnati (Accela) "Building Enforcement" — POINT layer, spatial join (no parcel key).
+  violations: "https://cagisonline.hamilton-co.org/arcgis/rest/services/EACTIVITIES/eActCincOpenPMCE/MapServer/2"
+
+# --- gates (overlay weights.yaml). Center = Cincinnati Fountain Square; radius is a SUGGESTION
+#     — FOUNDER MUST CONFIRM the buy-box (center+radius or drawn polygons). ---
+gates:
+  min_building_sf: 75000
+  manual_review_sf_floor: 60000
+  max_distance_miles: 15.0
+  icbd_center_lat: 39.1015          # Cincinnati Fountain Square (placeholder — founder confirms)
+  icbd_center_lon: -84.5125
+
+# --- land use: Ohio DTE CLASS, 3-digit INTEGER in the source (matched on code; the ingest
+#     emits an UNQUOTED IN-list because CLASS is numeric). Stored as string in our DB. ---
+land_use:
+  code_field: CLASS
+  code_is_numeric: true             # CLASS is an integer field -> unquoted IN(...) in the WHERE
+  industrial_codes:
+    "300": VACANT INDUSTRIAL LAND
+    "320": HEAVY MFG / FOUNDRY
+    "330": MEDIUM MFG & ASSEMBLY
+    "340": LIGHT MFG & ASSEMBLY
+    "350": WAREHOUSE
+    "351": "WAREHOUSE: LOW OFC"
+    "352": "WAREHOUSE: MED OFC"
+    "360": INDUSTRIAL TRUCK TERMINAL
+    "370": SMALL INDUSTRIAL SHOPS
+    "390": GRAIN ELEVATORS
+    "399": OTHER INDUSTRIAL
+    "480": COMMERCIAL WAREHOUSE
+    "488": COMMERCIAL WAREHOUSE >50% OFC
+    "489": SPECIAL COMMERCIAL WAREHOUSE
+  excluded_codes: []
+  excluded_structure_types: []
+
+# --- building_sf strategy (footprint proxy — like Columbus's fallback, but it's ALL we have) ---
+building_sf:
+  strategy: footprint_proxy
+  primary_field: null               # no assessor SF for industrial in any open feed
+  fallback: footprint_proxy         # SUM(PlanimetricLayers SQFT) of footprints within the parcel
+  proxy_note: >
+    Hamilton publishes no auditor gross-floor-area for industrial in REST (the CAMA building layer
+    is residential living-area only). building_sf is the SUM of planimetric building-footprint SQFT
+    inside each parcel — approximate (~= SF for single-story; undercounts multi-story). sf_confidence
+    flags every row 'proxy'. Swap to the Hamilton Auditor bulk CAMA for true SF + year_built later.
+  swap_to: cama_bulk
+
+# --- buy-box geometry (PENDING founder; placeholder circle generated for the first run) ---
+buybox_geojson: imports/hamilton_submarkets.geojson
+
+# --- field mapping: Hamilton source field -> our normalized column ---
+fields:
+  parcels:
+    apn: PARCELID                   # 12-digit zero-padded
+    owner: OWNNM1
+    owner_2: OWNNM2
+    own_addr: OWNAD1
+    own_city: OWNADCITY
+    own_state: OWNADSTATE
+    own_zip: OWNADZIP
+    own_date: SALDAT                # esri date (epoch ms)
+    sale_price: SALAMT
+    situs_address: ADDRNO+ADDRST+ADDRSF   # composed in ingest
+    land_use_code: CLASS
+    acres: ACREDEED
+    assessed_value: MKT_TOTAL_VAL   # total market value
+    year_built: null                # not in any open feed (Auditor bulk CAMA only) -> NULL
+    tax_delinq_balance: DELQ_TAXES  # > 0 -> native tax-delinquency distress signal
+    forecl_flag: FORECL_FLAG        # 'Y' carried in raw (no scoring component yet)
+  building_footprints:
+    sqft_field: SQFT                # real footprint sqft (summed per parcel as the SF proxy)
+  violations:                       # City of Cincinnati PMCE "Building Enforcement" — SPATIAL join
+    join: spatial                   # ST_Contains(parcel.geom, case_point), outSR=4326
+    date: ENTERED_DATE              # filed date -> 24-month scoring window (full history)
+    type: COMP_TYPE_DESC
+    sub_type: SUB_TYPE_DESC
+    status: DATA_STATUS_DISPLAY

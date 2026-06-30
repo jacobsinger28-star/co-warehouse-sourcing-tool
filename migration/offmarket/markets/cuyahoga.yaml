@@ -1,0 +1,108 @@
+# markets/cuyahoga.yaml — market config for Cleveland / Cuyahoga County, OH.
+# All endpoints + fields verified live 2026-06-18 (see DATA_NOTES_CUYAHOGA.md).
+# Select with MARKET=cuyahoga. Scoring weights stay shared in weights.yaml.
+#
+# Why this is the easiest market built so far: the county Fiscal Officer's "EPV"
+# parcel FeatureServer carries EVERYTHING in one layer — owner + mailing, DTE land-use
+# class, REAL assessor building SF (total_com_use_area, summed across buildings; NOT a
+# footprint proxy like Columbus), market value, year built, sale date+price, acreage,
+# polygon geometry, AND native tax-delinquency balances. City of Cleveland Accela
+# violations + permits join cleanly on the parcel PIN with ~11 years of history.
+
+market: cuyahoga
+db_schema: cuyahoga         # isolated Postgres schema (search_path); Nashville is public
+crs: 4326
+home_state: OH             # mailing state <> this => owner is_out_of_state (normalize.py)
+
+# --- ArcGIS REST sources (verified live 2026-06-18) ---
+sources:
+  # County Fiscal Officer "EPV Survey Parcel" — owner/mailing/class/SF/value/year/sale/delq.
+  parcels: "https://gis.cuyahogacounty.us/server/rest/services/CCFO/EPV_Prod/FeatureServer/2"
+  # City of Cleveland (Accela) code-enforcement notices — joins on PARCEL_NUMBER = parcelpin.
+  violations: "https://services3.arcgis.com/dty2kHktVXHrqO8i/arcgis/rest/services/Complaint_Violation_Notices/FeatureServer/0"
+  # City of Cleveland issued building permits — PARCEL_NUMBER, ~11yr history, HAS status.
+  permits: "https://services3.arcgis.com/dty2kHktVXHrqO8i/arcgis/rest/services/Building_Permits/FeatureServer/0"
+
+# --- gates (overlay weights.yaml). Center = Cleveland Public Square; radius is a
+#     SUGGESTION — FOUNDER MUST CONFIRM the buy-box (center+radius or drawn polygons). ---
+gates:
+  min_building_sf: 75000
+  manual_review_sf_floor: 60000
+  max_distance_miles: 15.0          # generous first pass to reach suburban industrial
+  icbd_center_lat: 41.4993          # Cleveland Public Square (placeholder — founder confirms)
+  icbd_center_lon: -81.6944
+
+# --- land use: Ohio DTE class code, 4-DIGIT here (3xxx industrial + 48xx warehouse),
+#     stored as a STRING (numeric IN errors). Matched on CODE. ---
+land_use:
+  code_field: tax_luc
+  industrial_codes:
+    "3000": VAC INDUSTRIAL LAND
+    "3100": FOOD/DRINK PROC/STGE
+    "3200": HEAVY MFG/FOUNDRY
+    "3300": MEDIUM MFG/ASSEMBLY
+    "3400": LIGHT MFG/ASSEMBLY
+    "3700": SMALL SHOPS
+    "3900": GRAIN ELEVATORS
+    "3930": CONTRACT/CONST SVCS
+    "3940": BULK OIL STGE
+    "3950": R&D FACILITY
+    "3960": TRANSPORTATION FAC
+    "3990": OTHER INDUSTRIAL NEC
+    "4800": 1-UNIT WHSE <75000SF
+    "4805": 1-UNIT WHSE >75000SF
+    "4810": COMM WHSE LOFT-TYPE
+    "4815": DISTRIBUTION WHSE
+    "4818": MULTI-TENANT WHSE
+    "4820": COMM TRUCK TERMINAL
+  excluded_codes: []                # no self-storage code in the industrial/warehouse band
+  # No per-building StructureType field; exclusion is by code above.
+  excluded_structure_types: []
+
+# --- building_sf strategy ---
+building_sf:
+  strategy: assessor_sum            # total_com_use_area = assessor GFA SUMMED over all bldgs
+  primary_field: total_com_use_area # real assessor SF (~41% of industrial parcels populated)
+  note: >
+    total_com_use_area is the county's own summed commercial gross floor area — authoritative,
+    not a footprint proxy. ~59% of industrial-band parcels have it null (vacant land or no
+    commercial building record); those fail the 75k gate, which is correct.
+
+# --- buy-box geometry (PENDING founder; placeholder circle generated for the first run) ---
+buybox_geojson: imports/cuyahoga_submarkets.geojson
+
+# --- field mapping: Cuyahoga source field -> our normalized column ---
+fields:
+  parcels:
+    apn: parcelpin                  # 8-9 char PPN; the universal county key (= PARCEL_NUMBER on city feeds)
+    owner: parcel_owner
+    owner_2: second_owner
+    own_addr: mail_addr_street      # mailing street
+    own_city: mail_city
+    own_state: mail_state           # clean 2-letter state -> out-of-state flag works
+    own_zip: mail_zip
+    own_date: last_transfer_date    # esri date (epoch ms)
+    sale_price: last_sales_amount
+    situs_address: par_addr_all     # "ADDR, CITY, OH, ZIP"
+    land_use_code: tax_luc
+    land_use_desc: tax_luc_description
+    acres: parcel_acreage
+    building_sf: total_com_use_area # authoritative summed assessor GFA
+    building_count: com_bldg_count
+    assessed_value: tax_market_total  # full market value (use over tax_assessed_total)
+    year_built: min_com_age         # MISLABELED in source: holds the YEAR (e.g. 1974), not an age.
+                                    # min = oldest commercial structure -> our canonical year_built.
+    tax_delinq_balance: total_net_delq_balance  # > 0 -> native tax-delinquency distress signal
+  violations:                       # City of Cleveland (Accela) — joined by parcel key
+    join: key
+    apn: PARCEL_NUMBER              # = parcelpin
+    date: FILE_DATE                 # filed date -> 24-month scoring window (full history, not rolling)
+    type: SOURCE
+    status: VIOLATION_APP_STATUS
+    source_ref: VIOLATION_NUMBER
+  permits:                          # City of Cleveland issued building permits — HAS status
+    apn: PARCEL_NUMBER
+    type: PERMIT_TYPE
+    date_issued: ISSUE_DATE
+    status: CURRENT_TASK_STATUS
+    permit_nbr: OBJECTID            # no stable permit-number field exposed; OBJECTID is unique per row

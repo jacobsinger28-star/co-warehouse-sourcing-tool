@@ -1,0 +1,157 @@
+# weights.yaml — scoring config, v0.1
+# Founder may edit numbers; engineer should not hardcode any weight in score.py.
+# Components sum to ~111 before deductions; apply min(raw_total, 100) in score.py.
+#
+# STRATEGY NOTE: This pipeline targets off-market properties only.
+# Anything actively listed on Crexi/LoopNet is already being worked by brokers.
+# No listing data is ingested. Vacancy is inferred entirely from VLM + assessor signals.
+
+version: "v0.1"
+
+gates:
+  min_building_sf: 75000
+  manual_review_sf_floor: 60000      # 60k–75k -> 'manual_review' bucket, not scored, not killed
+  industrial_land_use_only: true     # code list confirmed by founder, see FOUNDER_INPUTS.md
+  max_distance_miles: 10.0           # hard cutoff — properties beyond 10 mi from ICBD center excluded before scoring
+  icbd_center_lat: 36.1627           # 5th & Broadway, Nashville
+  icbd_center_lon: -86.7816
+
+components:
+
+  vacancy_evidence:
+    weight: 22                       # VLM-only: parking fullness + signage. No listing data.
+                                     # A property showing vacancy signals with no active listing = ideal off-market candidate.
+    rules:
+      empty_lot_no_signage: 22       # parking_fullness='empty' AND signage_present='no'
+      sparse_or_no_signage: 14
+      ambiguous: 5                   # any 'not_visible' on both fields
+      clearly_active: 0
+
+  tax_delinquency:
+    weight: 15
+    note: >
+      Founder-sourced only — Davidson County Trustee delinquent-tax CSV.
+      NOT from Socrata. Founder supplies file; engineer builds generic CSV importer (import_csv.py).
+      If file never arrives, this component scores 0 for all rows — do NOT block the pipeline on it.
+    rules:
+      two_plus_years: 15
+      one_year: 10
+      current: 0
+
+  proximity_score:
+    weight: 15                       # distance from ICBD center; closer = stronger demand + land scarcity
+    implementation_note: |
+      Populate distance_miles_icbd in build_universe.py:
+        UPDATE properties p
+        SET distance_miles_icbd = ST_Distance(
+            ST_Centroid(c.geom)::geography,
+            ST_SetSRID(ST_MakePoint(-86.7816, 36.1627), 4326)::geography
+        ) / 1609.34
+        FROM parcels c WHERE c.apn = p.apn;
+    rules:
+      under_3_miles: 15
+      3_to_5_miles: 12
+      5_to_7_miles: 8
+      7_to_10_miles: 4
+      beyond_10_miles: 0             # safety net; gate should catch these first
+
+  physical_fit:                      # VLM composite, scaled 0–12
+    weight: 12
+    inputs:
+      docks_4_plus: 4
+      any_drive_in: 3
+      divisibility_not_single_box: 3
+      condition_not_poor: 2
+
+  code_violations:
+    weight: 12                       # bumped 10→12; stronger signal without listing data present
+    note: >
+      From data.nashville.gov Socrata API (pull_violations.py). Automated.
+      distress_signals.type = 'code_violation'. Covers neglect, unsafe structure, overgrown lots, dumping.
+    rules:
+      two_plus_in_24mo: 12
+      one_in_24mo: 7
+      none: 0
+
+  hold_period:
+    weight: 8
+    rules:
+      twenty_plus_years: 8
+      ten_to_nineteen: 5
+      under_ten: 0
+
+  owner_profile:
+    weight: 7                        # capped at 7
+    note: >
+      Composite of three Tier 1 signals sourced from assessor data + entity name parsing.
+      All captured automatically in pull_parcels.py / normalize.py — no manual step.
+      trust_or_individual: entities.entity_type IN ('trust','individual') — regex on name_raw
+      out_of_state: entities.mailing_state <> 'TN' (entities.is_out_of_state = TRUE)
+      estate_keyword: name_raw ILIKE '%estate%' OR '%heir%' OR '%deceased%' — signals probate/forced sale
+    rules:
+      trust_or_individual: 3
+      out_of_state_mailing: 2
+      estate_keyword: 2              # estate/heir/deceased in entity name — probate/forced-sale flag
+
+  permit_anomaly:
+    weight: 5
+    note: >
+      From data.nashville.gov Socrata API (pull_permits.py). Automated.
+      distress_signals.type = 'permit_anomaly'.
+      Signals: permit pulled but never finaled (lapsed/expired) = owner started work and abandoned.
+      Also flag: no permits in 10+ years on a pre-1985 building = zero capital investment, deferred maintenance.
+    rules:
+      lapsed_or_expired_permit: 5    # permit issued, never finaled, >12 months old
+      no_permits_10yr_pre1985: 3     # assessor year_built < 1985 AND no permit activity in 10 yrs
+      none: 0
+
+  condition_distress:                # assessor CAMA physical condition + functional obsolescence
+    weight: 6
+    note: >
+      Assessor-recorded POOR/FAIR physical condition or functional obsolescence = deferred
+      maintenance / neglected, obsolete asset = motivated owner — exactly the off-market thesis.
+      distress_signals.type='poor_condition' (Columbus: Auditor CAMA Build.xlsx PHYCOND/FUNCUTIL).
+      Markets without CAMA condition data have NO such signal, so they score 0 here — this
+      component never changes a market that lacks the data. Distinct from physical_fit's VLM
+      'condition_not_poor' (which rewards a USABLE building); this rewards a DISTRESSED one.
+    rules:
+      poor: 6                        # PHYCOND or FUNCUTIL = Poor
+      fair: 3                        # PHYCOND or FUNCUTIL = Fair
+      none: 0
+
+  year_built_band:                   # clear-height + obsolescence proxy
+    weight: 5
+    rules:
+      built_1955_1985: 5
+      built_1986_2000: 3
+      other: 1
+
+  truck_access_inverse:              # poor semi access depresses price; our tenants use vans
+    weight: 4
+    rules:
+      bad: 4
+      tight: 2
+      easy: 0
+
+deductions:
+  data_confidence:                   # applied after components, floor -6
+    sf_mismatch: -2
+    violation_join_uncertain: -2
+    no_usable_imagery: -2
+    max_deduction: -6
+
+# TIER 1 DISTRESS SIGNALS REFERENCE (all automated, no manual CSV)
+#
+# Signal                  | Source              | Where stored
+# ----------------------- | ------------------- | ----------------------------
+# Code violations         | Socrata (automated) | distress_signals type=code_violation
+# Permit anomaly          | Socrata (automated) | distress_signals type=permit_anomaly
+# Out-of-state owner      | Assessor (auto)     | entities.is_out_of_state → owner_profile score
+# Trust/estate ownership  | Assessor name parse | entities.entity_type → owner_profile score
+# Long hold (15+ yrs)     | Assessor (auto)     | properties.hold_years → hold_period score
+# Year-built proxy <1980  | Assessor (auto)     | properties.year_built → year_built_band score
+# Estate/heir keyword     | Assessor name parse | entities.name_raw → owner_profile score
+#
+# NOT in this file (founder-sourced, not automated):
+#   Register of Deeds lis pendens — manual recdsonline.com check, A-tier owners only, add to SOS SOP
+#   Delinquent taxes — Davidson County Trustee CSV, founder supplies

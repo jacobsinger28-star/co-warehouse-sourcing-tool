@@ -1,0 +1,610 @@
+import { useContext, useEffect, useState } from 'react'
+import { css } from './css.js'
+import { RealDataContext } from './RealDataContext.js'
+import Icon from './Icon.jsx'
+import { PROPS, BROKERS, SCRAPE_SOURCES, MARKETS, SOURCES } from './data.js'
+import {
+  fmtInt, fmtSF, fmtMoney2, scDot, scLabel, chDot, chTag, chLabel, scChip,
+  rowStyle, cardStyle, breakdownFor, catVar, fmtPhone, humanizeSig,
+} from './helpers.js'
+import SupplyModel from './modules/SupplyModel.jsx'
+import AICaller from './modules/AICaller.jsx'
+import DealsDB from './modules/DealsDB.jsx'
+import ReuseFinder from './modules/ReuseFinder.jsx'
+import DealMap from './components/DealMap.jsx'
+
+const TOTAL_UNIVERSE = 1847
+
+// ── style builders ──────────────────────────────────────────────────────────
+const seg = (active) =>
+  `display:flex;align-items:center;gap:7px;height:28px;padding:0 12px;border:none;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;${active ? 'background:var(--surface3);color:var(--text);box-shadow:inset 0 0 0 1px var(--border2);' : 'background:transparent;color:var(--text2);'}`
+const chSeg = (active) =>
+  `flex:1;display:flex;align-items:center;justify-content:center;gap:7px;height:30px;border:none;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;${active ? 'background:var(--surface3);color:var(--text);box-shadow:inset 0 0 0 1px var(--border2);' : 'background:transparent;color:var(--text2);'}`
+const scChipFilter = (active, cat) =>
+  `display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:6px;font-size:11.5px;cursor:pointer;border:1px solid ${active ? `var(${catVar(cat)})` : 'var(--border)'};background:${active ? `var(--${cat === 'Actionable' ? 'green' : cat === 'Tentative' ? 'amber' : 'red'}-tint)` : 'var(--surface2)'};color:${active ? 'var(--text)' : 'var(--text3)'};`
+const viewTab = (active) =>
+  `display:flex;align-items:center;gap:8px;height:42px;padding:0 16px;border:none;background:transparent;color:${active ? 'var(--text)' : 'var(--text2)'};font-size:13px;font-weight:${active ? '600' : '500'};border-bottom:2px solid ${active ? 'var(--accent)' : 'transparent'};cursor:pointer;`
+const tabBtn = (active) =>
+  `flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:transparent;color:${active ? 'var(--accent)' : 'var(--text2)'};font-size:10px;font-weight:${active ? '600' : '500'};cursor:pointer;`
+const th = (align = 'left', cls = '') => ({ cls, s: `text-align:${align};padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);` })
+const railLabel = 'font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:9px;'
+const fieldLabel = 'font-size:11px;color:var(--text2);font-weight:500;'
+const selectStyle = 'height:32px;padding:0 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;'
+const contactStyle = (c) =>
+  c === 'No contact'
+    ? 'font-size:11px;color:var(--text3);background:var(--surface2);border:1px solid var(--border);padding:2px 7px;border-radius:5px;white-space:nowrap;'
+    : 'font-size:11px;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 7px;border-radius:5px;white-space:nowrap;'
+
+const MODULE_SUB = { properties: 'Off-market + on-market universe', supply: 'CoStar market supply', caller: 'AI outreach cockpit', deals: 'Deal & LOI memory', reuse: 'Street View reuse sweep' }
+const SCORE_CATS = ['Actionable', 'Tentative', 'Pass']
+
+// Markets shown for now — everything else (Cleveland + the national on-market
+// scrape noise) is hidden from the view. Widen this set to re-show a metro.
+const ALLOWED_MARKETS = new Set(['Charlotte', 'Raleigh', 'Charleston', 'Columbus', 'Cleveland', 'Miami', 'Boca Raton', 'West Palm Beach', 'Nashville'])
+const onlyAllowed = (props) => props.filter((p) => ALLOWED_MARKETS.has(p.mkt))
+
+// Distress signals (off-market) — each maps to a real field/component on a prop.
+const SIG_DEFS = [
+  ['oos', 'Out-of-state owner'],
+  ['tax', 'Tax-delinquent'],
+  ['code', 'Code violations'],
+  ['vacant', 'Inferred-vacant'],
+  ['contact', 'Has owner / broker contact'],
+]
+const SIG_LABEL = Object.fromEntries(SIG_DEFS)
+const EMPTY_FILTERS = { market: 'all', clearMax: '', yearMin: '', ownerType: 'all', sig: { oos: false, tax: false, code: false, vacant: false, contact: false } }
+
+export default function App() {
+  const [theme, setTheme] = useState('dark')
+  const [module, setModule] = useState('properties')
+  const [view, setView] = useState('map')          // ← default view = Map
+  const [channel, setChannel] = useState('both')
+  const [score, setScore] = useState({ Actionable: true, Tentative: true, Pass: true })
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const setF = (k, v) => setFilters((f) => ({ ...f, [k]: v }))
+  const toggleSig = (k) => setFilters((f) => ({ ...f, sig: { ...f.sig, [k]: !f.sig[k] } }))
+  const [selProps, setSelProps] = useState([])
+  const [selBrokers, setSelBrokers] = useState([])
+  const [drawerId, setDrawerId] = useState(null)
+  const [mapStyle, setMapStyle] = useState('sat')   // ← default basemap = Satellite
+
+  const [sourcing, setSourcing] = useState(false)
+  const [total, setTotal] = useState(TOTAL_UNIVERSE)
+  const [newCount, setNewCount] = useState(0)
+  const [lastUpdated, setLastUpdated] = useState('2m ago')
+  const [sources, setSources] = useState(SCRAPE_SOURCES.map((s) => ({ ...s })))
+
+  // live data — decrypted by the Gate from the AES-256-GCM export and handed down
+  // via context, with the committed synthetic sample as the fallback (fresh clone /
+  // locked / public deploy without the password).
+  const realData = useContext(RealDataContext)
+  const [dataset, setDataset] = useState({ props: onlyAllowed(PROPS), brokers: BROKERS, isReal: false, counts: null })
+  useEffect(() => {
+    const d = realData
+    if (!d || !Array.isArray(d.props) || !d.props.length) return
+    const props = onlyAllowed(d.props)
+    setDataset({ props, brokers: d.brokers?.length ? d.brokers : BROKERS, isReal: true, counts: { ...d.counts, props: props.length } })
+    setTotal(props.length)
+  }, [realData])
+  const propsData = dataset.props
+  const brokersData = dataset.brokers
+
+  // mobile shell state
+  const [railOpen, setRailOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [statusOpen, setStatusOpen] = useState(false)
+  const [acctOpen, setAcctOpen] = useState(false)
+
+  useEffect(() => {
+    if (!sourcing) return
+    const t = setInterval(() => {
+      setTotal((v) => v + (2 + Math.floor(Math.random() * 5)))
+      setNewCount((v) => v + (1 + Math.floor(Math.random() * 3)))
+      setLastUpdated('just now')
+      setSources((prev) => prev.map((x) => ({ ...x, p: x.p >= 0.97 ? 0.06 : Math.min(1, x.p + Math.random() * 0.09) })))
+    }, 1100)
+    return () => clearInterval(t)
+  }, [sourcing])
+
+  // derived
+  const visibleProps = propsData.filter((p) => {
+    if (!(channel === 'both' || p.channel === channel) || !score[p.cat]) return false
+    if (filters.market !== 'all' && p.mkt !== filters.market) return false
+    // clear height is a MAX (buy-box targets older, lower-clear stock) — null-inclusive
+    if (filters.clearMax && p.clear != null && p.clear > +filters.clearMax) return false
+    if (filters.yearMin && p.year != null && p.year < +filters.yearMin) return false
+    if (filters.ownerType !== 'all' && p.ownerType !== filters.ownerType) return false
+    const sg = filters.sig
+    if (sg.oos && !p.oos) return false
+    if (sg.tax && !(p.comp && p.comp.tax_delinquency > 0)) return false
+    if (sg.code && !(p.comp && p.comp.code_violations > 0)) return false
+    if (sg.vacant && !(p.comp && p.comp.vacancy_evidence > 0)) return false
+    if (sg.contact && (p.contact === 'No contact' || p.contact === 'Listing only')) return false
+    return true
+  })
+  const matchShown = visibleProps.length
+  const showEmpty = matchShown === 0 && (view === 'table' || view === 'map')
+  const bulkCount = view === 'brokers' ? selBrokers.length : selProps.length
+  const showBulk = bulkCount > 0 && (view === 'table' || view === 'brokers')
+  const drawerProp = drawerId != null ? propsData.find((p) => p.id === drawerId) : null
+  const allPropsSel = visibleProps.length > 0 && visibleProps.every((p) => selProps.includes(p.id))
+  const allBrokSel = brokersData.length > 0 && brokersData.every((b) => selBrokers.includes(b.id))
+  const aggP = sources.reduce((a, b) => a + b.p, 0) / sources.length
+
+  const disabledScores = SCORE_CATS.filter((c) => !score[c])
+  const activeChips = [
+    ...(channel !== 'both' ? [{ label: channel === 'off' ? 'Off-market only' : 'On-market only', onClear: () => setChannel('both') }] : []),
+    ...disabledScores.map((c) => ({ label: `− ${c}`, onClear: () => setScore((s) => ({ ...s, [c]: true })) })),
+    ...(filters.market !== 'all' ? [{ label: filters.market, onClear: () => setF('market', 'all') }] : []),
+    ...(filters.clearMax ? [{ label: `Clear ≤ ${filters.clearMax} ft`, onClear: () => setF('clearMax', '') }] : []),
+    ...(filters.yearMin ? [{ label: `Built ≥ ${filters.yearMin}`, onClear: () => setF('yearMin', '') }] : []),
+    ...(filters.ownerType !== 'all' ? [{ label: filters.ownerType, onClear: () => setF('ownerType', 'all') }] : []),
+    ...SIG_DEFS.filter(([k]) => filters.sig[k]).map(([k]) => ({ label: SIG_LABEL[k], onClear: () => toggleSig(k) })),
+  ]
+  const filterCount = activeChips.length
+
+  const ownerOrBroker = (p) => (p.channel === 'off' ? p.owner : `${p.broker} · ${p.firm}`)
+  const cardSub = (p) => (p.channel === 'off' ? p.ownerType : p.daysOn != null ? `${p.daysOn} DOM` : p.firm)
+  const toggleProp = (id) => setSelProps((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+  const toggleBrok = (id) => setSelBrokers((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+  const selAllProps = () => setSelProps(allPropsSel ? [] : visibleProps.map((p) => p.id))
+  const selAllBrok = () => setSelBrokers(allBrokSel ? [] : brokersData.map((b) => b.id))
+  const clearSel = () => (view === 'brokers' ? setSelBrokers([]) : setSelProps([]))
+  const setCh = (c) => setChannel(c)
+  const toggleScore = (k) => setScore((s) => ({ ...s, [k]: !s[k] }))
+  const clearAll = () => { setChannel('both'); setScore({ Actionable: true, Tentative: true, Pass: true }); setFilters(EMPTY_FILTERS) }
+  const goModule = (m) => { setModule(m); setRailOpen(false); setSearchOpen(false); setStatusOpen(false); setAcctOpen(false) }
+  const startSourcing = () => { setSourcing(true); setNewCount(0); setLastUpdated('just now') }
+
+  const TABS = [
+    { k: 'map', label: 'Map', icon: 'map' },
+    { k: 'table', label: 'Properties', icon: 'list' },
+    { k: 'brokers', label: 'Brokers', icon: 'users' },
+  ]
+  const headerTitle = view === 'brokers' ? 'Brokers' : 'All properties'
+
+  return (
+    <div data-theme={theme} style={css('display:flex;flex-direction:column;height:100vh;background:var(--bg);color:var(--text);font-size:13px;line-height:1.45;overflow:hidden;')}>
+
+      {/* ===================== TOP BAR ===================== */}
+      <div className="topbar" style={css('display:flex;align-items:center;gap:16px;height:52px;flex:0 0 52px;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--border);')}>
+        <div style={css('display:flex;align-items:center;gap:9px;')}>
+          <div style={css('width:18px;height:18px;border-radius:4px;background:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);')} />
+          <span style={css('font-weight:600;letter-spacing:-.01em;')}>SimiCapital</span>
+          <span className="brand-suffix" style={css('color:var(--text3);')}>·</span>
+          <span className="brand-suffix" style={css('color:var(--text2);font-weight:500;')}>Sourcing</span>
+        </div>
+        <div className="sample-pill" title={dataset.isReal ? `Live sourced data — ${fmtInt(dataset.counts?.props ?? propsData.length)} records (owner/broker PII · not committed)` : 'All records shown are sample data'} style={css(`display:flex;align-items:center;gap:6px;height:22px;padding:0 9px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text2);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;`)}><span style={css(`width:5px;height:5px;border-radius:50%;background:${dataset.isReal ? 'var(--accent)' : 'var(--text3)'};`)} />{dataset.isReal ? `Live data · ${fmtInt(dataset.counts?.props ?? propsData.length)}` : 'Sample data'}</div>
+        <button className="markets-btn hov" aria-label="Select markets" style={css('display:flex;align-items:center;gap:8px;height:30px;padding:0 11px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:12.5px;')}>
+          <span style={css('width:6px;height:6px;border-radius:50%;background:var(--accent);')} />All markets<Icon name="chevronDown" size={11} sw={2} style={css('color:var(--text3);')} />
+        </button>
+
+        <div style={css('flex:1;')} />
+
+        {!sourcing ? (
+          <button className="sourcing-full hov tap" onClick={startSourcing} style={css('display:flex;align-items:center;gap:8px;height:32px;padding:0 16px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;box-shadow:0 0 0 1px var(--accent-line);')}>
+            <span style={css('width:7px;height:7px;border-radius:50%;background:#06120F;')} />Keep Sourcing
+          </button>
+        ) : (
+          <div className="sourcing-full" style={css('display:flex;align-items:center;gap:11px;height:42px;padding:0 7px 0 13px;background:var(--surface2);border:1px solid var(--accent-line);border-radius:9px;box-shadow:0 0 0 3px var(--accent-dim);')}>
+            <span style={css('flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1.1s infinite;')} />
+            <div style={css('display:flex;flex-direction:column;gap:5px;width:248px;')}>
+              <div style={css('display:flex;align-items:center;gap:7px;white-space:nowrap;')}>
+                <span style={css('font-weight:600;font-size:12px;')}>Sourcing</span>
+                <span style={css('font-family:var(--mono);font-size:12px;color:var(--text);')}>{fmtInt(total)}</span>
+                <span style={css('color:var(--text3);font-size:11px;')}>·</span>
+                <span style={css('font-family:var(--mono);font-size:12px;color:var(--accent);')}>+{newCount} new</span>
+              </div>
+              <div className="src-strip" style={css('display:flex;gap:6px;')}>
+                {sources.map((s) => (
+                  <div key={s.n} title={s.n} style={css('flex:1;display:flex;flex-direction:column;gap:3px;min-width:0;')}>
+                    <div style={css('height:3px;border-radius:2px;background:var(--border2);overflow:hidden;')}><div style={css(`height:100%;width:${Math.round(s.p * 100)}%;background:var(--accent);border-radius:2px;transition:width .25s;`)} /></div>
+                    <span style={css('font-size:8px;letter-spacing:.02em;color:var(--text3);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{s.short}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="src-aggregate" style={css('align-items:center;gap:8px;')}>
+                <div style={css('flex:1;height:4px;border-radius:2px;background:var(--border2);overflow:hidden;')}><div style={css(`height:100%;width:${Math.round(aggP * 100)}%;background:var(--accent);border-radius:2px;`)} /></div>
+                <span style={css('font-size:9.5px;color:var(--text3);white-space:nowrap;')}>6 sources</span>
+              </div>
+            </div>
+            <div style={css('flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;line-height:1.25;')}>
+              <span style={css('font-size:8.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;')}>Updated</span>
+              <span style={css('font-size:10.5px;color:var(--text2);white-space:nowrap;')}>{lastUpdated}</span>
+            </div>
+            <button className="hov" onClick={() => setSourcing(false)} style={css('flex:0 0 auto;height:28px;padding:0 12px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;font-weight:500;')}>Stop</button>
+          </div>
+        )}
+
+        {/* mobile-only compact controls */}
+        <button className="search-icon-btn hov tap" onClick={() => setSearchOpen(true)} aria-label="Search" style={css('align-items:center;justify-content:center;width:36px;height:36px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="search" size={16} /></button>
+        <button className="sourcing-mini hov tap" onClick={() => setStatusOpen(true)} aria-label="Sourcing status" style={css(`align-items:center;justify-content:center;width:36px;height:36px;background:var(--surface2);border:1px solid ${sourcing ? 'var(--accent-line)' : 'var(--border)'};border-radius:8px;color:var(--text2);position:relative;`)}><Icon name="clock" size={16} sw={1.8} />{sourcing && <span style={css('position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.1s infinite;')} />}</button>
+
+        <div className="search-box" style={css('display:flex;align-items:center;height:30px;padding:0 10px;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;min-width:230px;')}>
+          <Icon name="search" size={13} style={css('color:var(--text2);flex:0 0 auto;')} />
+          <input aria-label="Search address, owner, broker, or APN" placeholder="Search address · owner · broker · APN" style={css('background:transparent;border:none;outline:none;color:var(--text);font-size:12.5px;width:100%;')} />
+        </div>
+        <button className="hov tap" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} aria-label="Toggle light / dark theme" style={css('display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text2);flex:0 0 auto;')}><Icon name="moon" size={15} sw={1.7} /></button>
+        <button onClick={() => setAcctOpen(true)} aria-label="Account menu" style={css('flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--text2);')}>JS</button>
+      </div>
+
+      {/* ===================== MODULE SWITCHER (desktop/tablet) ===================== */}
+      <div className="modswitcher" style={css('display:flex;align-items:center;gap:14px;height:42px;flex:0 0 42px;padding:0 16px;background:var(--bg);border-bottom:1px solid var(--border);')}>
+        <div style={css('display:flex;gap:2px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:8px;')}>
+          <button className="hov" onClick={() => goModule('properties')} style={css(seg(module === 'properties'))}>Properties</button>
+          <button className="hov" onClick={() => goModule('reuse')} style={css(seg(module === 'reuse'))}>Reuse Finder</button>
+          <button className="hov" onClick={() => goModule('caller')} style={css(seg(module === 'caller'))}>AI Caller</button>
+          <button className="hov" onClick={() => goModule('deals')} style={css(seg(module === 'deals'))}>Deals DB</button>
+          <button className="hov" onClick={() => goModule('supply')} style={css(seg(module === 'supply'))}>Supply Model</button>
+        </div>
+        <span style={css('color:var(--text3);font-size:11.5px;')}>{MODULE_SUB[module]}</span>
+        <div style={css('flex:1;')} />
+        <div className="legend-full" style={css('display:flex;align-items:center;gap:14px;font-size:11px;color:var(--text2);')}>
+          <span style={css('display:flex;align-items:center;gap:6px;')}><span style={css('width:9px;height:9px;border-radius:50%;border:2px solid var(--off);box-sizing:border-box;')} />Off-market</span>
+          <span style={css('display:flex;align-items:center;gap:6px;')}><span style={css('width:9px;height:9px;border-radius:50%;background:var(--on);')} />On-market</span>
+        </div>
+        <div className="legend-mini" title="Off-market vs on-market" style={css('align-items:center;gap:10px;font-size:11px;color:var(--text2);font-family:var(--mono);')}>
+          <span style={css('display:flex;align-items:center;gap:5px;')}><span style={css('width:8px;height:8px;border-radius:50%;border:2px solid var(--off);box-sizing:border-box;')} />412</span>
+          <span style={css('display:flex;align-items:center;gap:5px;')}><span style={css('width:8px;height:8px;border-radius:50%;background:var(--on);')} />435</span>
+        </div>
+      </div>
+
+      {/* ===================== BODY ===================== */}
+      <div style={css('flex:1;min-height:0;display:flex;position:relative;overflow:hidden;')}>
+        {module === 'properties' && (
+          <div style={css('flex:1;display:flex;min-height:0;')}>
+            {/* FILTER RAIL */}
+            <div className="props-rail" data-open={railOpen ? '1' : '0'} style={css('flex:0 0 256px;border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0;')}>
+              <div className="rail-close" style={css('align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--border);')}>
+                <span style={css('font-size:13px;font-weight:600;')}>Filters</span>
+                <button onClick={() => setRailOpen(false)} aria-label="Close filters" className="tap" style={css('display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text2);')}><Icon name="x" size={15} /></button>
+              </div>
+              <div style={css('flex:1;overflow-y:auto;padding:14px 14px 8px;')}>
+                <div style={css(railLabel)}>Channel</div>
+                <div style={css('display:flex;gap:4px;padding:3px;background:var(--surface2);border-radius:7px;margin-bottom:20px;')}>
+                  <button className="hov" onClick={() => setCh('off')} style={css(chSeg(channel === 'off'))}><span style={css('width:7px;height:7px;border-radius:2px;background:var(--off);flex:0 0 auto;')} />Off-market</button>
+                  <button className="hov" onClick={() => setCh('on')} style={css(chSeg(channel === 'on'))}><span style={css('width:7px;height:7px;border-radius:50%;background:var(--on);flex:0 0 auto;')} />On-market</button>
+                  <button className="hov" onClick={() => setCh('both')} style={css(chSeg(channel === 'both'))}>Both</button>
+                </div>
+
+                <div style={css(railLabel)}>Score</div>
+                <div style={css('display:flex;gap:6px;margin-bottom:14px;')}>
+                  {SCORE_CATS.map((k) => (
+                    <button key={k} className="hov" onClick={() => toggleScore(k)} style={css(scChipFilter(score[k], k))}><span style={css(`width:6px;height:6px;border-radius:50%;background:var(${catVar(k)});flex:0 0 auto;`)} />{k}</button>
+                  ))}
+                </div>
+                <div style={css('margin-bottom:20px;')}>
+                  <div style={css('display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:7px;')}><span>Distress score (off-market)</span><span style={css('font-family:var(--mono);color:var(--text2);')}>0–100</span></div>
+                  <div style={css('position:relative;height:4px;border-radius:2px;background:var(--surface3);')}>
+                    <div style={css('position:absolute;left:24%;right:8%;top:0;bottom:0;background:var(--accent);border-radius:2px;')} />
+                    <div style={css('position:absolute;left:24%;top:50%;width:12px;height:12px;border-radius:50%;background:var(--text);transform:translate(-50%,-50%);')} />
+                    <div style={css('position:absolute;left:92%;top:50%;width:12px;height:12px;border-radius:50%;background:var(--text);transform:translate(-50%,-50%);')} />
+                  </div>
+                </div>
+
+                <div style={css(railLabel)}>Filters</div>
+                <div style={css('display:flex;flex-direction:column;gap:11px;')}>
+                  <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Market / metro</label><select value={filters.market} onChange={(e) => setF('market', e.target.value)} style={css(selectStyle)} aria-label="Market"><option value="all">All markets</option>{MARKETS.filter((m) => ALLOWED_MARKETS.has(m)).map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
+                  <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Source</label><select style={css(selectStyle)} aria-label="Source"><option>All sources</option>{SOURCES.map((s) => <option key={s}>{s}</option>)}</select></div>
+                  <div style={css('display:flex;gap:8px;')}>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max clear ht (ft)</label><input type="number" value={filters.clearMax} onChange={(e) => setF('clearMax', e.target.value)} placeholder="≤ 24" aria-label="Maximum clear height" style={css('height:32px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;outline:none;')} /></div>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Min year built</label><input type="number" value={filters.yearMin} onChange={(e) => setF('yearMin', e.target.value)} placeholder="≥ 1960" aria-label="Minimum year built" style={css('height:32px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;outline:none;')} /></div>
+                  </div>
+                  <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Owner type</label><select value={filters.ownerType} onChange={(e) => setF('ownerType', e.target.value)} style={css(selectStyle)} aria-label="Owner type"><option value="all">Any owner type</option><option>LLC</option><option>Trust</option><option>Individual</option><option>Partnership</option><option>Corp</option></select></div>
+                </div>
+
+                <div style={css(railLabel + 'margin:20px 0 10px;')}>Signals</div>
+                <div style={css('display:flex;flex-direction:column;gap:10px;font-size:12.5px;color:var(--text);')}>
+                  {SIG_DEFS.map(([k, label]) => (
+                    <label key={k} style={css('display:flex;align-items:center;gap:9px;cursor:pointer;')}><input type="checkbox" checked={filters.sig[k]} onChange={() => toggleSig(k)} style={css('accent-color:var(--accent);width:15px;height:15px;')} />{label}</label>
+                  ))}
+                </div>
+              </div>
+              <div style={css('flex:0 0 auto;border-top:1px solid var(--border);padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;')}>
+                <span style={css('font-size:12px;')}><span style={css('font-family:var(--mono);font-weight:600;color:var(--text);')}>{fmtInt(matchShown)}</span><span style={css('color:var(--text2);')}> of {fmtInt(propsData.length)} match</span></span>
+                <div style={css('display:flex;gap:8px;')}>
+                  <button className="hov" onClick={clearAll} style={css('background:none;border:none;color:var(--accent);font-size:11.5px;font-weight:500;')}>Clear all</button>
+                  <button className="rail-close tap hov" onClick={() => setRailOpen(false)} style={css('height:30px;padding:0 16px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12px;')}>Apply</button>
+                </div>
+              </div>
+            </div>
+            {railOpen && <div onClick={() => setRailOpen(false)} style={css('position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:55;animation:fadein .15s ease;')} />}
+
+            {/* CONTENT */}
+            <div style={css('flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;')}>
+              {/* header row */}
+              <div style={css('display:flex;align-items:center;gap:12px;height:46px;flex:0 0 46px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--bg);')}>
+                <button className="filters-btn tap hov" onClick={() => setRailOpen(true)} aria-label="Open filters" style={css('align-items:center;gap:7px;height:30px;padding:0 12px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;')}><Icon name="funnel" size={13} />Filters{filterCount > 0 && <span style={css('display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;background:var(--accent);color:#06120F;border-radius:8px;font-size:10px;font-weight:600;')}>{filterCount}</span>}</button>
+                <span className="hide-phone" style={css('font-weight:600;font-size:13.5px;')}>{headerTitle}</span>
+                <span className="hide-phone" style={css('font-family:var(--mono);font-size:11.5px;color:var(--text2);padding:2px 7px;background:var(--surface);border:1px solid var(--border2);border-radius:5px;')}>{view === 'brokers' ? brokersData.length : matchShown} {view === 'brokers' ? 'brokers' : 'matching'}</span>
+                <div className="legend-phone" style={css('align-items:center;gap:12px;font-size:10.5px;color:var(--text2);font-family:var(--mono);')}>
+                  <span style={css('display:flex;align-items:center;gap:5px;')}><span style={css('width:8px;height:8px;border-radius:50%;border:2px solid var(--off);box-sizing:border-box;')} />Off</span>
+                  <span style={css('display:flex;align-items:center;gap:5px;')}><span style={css('width:8px;height:8px;border-radius:50%;background:var(--on);')} />On</span>
+                </div>
+                <div style={css('flex:1;')} />
+              </div>
+
+              {/* view tab row — moved UNDER "All properties", more visual */}
+              <div style={css('display:flex;align-items:center;gap:2px;flex:0 0 auto;padding:0 10px;border-bottom:1px solid var(--border);background:var(--bg);')}>
+                {TABS.map((t) => (
+                  <button key={t.k} className="tap hov" onClick={() => setView(t.k)} style={css(viewTab(view === t.k))}><Icon name={t.icon} size={15} sw={1.8} />{t.label}</button>
+                ))}
+              </div>
+
+              {/* active filter chips */}
+              {activeChips.length > 0 && (
+                <div className="active-chips" style={css('gap:7px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg);')}>
+                  {activeChips.map((c, i) => (
+                    <button key={i} onClick={c.onClear} style={css('display:flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 11px;background:var(--surface2);border:1px solid var(--border2);border-radius:14px;color:var(--text);font-size:11.5px;')}>{c.label}<Icon name="x" size={12} sw={2.2} style={css('color:var(--text3);')} /></button>
+                  ))}
+                </div>
+              )}
+
+              {/* TABLE / CARD-LIST */}
+              {view === 'table' && !showEmpty && (
+                <>
+                  <div className="data-table-wrap" style={css('flex:1;overflow:auto;min-height:0;')}>
+                    <table style={css('width:100%;border-collapse:collapse;font-size:12.5px;')}>
+                      <thead><tr style={css('position:sticky;top:0;z-index:2;background:var(--surface);')}>
+                        <th style={css('width:34px;padding:9px 0 9px 14px;border-bottom:1px solid var(--border);')}><input type="checkbox" checked={allPropsSel} onChange={selAllProps} aria-label="Select all" style={css('accent-color:var(--accent);')} /></th>
+                        {[th('left'), th('left'), th('left'), th('right'), th('left'), th('left'), th('left'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('left', 'col-secondary')].map((c, i) => (
+                          <th key={i} className={c.cls} style={css(c.s)}>{['CH', 'ADDRESS', 'MARKET', 'SF', 'SCORE', 'KEY SIGNAL', 'OWNER / BROKER', 'ASK $/SF', 'YEAR', 'CONTACT'][i]}</th>
+                        ))}
+                        <th style={css('width:28px;border-bottom:1px solid var(--border);')} />
+                      </tr></thead>
+                      <tbody>
+                        {visibleProps.map((p) => (
+                          <tr key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(rowStyle(p.cat))}>
+                            <td style={css('padding:0 0 0 14px;')} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selProps.includes(p.id)} onChange={() => toggleProp(p.id)} aria-label="Select property" style={css('accent-color:var(--accent);')} /></td>
+                            <td style={css('padding:9px 8px;')}><span style={css(chDot(p.channel))} /></td>
+                            <td style={css('padding:9px 8px;font-weight:500;white-space:nowrap;')}>{p.addr}</td>
+                            <td style={css('padding:9px 8px;color:var(--text2);')}>{p.mkt}</td>
+                            <td style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;')}>{fmtSF(p.sf)}</td>
+                            <td style={css('padding:9px 8px;')}><span style={css('display:inline-flex;align-items:center;gap:6px;')}><span style={css(scDot(p.cat))} /><span style={css(scLabel(p.cat))}>{p.cat}</span><span style={css('font-family:var(--mono);font-size:11.5px;color:var(--text3);')}>{p.score}</span></span></td>
+                            <td style={css('padding:9px 8px;color:var(--text2);font-size:12px;white-space:nowrap;')}>{p.signal}</td>
+                            <td style={css('padding:9px 8px;color:var(--text2);white-space:nowrap;')}>{ownerOrBroker(p)}</td>
+                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.channel === 'on' ? fmtMoney2(p.ask) : '—'}</td>
+                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.year}</td>
+                            <td className="col-secondary" style={css('padding:9px 8px;')}><span style={css(contactStyle(p.contact))}>{p.contact}</span></td>
+                            <td style={css('padding:9px 14px 9px 4px;text-align:right;color:var(--text3);')}><Icon name="chevronRight" size={14} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="card-list" style={css('flex-direction:column;flex:1;overflow-y:auto;min-height:0;')}>
+                    {visibleProps.map((p) => (
+                      <div key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(cardStyle(p.cat))}>
+                        <div style={css('display:flex;align-items:center;gap:9px;')}><span style={css(scDot(p.cat))} /><span style={css('font-weight:600;font-size:14.5px;flex:1;')}>{p.addr}</span><Icon name="chevronRight" size={16} stroke="var(--text3)" /></div>
+                        <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}><span style={css(chTag(p.channel))}>{chLabel(p.channel)}</span><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span></div>
+                        <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{p.mkt}</span><span style={css('font-family:var(--mono);')}>{fmtSF(p.sf)} SF</span><span>{cardSub(p)}</span></div>
+                        <div style={css('font-size:11.5px;color:var(--text3);')}>{p.signal}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* BROKERS */}
+              {view === 'brokers' && (
+                <>
+                  <div className="data-table-wrap" style={css('flex:1;overflow:auto;min-height:0;')}>
+                    <table style={css('width:100%;border-collapse:collapse;font-size:12.5px;')}>
+                      <thead><tr style={css('position:sticky;top:0;z-index:2;background:var(--surface);')}>
+                        <th style={css('width:34px;padding:9px 0 9px 14px;border-bottom:1px solid var(--border);')}><input type="checkbox" checked={allBrokSel} onChange={selAllBrok} aria-label="Select all brokers" style={css('accent-color:var(--accent);')} /></th>
+                        {[th('left'), th('left'), th('left', 'col-secondary'), th('left'), th('left', 'col-secondary'), th('left'), th('right'), th('left'), th('left', 'col-secondary')].map((c, i) => (
+                          <th key={i} className={c.cls} style={css(c.s)}>{['BROKER', 'FIRM', 'PHONE', 'CELL', 'EMAIL', 'MARKET(S)', '# LIST', 'PIPEDRIVE', 'ACTIONS'][i]}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {brokersData.map((b) => (
+                          <tr key={b.id} className="hov" style={css('border-bottom:1px solid var(--border);')}>
+                            <td style={css('padding:0 0 0 14px;')}><input type="checkbox" checked={selBrokers.includes(b.id)} onChange={() => toggleBrok(b.id)} aria-label="Select broker" style={css('accent-color:var(--accent);')} /></td>
+                            <td style={css('padding:10px 8px;font-weight:500;white-space:nowrap;')}>{b.name}</td>
+                            <td style={css('padding:10px 8px;color:var(--text2);white-space:nowrap;')}>{b.firm}</td>
+                            <td className="col-secondary" style={css('padding:10px 8px;color:var(--text2);font-family:var(--mono);font-size:11.5px;')}>{b.phone}</td>
+                            <td style={css('padding:10px 8px;font-family:var(--mono);font-size:11.5px;')}><span style={css('color:var(--accent);background:var(--accent-dim);padding:2px 6px;border-radius:4px;')}>{b.cell}</span></td>
+                            <td className="col-secondary" style={css('padding:10px 8px;color:var(--text2);font-size:11.5px;')}>{b.email}</td>
+                            <td style={css('padding:10px 8px;color:var(--text2);white-space:nowrap;')}>{b.mkts}</td>
+                            <td style={css('padding:10px 8px;text-align:right;font-family:var(--mono);')}>{b.listings}</td>
+                            <td style={css('padding:10px 8px;')}><span style={css(`display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:5px;border:1px solid var(--border);${b.synced ? 'color:var(--green);background:var(--green-tint);' : 'color:var(--text3);background:var(--surface2);'}`)}>{b.synced && <Icon name="check" size={11} sw={2.4} />}{b.synced ? 'Synced' : 'Not synced'}</span></td>
+                            <td className="col-secondary" style={css('padding:10px 14px 10px 8px;white-space:nowrap;')}><button className="tap hov" onClick={() => setView('table')} style={css('height:26px;padding:0 9px;background:var(--surface3);border:1px solid var(--border2);border-radius:5px;color:var(--text2);font-size:11px;')}>View listings</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="card-list" style={css('flex-direction:column;flex:1;overflow-y:auto;min-height:0;')}>
+                    {brokersData.map((b) => (
+                      <div key={b.id} style={css('display:flex;flex-direction:column;gap:9px;padding:14px 16px;border-bottom:1px solid var(--border);')}>
+                        <div style={css('display:flex;align-items:center;gap:9px;')}><span style={css('font-weight:600;font-size:14.5px;flex:1;')}>{b.name}</span><span style={css(`display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:5px;border:1px solid var(--border);${b.synced ? 'color:var(--green);background:var(--green-tint);' : 'color:var(--text3);background:var(--surface2);'}`)}>{b.synced && <Icon name="check" size={11} sw={2.4} />}{b.synced ? 'Synced' : 'Not synced'}</span></div>
+                        <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{b.firm}</span><span>{b.mkts}</span><span style={css('font-family:var(--mono);')}>{b.listings} listings</span></div>
+                        <div style={css('display:flex;align-items:center;gap:10px;')}><span style={css('font-family:var(--mono);font-size:11.5px;color:var(--accent);background:var(--accent-dim);padding:2px 7px;border-radius:4px;')}>{b.cell}</span><button className="tap hov" onClick={() => setView('table')} style={css('margin-left:auto;height:30px;padding:0 12px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;')}>View listings</button></div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* MAP */}
+              {view === 'map' && !showEmpty && (
+                <div className="map-view" data-map={mapStyle} style={css('flex:1;position:relative;min-height:0;overflow:hidden;background:var(--map-land);')}>
+                  <DealMap props={visibleProps} mapStyle={mapStyle} theme={theme} onOpen={setDrawerId} />
+
+                  <div style={css('position:absolute;top:12px;left:12px;display:flex;gap:2px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:7px;z-index:1100;')}>
+                    <button className="tap hov" onClick={() => setMapStyle('clean')} aria-label="Clean basemap" style={css(seg(mapStyle === 'clean') + 'height:26px;')}>Clean</button>
+                    <button className="tap hov" onClick={() => setMapStyle('sat')} aria-label="Satellite basemap" style={css(seg(mapStyle === 'sat') + 'height:26px;')}>Satellite</button>
+                  </div>
+                  <div style={css('position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:6px;padding:9px 11px;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:1100;font-size:11px;color:var(--text2);')}>
+                    <div style={css('display:flex;align-items:center;gap:7px;')}><span style={css('width:9px;height:9px;border-radius:50%;background:var(--green);')} />Actionable</div>
+                    <div style={css('display:flex;align-items:center;gap:7px;')}><span style={css('width:9px;height:9px;border-radius:50%;background:var(--amber);')} />Tentative</div>
+                    <div style={css('display:flex;align-items:center;gap:7px;')}><span style={css('width:9px;height:9px;border-radius:50%;background:var(--red);')} />Pass</div>
+                    <div style={css('height:1px;background:var(--border);margin:2px 0;')} />
+                    <div style={css('display:flex;align-items:center;gap:7px;')}><span style={css('width:10px;height:10px;border-radius:50%;border:2px solid var(--text2);box-sizing:border-box;')} />Off-market</div>
+                    <div style={css('display:flex;align-items:center;gap:7px;')}><span style={css('display:inline-block;width:9px;height:9px;background:var(--text2);border-radius:50% 50% 50% 0;transform:rotate(-45deg);')} />On-market</div>
+                  </div>
+                  <div style={css('position:absolute;left:12px;bottom:12px;z-index:1100;display:flex;align-items:center;gap:7px;height:24px;padding:0 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:10.5px;')}><span style={css(`width:6px;height:6px;border-radius:50%;background:${dataset.isReal ? 'var(--accent)' : 'var(--text3)'};`)} />{fmtInt(matchShown)} mapped · {dataset.isReal ? 'live data' : 'sample'}</div>
+                </div>
+              )}
+
+              {/* EMPTY */}
+              {showEmpty && (
+                <div style={css('flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;')}>
+                  <div style={css('width:48px;height:48px;border-radius:12px;border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;color:var(--text3);')}><Icon name="slashCircle" size={22} sw={1.6} /></div>
+                  <div style={css('text-align:center;')}><div style={css('font-size:14px;color:var(--text2);font-weight:500;margin-bottom:4px;')}>No properties match these filters</div><div style={css('font-size:12px;color:var(--text3);')}>Re-enable a score category or widen the channel.</div></div>
+                  <button className="tap hov" onClick={clearAll} style={css('height:34px;padding:0 14px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;')}>Clear all filters</button>
+                </div>
+              )}
+
+              {/* BULK BAR */}
+              {showBulk && (
+                <div className="bulk-bar" style={css('position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:9px 10px 9px 18px;background:var(--surface3);border:1px solid var(--border2);border-radius:11px;box-shadow:0 12px 34px rgba(0,0,0,.45);z-index:20;')}>
+                  <span style={css('font-size:12.5px;font-weight:500;white-space:nowrap;')}><span style={css('font-family:var(--mono);color:var(--accent);')}>{bulkCount}</span> selected</span>
+                  <div style={css('width:1px;height:20px;background:var(--border2);')} />
+                  <button className="tap hov" style={css('height:32px;padding:0 13px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12px;white-space:nowrap;')}>Send {bulkCount} to Pipedrive</button>
+                  {view === 'table' && <button className="tap hov" style={css('height:32px;padding:0 13px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;white-space:nowrap;')}>Add {bulkCount} to call queue</button>}
+                  <button onClick={clearSel} aria-label="Clear selection" style={css('display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:transparent;border:none;color:var(--text3);')}><Icon name="x" size={15} /></button>
+                </div>
+              )}
+
+              {/* DETAIL DRAWER */}
+              {drawerProp && (
+                <>
+                  <div className="detail-scrim" onClick={() => setDrawerId(null)} style={css('position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:25;')} />
+                  <div className="detail-drawer" onClick={(e) => e.stopPropagation()} style={css('position:absolute;top:0;right:0;bottom:0;width:430px;background:var(--surface);border-left:1px solid var(--border2);z-index:26;display:flex;flex-direction:column;animation:drawerin .18s ease;box-shadow:-14px 0 40px rgba(0,0,0,.35);')}>
+                    <div style={css('flex:0 0 auto;padding:16px 18px;border-bottom:1px solid var(--border);')}>
+                      <div style={css('display:flex;align-items:center;gap:9px;margin-bottom:6px;')}>
+                        <span style={css(chDot(drawerProp.channel))} /><span style={css(chTag(drawerProp.channel))}>{chLabel(drawerProp.channel)}</span>
+                        <button onClick={() => setDrawerId(null)} aria-label="Close detail" className="tap" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;background:none;border:none;color:var(--text3);width:30px;height:30px;')}><Icon name="x" size={17} /></button>
+                      </div>
+                      <div style={css('font-size:17px;font-weight:600;letter-spacing:-.01em;')}>{drawerProp.addr}</div>
+                      <div style={css('color:var(--text2);font-size:12.5px;margin-top:2px;')}>{drawerProp.mkt}, {drawerProp.st}</div>
+                    </div>
+                    <div style={css('flex:1;overflow-y:auto;padding:16px 18px;')}>
+                      <div style={css('display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:18px;')}>
+                        {[['Building SF', fmtSF(drawerProp.sf)], ['Year built', drawerProp.year], ['Clear ht', `${drawerProp.clear} ft`]].map(([l, v]) => (
+                          <div key={l} style={css('background:var(--surface2);padding:10px 12px;')}><div style={css('font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;')}>{l}</div><div style={css('font-family:var(--mono);font-size:15px;margin-top:3px;')}>{v}</div></div>
+                        ))}
+                      </div>
+                      <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;')}>
+                        <div style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;')}>Score breakdown</div>
+                        <span style={css('display:inline-flex;align-items:center;gap:6px;font-size:12px;')}><span style={css(scDot(drawerProp.cat))} /><span style={css(scLabel(drawerProp.cat))}>{drawerProp.cat}</span><span style={css('font-family:var(--mono);')}>{drawerProp.score}/100</span></span>
+                      </div>
+                      <div style={css('display:flex;flex-direction:column;gap:8px;margin-bottom:20px;')}>
+                        {breakdownFor(drawerProp).map((c) => (
+                          <div key={c.label}><div style={css('display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px;')}><span style={css('color:var(--text2);')}>{c.label}</span><span style={css('font-family:var(--mono);color:var(--text3);')}>{c.val}</span></div><div style={css('height:5px;border-radius:3px;background:var(--surface3);overflow:hidden;')}><div style={css(c.barStyle)} /></div></div>
+                        ))}
+                      </div>
+                      {drawerProp.channel === 'off' ? (
+                        <>
+                          <div style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:8px;')}>Owner on title</div>
+                          <div style={css('background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:18px;')}>
+                            <div style={css('font-weight:600;margin-bottom:4px;')}>{drawerProp.owner}</div>
+                            <div style={css('font-size:11.5px;color:var(--text2);')}>{drawerProp.ownerType} · Mailing: {drawerProp.mail}</div>
+                            {drawerProp.oos && <div style={css('margin-top:8px;display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--off);background:rgba(147,137,214,.14);padding:3px 8px;border-radius:5px;')}><Icon name="flag" size={12} sw={1.8} />Out-of-state owner · {drawerProp.oos}</div>}
+                            {(drawerProp.phones?.length || drawerProp.emails?.length || drawerProp.person) && (
+                              <div style={css('margin-top:9px;padding-top:9px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text2);display:flex;flex-direction:column;gap:3px;')}>
+                                {drawerProp.person && <div style={css('color:var(--text);')}>{drawerProp.person}</div>}
+                                {drawerProp.phones?.length > 0 && <div style={css('font-family:var(--mono);')}>{fmtPhone(drawerProp.phones[0])}{drawerProp.phones.length > 1 ? ` · +${drawerProp.phones.length - 1} more` : ''}</div>}
+                                {drawerProp.emails?.length > 0 && <div>{drawerProp.emails[0]}</div>}
+                                {drawerProp.contactConf && <div style={css('font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;')}>contact confidence · {drawerProp.contactConf}</div>}
+                              </div>
+                            )}
+                          </div>
+                          <div style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:8px;')}>Distress evidence</div>
+                          <div style={css('background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:18px;font-size:12px;color:var(--text2);line-height:1.7;')}>
+                            {drawerProp.sigs?.length > 0
+                              ? drawerProp.sigs.map((s, i) => <div key={i}>• {humanizeSig(s.type)}{s.date ? ` · ${s.date}` : ''}{s.detail ? ` — ${s.detail}` : ''}</div>)
+                              : <div>• {drawerProp.signal}</div>}
+                            {drawerProp.nViol > 0 && <div>• {drawerProp.nViol} code violation{drawerProp.nViol > 1 ? 's' : ''} (24mo)</div>}
+                            {drawerProp.lastSale && <div>• Last sale: {drawerProp.lastSale}{drawerProp.lastPrice ? ` · $${fmtInt(drawerProp.lastPrice)}` : ''}{drawerProp.holdYears != null ? ` · held ${drawerProp.holdYears}y` : ''}</div>}
+                            {drawerProp.assessed > 0 && <div>• Assessed value: ${fmtInt(drawerProp.assessed)}</div>}
+                            {drawerProp.distMi != null && <div>• {drawerProp.distMi} mi from core{drawerProp.bucket === 'manual review' ? ' · 60–75k manual-review band' : ''}</div>}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:8px;')}>Listing</div>
+                          <div style={css('background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:18px;')}>
+                            <div style={css('display:flex;justify-content:space-between;margin-bottom:6px;')}><span style={css('font-weight:600;')}>{drawerProp.broker}</span><span style={css('font-family:var(--mono);color:var(--accent);')}>{fmtMoney2(drawerProp.ask)}/SF</span></div>
+                            <div style={css('font-size:11.5px;color:var(--text2);')}>{drawerProp.firm}{drawerProp.daysOn != null ? ` · ${drawerProp.daysOn} days on market` : ''} · {drawerProp.signal}</div>
+                          </div>
+                        </>
+                      )}
+                      <div style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:8px;')}>Imagery</div>
+                      <div style={css('display:flex;gap:8px;')}>
+                        <a href={`https://www.google.com/maps/@${drawerProp.lat},${drawerProp.lng},19z/data=!3m1!1e3`} target="_blank" rel="noreferrer" className="tap hov" style={css('flex:1;height:38px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:8px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:12px;text-decoration:none;')}><Icon name="map" size={14} sw={1.8} />Aerial</a>
+                        <a href={`https://www.google.com/maps?q=&layer=c&cbll=${drawerProp.lat},${drawerProp.lng}`} target="_blank" rel="noreferrer" className="tap hov" style={css('flex:1;height:38px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:8px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:12px;text-decoration:none;')}><Icon name="map" size={14} sw={1.8} />Street View</a>
+                      </div>
+                    </div>
+                    <div style={css('flex:0 0 auto;padding:13px 18px;border-top:1px solid var(--border);display:flex;gap:9px;')}>
+                      <button className="tap hov" style={css('flex:1;height:38px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;')}>{drawerProp.channel === 'off' ? 'Push owner Lead to Pipedrive' : 'Push broker Deal to Pipedrive'}</button>
+                      <button className="tap hov" style={css('height:38px;padding:0 14px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;')}>Add to call queue</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {module === 'supply' && <SupplyModel />}
+        {module === 'caller' && <AICaller />}
+        {module === 'deals' && <DealsDB />}
+        {module === 'reuse' && <ReuseFinder />}
+      </div>
+
+      {/* ===================== BOTTOM TAB BAR (phone) ===================== */}
+      <div className="bottom-tabs" style={css('flex:0 0 auto;align-items:stretch;height:56px;border-top:1px solid var(--border);background:var(--surface);')}>
+        {[['properties', 'Properties', 'grid'], ['reuse', 'Reuse', 'recycle'], ['caller', 'Caller', 'phone'], ['deals', 'Deals', 'database'], ['supply', 'Supply', 'bars']].map(([k, label, icon]) => (
+          <button key={k} onClick={() => goModule(k)} style={css(tabBtn(module === k))}><Icon name={icon} size={20} sw={1.8} />{label}</button>
+        ))}
+      </div>
+
+      {/* ===================== PHONE SHEETS ===================== */}
+      {searchOpen && (
+        <div style={css('position:fixed;inset:0;background:var(--bg);z-index:120;display:flex;flex-direction:column;animation:fadein .15s ease;')}>
+          <div style={css('display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--border);')}>
+            <div style={css('display:flex;align-items:center;gap:9px;flex:1;height:44px;padding:0 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;')}><Icon name="search" size={16} style={css('color:var(--text2);')} /><input autoFocus aria-label="Search" placeholder="Search address · owner · broker · APN" style={css('flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:15px;')} /></div>
+            <button className="tap" onClick={() => setSearchOpen(false)} style={css('height:44px;padding:0 14px;background:transparent;border:none;color:var(--accent);font-size:14px;font-weight:500;')}>Cancel</button>
+          </div>
+          <div style={css('flex:1;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12.5px;')}>Type to search the sourced universe.</div>
+        </div>
+      )}
+
+      {statusOpen && (
+        <>
+          <div onClick={() => setStatusOpen(false)} style={css('position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:120;animation:fadein .15s ease;')} />
+          <div style={css('position:fixed;left:0;right:0;bottom:0;z-index:121;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--border2);padding:18px;animation:sheetup .24s ease;')}>
+            <div style={css('width:38px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 14px;')} />
+            <div style={css('display:flex;align-items:center;gap:9px;margin-bottom:14px;')}><span style={css(`width:9px;height:9px;border-radius:50%;background:${sourcing ? 'var(--accent)' : 'var(--text3)'};${sourcing ? 'animation:pulse 1.1s infinite;' : ''}`)} /><span style={css('font-size:15px;font-weight:600;')}>{sourcing ? 'Sourcing live' : 'Sourcing paused'}</span><button className="tap" onClick={() => setStatusOpen(false)} aria-label="Close" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button></div>
+            <div style={css('display:flex;gap:18px;margin-bottom:16px;')}>
+              <div><div style={css('font-family:var(--mono);font-size:22px;font-weight:500;')}>{fmtInt(total)}</div><div style={css('font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;')}>scanned</div></div>
+              <div><div style={css('font-family:var(--mono);font-size:22px;font-weight:500;color:var(--accent);')}>+{newCount}</div><div style={css('font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;')}>new</div></div>
+              <div style={css('margin-left:auto;text-align:right;')}><div style={css('font-size:11px;color:var(--text2);')}>Updated</div><div style={css('font-size:11px;color:var(--text3);')}>{lastUpdated}</div></div>
+            </div>
+            <div style={css('font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:10px;')}>Per-source</div>
+            <div style={css('display:flex;flex-direction:column;gap:10px;margin-bottom:18px;')}>
+              {sources.map((s) => (
+                <div key={s.n}><div style={css('display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px;')}><span style={css('color:var(--text2);')}>{s.n}</span><span style={css('font-family:var(--mono);color:var(--text3);')}>{Math.round(s.p * 100)}%</span></div><div style={css('height:5px;border-radius:3px;background:var(--surface3);overflow:hidden;')}><div style={css(`height:100%;width:${Math.round(s.p * 100)}%;background:var(--accent);border-radius:3px;`)} /></div></div>
+              ))}
+            </div>
+            <button className="tap" onClick={() => (sourcing ? setSourcing(false) : startSourcing())} style={css(`width:100%;height:48px;border-radius:9px;font-size:13.5px;font-weight:600;${sourcing ? 'background:var(--surface2);border:1px solid var(--border2);color:var(--text);' : 'background:var(--accent);border:none;color:#06120F;'}`)}>{sourcing ? 'Stop sourcing' : 'Keep Sourcing'}</button>
+          </div>
+        </>
+      )}
+
+      {acctOpen && (
+        <>
+          <div onClick={() => setAcctOpen(false)} style={css('position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:120;animation:fadein .15s ease;')} />
+          <div style={css('position:fixed;left:0;right:0;bottom:0;z-index:121;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--border2);padding:18px;animation:sheetup .24s ease;')}>
+            <div style={css('width:38px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 14px;')} />
+            <div style={css('display:flex;align-items:center;gap:11px;margin-bottom:18px;')}><div style={css('width:42px;height:42px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--text2);')}>JS</div><div style={css('flex:1;')}><div style={css('font-size:14px;font-weight:600;')}>J. Simi</div><div style={css('font-size:11.5px;color:var(--text3);')}>Acquisitions analyst</div></div><button className="tap" onClick={() => setAcctOpen(false)} aria-label="Close" style={css('display:flex;align-items:center;justify-content:center;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button></div>
+            <button className="tap" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} style={css('display:flex;align-items:center;gap:10px;width:100%;height:48px;padding:0 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:13.5px;margin-bottom:10px;')}><Icon name="moon" size={17} sw={1.7} />Toggle light / dark theme</button>
+            <div style={css('display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:10px 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:13.5px;')}><span style={css('width:8px;height:8px;border-radius:50%;background:var(--accent);flex:0 0 auto;')} /><div style={css('flex:1;')}>Markets</div><span style={css('font-size:12px;color:var(--text3);')}>All 10 metros</span></div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}

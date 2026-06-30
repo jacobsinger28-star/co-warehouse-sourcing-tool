@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{font-family:'Inter',system-ui,sans-serif;background:#0E1116;-webkit-font-smoothing:antialiased;}
+input,button,select{font-family:inherit;}
+input::placeholder{color:var(--text2);opacity:.85;}
+:root{ --bg:#0E1116; --surface:#151A21; --surface2:#1A2028; --surface3:#222A33; --border:#232A33; --border2:#2C353F; --text:#E6E9ED; --text2:#A7B1BD; --text3:#6B7682; --accent:#2EA6A0; --accent-dim:rgba(46,166,160,.16); --accent-line:rgba(46,166,160,.5); --off:#9389D6; --on:#5E8AC0; --green:#57A977; --amber:#CB9A48; --red:#C36458; --green-tint:rgba(87,169,119,.085); --amber-tint:rgba(203,154,72,.085); --red-tint:rgba(195,100,88,.07); --mono:'JetBrains Mono',ui-monospace,monospace; }
+[data-theme="light"]{ --bg:#EBEEF2; --surface:#FFFFFF; --surface2:#F6F8FA; --surface3:#EDF0F4; --border:#E2E6EC; --border2:#D2D7DF; --text:#161B22; --text2:#4C5663; --text3:#7B8590; --green-tint:rgba(87,169,119,.13); --amber-tint:rgba(203,154,72,.13); --red-tint:rgba(195,100,88,.10); }
+[data-map="clean"]{ --map-land:#161d26; --map-water:#0d131a; --map-coast:#3a4651; --map-road:#323d48; --map-road2:#262f38; --map-parcel:#2a333d; --map-blob:transparent; --map-label:#828d98; }
+[data-map="sat"]{ --map-land:#15201a; --map-water:#0a1014; --map-coast:rgba(126,156,144,.4); --map-road:rgba(150,162,150,.18); --map-road2:rgba(150,162,150,.1); --map-parcel:rgba(150,162,150,.12); --map-blob:rgba(64,96,66,.5); --map-label:#b6bfc7; }
+@keyframes pulse{0%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}100%{opacity:1;transform:scale(1)}}
+@keyframes shimmer{0%{background-position:-260px 0}100%{background-position:260px 0}}
+@keyframes drawerin{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes sheetup{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:#2C353F;border-radius:5px}::-webkit-scrollbar-track{background:transparent}
+.skel{background:linear-gradient(90deg,var(--surface2) 25%,var(--surface3) 50%,var(--surface2) 75%);background-size:460px 100%;animation:shimmer 1.4s infinite linear;border-radius:3px}
+*:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px;}
+input:focus-visible,select:focus-visible,tr:focus-visible{outline:2px solid var(--accent);outline-offset:-1px;}
+.bottom-tabs,.filters-btn,.search-icon-btn,.sourcing-mini,.legend-mini,.legend-phone,.caller-tabs,.card-list,.rail-close,.src-aggregate,.active-chips{display:none;}
+@media (max-width:1179px){
+  .brand-suffix{display:none!important;}
+  .search-box{width:158px!important;min-width:120px!important;}
+  .legend-full{display:none!important;}
+  .legend-mini{display:inline-flex!important;}
+  .src-strip{display:none!important;}
+  .src-aggregate{display:flex!important;}
+  .props-rail{position:absolute!important;left:0;top:0;bottom:0;z-index:60;width:292px!important;flex:0 0 292px!important;transform:translateX(-104%);box-shadow:16px 0 48px rgba(0,0,0,.5);}
+  .props-rail[data-open="1"]{transform:translateX(0)!important;}
+  .filters-btn{display:inline-flex!important;}
+  .rail-close{display:inline-flex!important;}
+  .col-secondary{display:none!important;}
+  .detail-drawer{width:min(430px,62vw)!important;}
+  .supply-kpis{grid-template-columns:1fr 1fr!important;}
+  .caller-grid{grid-template-columns:1fr 284px!important;grid-template-rows:1fr 1fr!important;grid-template-areas:'active queue' 'active recent'!important;}
+  .caller-queue{grid-area:queue;min-height:0;}
+  .caller-active{grid-area:active;min-height:0;}
+  .caller-recent{grid-area:recent;min-height:0;border-top:1px solid var(--border);}
+  .deals-grid{grid-template-columns:1fr!important;}
+}
+@media (max-width:767px){
+  .topbar{height:48px!important;flex-basis:48px!important;gap:9px!important;padding:0 12px!important;}
+  .sample-pill,.markets-btn,.search-box,.sourcing-full{display:none!important;}
+  .search-icon-btn,.sourcing-mini{display:inline-flex!important;}
+  .modswitcher{display:none!important;}
+  .bottom-tabs{display:flex!important;}
+  .legend-phone{display:flex!important;}
+  .props-rail{position:fixed!important;left:0!important;right:0!important;bottom:0!important;top:auto!important;width:100%!important;height:88vh!important;flex:none!important;transform:translateY(104%);border-right:none!important;border-radius:18px 18px 0 0;border-top:1px solid var(--border2);z-index:95;}
+  .props-rail[data-open="1"]{transform:translateY(0)!important;}
+  .data-table-wrap{display:none!important;}
+  .card-list{display:flex!important;}
+  .detail-drawer{width:100vw!important;border-left:none!important;}
+  .bulk-bar{left:0!important;right:0!important;bottom:0!important;transform:none!important;width:100%!important;border-radius:0!important;border-left:none!important;border-right:none!important;}
+  .supply-grid{grid-template-columns:1fr!important;}
+  .caller-grid{display:block!important;}
+  .caller-tabs{display:flex!important;}
+  .caller-queue,.caller-active,.caller-recent{display:none!important;height:100%!important;border:none!important;}
+  .caller-grid[data-tab="active"] .caller-active{display:flex!important;}
+  .caller-grid[data-tab="queue"] .caller-queue{display:flex!important;}
+  .caller-grid[data-tab="recent"] .caller-recent{display:flex!important;}
+  .deals-grid{grid-template-columns:1fr!important;}
+  .active-chips{display:flex!important;}
+  .content-pad{padding:16px 14px!important;}
+  .tap{min-height:44px!important;}
+}
+</style>
+</helmet>
+<div class="app-root" data-theme="{{ theme }}" style="display:flex;flex-direction:column;height:100vh;background:var(--bg);color:var(--text);font-size:13px;line-height:1.45;overflow:hidden;">
+
+  <!-- ===================== TOP BAR ===================== -->
+  <div class="topbar" style="display:flex;align-items:center;gap:16px;height:52px;flex:0 0 52px;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--border);">
+    <div style="display:flex;align-items:center;gap:9px;">
+      <div style="width:18px;height:18px;border-radius:4px;background:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);"></div>
+      <span style="font-weight:600;letter-spacing:-.01em;">SimiCapital</span>
+      <span class="brand-suffix" style="color:var(--text3);">·</span>
+      <span class="brand-suffix" style="color:var(--text2);font-weight:500;">Sourcing</span>
+    </div>
+    <div class="sample-pill" title="All records shown are sample data" style="display:flex;align-items:center;gap:6px;height:22px;padding:0 9px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text2);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;"><span style="width:5px;height:5px;border-radius:50%;background:var(--text3);"></span>Sample data</div>
+    <button class="markets-btn" onClick="{{ toggleMktMenu }}" aria-label="Select markets and metros" style="display:flex;align-items:center;gap:8px;height:30px;padding:0 11px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;font-size:12.5px;">
+      <span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span>
+      {{ marketsLabel }}
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text3);"><path d="M6 9l6 6 6-6"></path></svg>
+    </button>
+
+    <div style="flex:1;"></div>
+
+    <sc-if value="{{ notSourcing }}" hint-placeholder-val="{{ true }}">
+      <button class="sourcing-full tap" onClick="{{ toggleSourcing }}" style="display:flex;align-items:center;gap:8px;height:32px;padding:0 16px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;cursor:pointer;box-shadow:0 0 0 1px var(--accent-line);">
+        <span style="width:7px;height:7px;border-radius:50%;background:#06120F;"></span>
+        Keep Sourcing
+      </button>
+    </sc-if>
+    <sc-if value="{{ sourcing }}" hint-placeholder-val="{{ false }}">
+      <div class="sourcing-full" style="display:flex;align-items:center;gap:11px;height:42px;padding:0 7px 0 13px;background:var(--surface2);border:1px solid var(--accent-line);border-radius:9px;box-shadow:0 0 0 3px var(--accent-dim);">
+        <span style="flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1.1s infinite;"></span>
+        <div style="display:flex;flex-direction:column;gap:5px;width:248px;">
+          <div style="display:flex;align-items:center;gap:7px;white-space:nowrap;">
+            <span style="font-weight:600;font-size:12px;">Sourcing</span>
+            <span style="font-family:var(--mono);font-size:12px;color:var(--text);">{{ totalFmt }}</span>
+            <span style="color:var(--text3);font-size:11px;">·</span>
+            <span style="font-family:var(--mono);font-size:12px;color:var(--accent);">+{{ newCount }} new</span>
+          </div>
+          <div class="src-strip" style="display:flex;gap:6px;">
+            <sc-for list="{{ sources }}" as="s" hint-placeholder-count="6">
+              <div title="{{ s.n }}" style="flex:1;display:flex;flex-direction:column;gap:3px;min-width:0;">
+                <div style="height:3px;border-radius:2px;background:var(--border2);overflow:hidden;"><div style="{{ s.barStyle }}"></div></div>
+                <span style="font-size:8px;letter-spacing:.02em;color:var(--text3);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ s.short }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div class="src-aggregate" style="align-items:center;gap:8px;">
+            <div style="flex:1;height:4px;border-radius:2px;background:var(--border2);overflow:hidden;"><div style="{{ aggBarStyle }}"></div></div>
+            <span style="font-size:9.5px;color:var(--text3);white-space:nowrap;">6 sources</span>
+          </div>
+        </div>
+        <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;line-height:1.25;">
+          <span style="font-size:8.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;">Updated</span>
+          <span style="font-size:10.5px;color:var(--text2);white-space:nowrap;">{{ lastUpdated }}</span>
+        </div>
+        <button onClick="{{ toggleSourcing }}" style="flex:0 0 auto;height:28px;padding:0 12px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;font-weight:500;cursor:pointer;">Stop</button>
+      </div>
+    </sc-if>
+
+    <button class="search-icon-btn tap" onClick="{{ openSearch }}" aria-label="Search" style="align-items:center;justify-content:center;width:36px;height:36px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);cursor:pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.35-4.35"></path></svg></button>
+    <button class="sourcing-mini tap" onClick="{{ openStatus }}" aria-label="Sourcing status" style="align-items:center;justify-content:center;width:36px;height:36px;background:var(--surface2);border:1px solid {{ sourcingMiniBorder }};border-radius:8px;color:var(--text2);cursor:pointer;position:relative;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12a10 10 0 1 1 10 10"></path><path d="M12 7v5l3 2"></path></svg><span style="{{ sourcingMiniDot }}"></span></button>
+
+    <div class="search-box" style="display:flex;align-items:center;height:30px;padding:0 10px;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;min-width:230px;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text2);flex:0 0 auto;"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.35-4.35"></path></svg>
+      <input aria-label="Search address, owner, broker, or APN" placeholder="Search address · owner · broker · APN" style="background:transparent;border:none;outline:none;color:var(--text);font-size:12.5px;width:100%;"/>
+    </div>
+    <button class="tap" onClick="{{ toggleTheme }}" title="Toggle light / dark theme" aria-label="Toggle light / dark theme" style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;flex:0 0 auto;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></button>
+    <button onClick="{{ openAcct }}" aria-label="Account menu" style="flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--text2);cursor:pointer;">JS</button>
+  </div>
+
+  <!-- ===================== MODULE SWITCHER ===================== -->
+  <div class="modswitcher" style="display:flex;align-items:center;gap:14px;height:42px;flex:0 0 42px;padding:0 16px;background:var(--bg);border-bottom:1px solid var(--border);">
+    <div style="display:flex;gap:2px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:8px;">
+      <button onClick="{{ goProps }}" style="{{ modProps }}">Properties</button>
+      <button onClick="{{ goSupply }}" style="{{ modSupply }}">Supply Model</button>
+      <button onClick="{{ goCaller }}" style="{{ modCaller }}">AI Caller</button>
+      <button onClick="{{ goDeals }}" style="{{ modDeals }}">Deals DB</button>
+    </div>
+    <span style="color:var(--text3);font-size:11.5px;">{{ moduleSub }}</span>
+    <div style="flex:1;"></div>
+    <div class="legend-full" style="display:flex;align-items:center;gap:14px;font-size:11px;color:var(--text2);">
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;border:2px solid var(--off);box-sizing:border-box;"></span>Off-market</span>
+      <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--on);"></span>On-market</span>
+    </div>
+    <div class="legend-mini" title="Off-market vs on-market" style="align-items:center;gap:10px;font-size:11px;color:var(--text2);font-family:var(--mono);">
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;border-radius:50%;border:2px solid var(--off);box-sizing:border-box;"></span>412</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--on);"></span>435</span>
+    </div>
+  </div>
+
+  <!-- ===================== BODY ===================== -->
+  <div style="flex:1;min-height:0;display:flex;position:relative;overflow:hidden;">
+
+    <!-- ============ PROPERTIES MODULE ============ -->
+    <sc-if value="{{ isProperties }}" hint-placeholder-val="{{ true }}">
+    <div data-screen-label="Properties" style="flex:1;display:flex;min-height:0;">
+
+      <div class="props-rail" data-open="{{ railOpenFlag }}" style="flex:0 0 256px;border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0;">
+        <div class="rail-close" style="align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--border);">
+          <span style="font-size:13px;font-weight:600;">Filters</span>
+          <button onClick="{{ closeRail }}" aria-label="Close filters" class="tap" style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text2);cursor:pointer;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:14px 14px 8px;">
+
+          <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:9px;">Channel</div>
+          <div style="display:flex;gap:4px;padding:3px;background:var(--surface2);border-radius:7px;margin-bottom:20px;">
+            <button onClick="{{ chOff }}" style="{{ chBtnOff }}"><span style="width:7px;height:7px;border-radius:2px;background:var(--off);flex:0 0 auto;"></span>Off-market</button>
+            <button onClick="{{ chOn }}" style="{{ chBtnOn }}"><span style="width:7px;height:7px;border-radius:50%;background:var(--on);flex:0 0 auto;"></span>On-market</button>
+            <button onClick="{{ chBoth }}" style="{{ chBtnBoth }}">Both</button>
+          </div>
+
+          <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:9px;">Score</div>
+          <div style="display:flex;gap:6px;margin-bottom:14px;">
+            <button onClick="{{ tgActionable }}" style="{{ scActionable }}"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);flex:0 0 auto;"></span>Actionable</button>
+            <button onClick="{{ tgTentative }}" style="{{ scTentative }}"><span style="width:6px;height:6px;border-radius:50%;background:var(--amber);flex:0 0 auto;"></span>Tentative</button>
+            <button onClick="{{ tgPass }}" style="{{ scPass }}"><span style="width:6px;height:6px;border-radius:50%;background:var(--red);flex:0 0 auto;"></span>Pass</button>
+          </div>
+          <div style="margin-bottom:20px;">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:7px;"><span>Distress score (off-market)</span><span style="font-family:var(--mono);color:var(--text2);">0–100</span></div>
+            <div style="position:relative;height:4px;border-radius:2px;background:var(--surface3);"><div style="position:absolute;left:24%;right:8%;top:0;bottom:0;background:var(--accent);border-radius:2px;"></div><div style="position:absolute;left:24%;top:50%;width:12px;height:12px;border-radius:50%;background:var(--text);transform:translate(-50%,-50%);"></div><div style="position:absolute;left:92%;top:50%;width:12px;height:12px;border-radius:50%;background:var(--text);transform:translate(-50%,-50%);"></div></div>
+          </div>
+
+          <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:10px;">Filters</div>
+          <div style="display:flex;flex-direction:column;gap:11px;">
+            <div style="display:flex;flex-direction:column;gap:5px;"><label style="font-size:11px;color:var(--text2);font-weight:500;">Market / metro</label><select aria-label="Filter by market or metro" style="height:32px;padding:0 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;"><option>All markets</option><option>Nashville</option><option>Charlotte</option><option>Columbus</option><option>Charleston</option><option>Miami</option></select></div>
+            <div style="display:flex;flex-direction:column;gap:5px;"><label style="font-size:11px;color:var(--text2);font-weight:500;">Source</label><select aria-label="Filter by source" style="height:32px;padding:0 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;"><option>All sources</option><option>County GIS</option><option>Crexi</option><option>Colliers</option><option>CBRE</option><option>JLL</option><option>Cushman</option><option>Newmark</option><option>NAI</option></select></div>
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);font-weight:500;margin-bottom:7px;"><span>Building SF</span><span style="font-family:var(--mono);color:var(--text2);">50k – 300k</span></div>
+              <div style="position:relative;height:4px;border-radius:2px;background:var(--surface3);"><div style="position:absolute;left:0;right:0;top:0;bottom:0;background:var(--border2);border-radius:2px;"></div><div style="position:absolute;left:0;top:50%;width:12px;height:12px;border-radius:50%;background:var(--text);transform:translate(-50%,-50%);"></div><div style="position:absolute;left:100%;top:50%;width:12px;height:12px;border-radius:50%;background:var(--text);transform:translate(-50%,-50%);"></div></div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <div style="flex:1;display:flex;flex-direction:column;gap:5px;"><label style="font-size:11px;color:var(--text2);font-weight:500;">Clear ht (ft)</label><input aria-label="Minimum clear height in feet" placeholder="≥ 24" style="height:32px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;outline:none;"/></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:5px;"><label style="font-size:11px;color:var(--text2);font-weight:500;">Year built</label><input aria-label="Minimum year built" placeholder="≥ 1990" style="height:32px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;outline:none;"/></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:5px;"><label style="font-size:11px;color:var(--text2);font-weight:500;">Owner type</label><select aria-label="Filter by owner type" style="height:32px;padding:0 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;"><option>Any owner type</option><option>LLC</option><option>Trust</option><option>Individual</option></select></div>
+          </div>
+
+          <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);font-weight:600;margin:20px 0 10px;">Signals</div>
+          <div style="display:flex;flex-direction:column;gap:10px;font-size:12.5px;color:var(--text);">
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;"><input type="checkbox" style="accent-color:var(--accent);width:15px;height:15px;"/>Out-of-state owner</label>
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;"><input type="checkbox" style="accent-color:var(--accent);width:15px;height:15px;"/>Tax-delinquent</label>
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;"><input type="checkbox" style="accent-color:var(--accent);width:15px;height:15px;"/>Code violations</label>
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;"><input type="checkbox" style="accent-color:var(--accent);width:15px;height:15px;"/>Inferred-vacant</label>
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;"><input type="checkbox" style="accent-color:var(--accent);width:15px;height:15px;"/>Has owner / broker contact</label>
+          </div>
+        </div>
+        <div style="flex:0 0 auto;border-top:1px solid var(--border);padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <span style="font-size:12px;"><span style="font-family:var(--mono);font-weight:600;color:var(--text);">{{ matchShown }}</span><span style="color:var(--text2);"> of 1,847 match</span></span>
+          <div style="display:flex;gap:8px;">
+            <button onClick="{{ clearAll }}" style="background:none;border:none;color:var(--accent);font-size:11.5px;cursor:pointer;font-weight:500;">Clear all</button>
+            <button class="rail-close tap" onClick="{{ closeRail }}" style="height:30px;padding:0 16px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12px;cursor:pointer;">Apply</button>
+          </div>
+        </div>
+      </div>
+
+      <sc-if value="{{ showRailScrim }}" hint-placeholder-val="{{ false }}"><div onClick="{{ closeRail }}" style="position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:55;animation:fadein .15s ease;"></div></sc-if>
+
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;">
+        <div style="display:flex;align-items:center;gap:12px;height:46px;flex:0 0 46px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--bg);">
+          <button class="filters-btn tap" onClick="{{ toggleRail }}" aria-label="Open filters" style="align-items:center;gap:7px;height:30px;padding:0 12px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;cursor:pointer;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"></path></svg>Filters<sc-if value="{{ hasActiveChips }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;background:var(--accent);color:#06120F;border-radius:8px;font-size:10px;font-weight:600;">{{ filterCount }}</span></sc-if></button>
+          <span class="hide-phone" style="font-weight:600;font-size:13.5px;">All properties</span>
+          <span class="hide-phone" style="font-family:var(--mono);font-size:11.5px;color:var(--text2);padding:2px 7px;background:var(--surface);border:1px solid var(--border2);border-radius:5px;">{{ matchShown }} matching</span>
+          <div class="legend-phone" style="align-items:center;gap:12px;font-size:10.5px;color:var(--text2);font-family:var(--mono);">
+            <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;border-radius:50%;border:2px solid var(--off);box-sizing:border-box;"></span>Off</span>
+            <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--on);"></span>On</span>
+          </div>
+          <div style="flex:1;"></div>
+          <div style="display:flex;gap:2px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:8px;">
+            <button class="tap" onClick="{{ vMap }}" style="{{ viewMap }}">Map</button>
+            <button class="tap" onClick="{{ vTable }}" style="{{ viewTable }}">Properties</button>
+            <button class="tap" onClick="{{ vBrokers }}" style="{{ viewBrokers }}">Brokers</button>
+          </div>
+        </div>
+
+        <sc-if value="{{ hasActiveChips }}" hint-placeholder-val="{{ false }}">
+          <div class="active-chips" style="gap:7px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg);">
+            <sc-for list="{{ activeChips }}" as="c" hint-placeholder-count="2">
+              <button onClick="{{ c.onClear }}" style="display:flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 11px;background:var(--surface2);border:1px solid var(--border2);border-radius:14px;color:var(--text);font-size:11.5px;cursor:pointer;">{{ c.label }}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text3);"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isTableView }}" hint-placeholder-val="{{ true }}">
+        <div class="data-table-wrap" style="flex:1;overflow:auto;min-height:0;">
+          <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+            <thead><tr style="position:sticky;top:0;z-index:2;background:var(--surface);">
+              <th style="width:34px;padding:9px 0 9px 14px;border-bottom:1px solid var(--border);"><input type="checkbox" aria-label="Select all properties" checked="{{ allPropsSel }}" onChange="{{ selAllProps }}" style="accent-color:var(--accent);"/></th>
+              <th style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">CH</th>
+              <th style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">ADDRESS</th>
+              <th style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">MARKET</th>
+              <th style="text-align:right;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">SF</th>
+              <th style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">SCORE</th>
+              <th style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">KEY SIGNAL</th>
+              <th style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">OWNER / BROKER</th>
+              <th class="col-secondary" style="text-align:right;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">ASK $/SF</th>
+              <th class="col-secondary" style="text-align:right;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">YEAR</th>
+              <th class="col-secondary" style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">CONTACT</th>
+              <th style="width:28px;border-bottom:1px solid var(--border);"></th>
+            </tr></thead>
+            <tbody>
+              <sc-for list="{{ visibleProps }}" as="p" hint-placeholder-count="9">
+                <tr onClick="{{ p.onOpen }}" onKeyDown="{{ p.onKeyRow }}" tabindex="0" role="button" style="{{ p.rowStyle }}" style-hover="{{ p.rowHover }}">
+                  <td style="padding:0 0 0 14px;" onClick="{{ p.stop }}"><input type="checkbox" aria-label="Select property" checked="{{ p.selected }}" onChange="{{ p.onToggle }}" style="accent-color:var(--accent);"/></td>
+                  <td style="padding:9px 8px;"><span style="{{ p.chDot }}"></span></td>
+                  <td style="padding:9px 8px;font-weight:500;white-space:nowrap;">{{ p.addr }}</td>
+                  <td style="padding:9px 8px;color:var(--text2);">{{ p.mkt }}</td>
+                  <td style="padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;">{{ p.sfFmt }}</td>
+                  <td style="padding:9px 8px;"><span style="display:inline-flex;align-items:center;gap:6px;"><span style="{{ p.scDot }}"></span><span style="{{ p.scLabel }}">{{ p.cat }}</span><span style="font-family:var(--mono);font-size:11.5px;color:var(--text3);">{{ p.score }}</span></span></td>
+                  <td style="padding:9px 8px;color:var(--text2);font-size:12px;white-space:nowrap;">{{ p.signal }}</td>
+                  <td style="padding:9px 8px;color:var(--text2);white-space:nowrap;">{{ p.ownerOrBroker }}</td>
+                  <td class="col-secondary" style="padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);">{{ p.askFmt }}</td>
+                  <td class="col-secondary" style="padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);">{{ p.year }}</td>
+                  <td class="col-secondary" style="padding:9px 8px;"><span style="{{ p.contactStyle }}">{{ p.contact }}</span></td>
+                  <td style="padding:9px 14px 9px 4px;text-align:right;color:var(--text3);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-list" style="flex-direction:column;flex:1;overflow-y:auto;min-height:0;">
+          <sc-for list="{{ visibleProps }}" as="p" hint-placeholder-count="6">
+            <div onClick="{{ p.onOpen }}" onKeyDown="{{ p.onKeyRow }}" tabindex="0" role="button" style="{{ p.cardStyle }}">
+              <div style="display:flex;align-items:center;gap:9px;">
+                <span style="{{ p.scDot }}"></span>
+                <span style="font-weight:600;font-size:14.5px;flex:1;">{{ p.addr }}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="{{ p.chTagStyle }}">{{ p.chLabel }}</span>
+                <span style="{{ p.scChipStyle }}"><span style="{{ p.scDot }}"></span>{{ p.cat }} · {{ p.score }}</span>
+              </div>
+              <div style="display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;">
+                <span>{{ p.mkt }}</span><span style="font-family:var(--mono);">{{ p.sfFmt }} SF</span><span>{{ p.cardSub }}</span>
+              </div>
+              <div style="font-size:11.5px;color:var(--text3);">{{ p.signal }}</div>
+            </div>
+          </sc-for>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ isBrokersView }}" hint-placeholder-val="{{ false }}">
+        <div class="data-table-wrap" style="flex:1;overflow:auto;min-height:0;">
+          <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+            <thead><tr style="position:sticky;top:0;z-index:2;background:var(--surface);">
+              <th style="width:34px;padding:9px 0 9px 14px;border-bottom:1px solid var(--border);"><input type="checkbox" aria-label="Select all brokers" checked="{{ allBrokSel }}" onChange="{{ selAllBrok }}" style="accent-color:var(--accent);"/></th>
+              <th style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">BROKER</th>
+              <th style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">FIRM</th>
+              <th class="col-secondary" style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">PHONE</th>
+              <th style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">CELL</th>
+              <th class="col-secondary" style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">EMAIL</th>
+              <th style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">MARKET(S)</th>
+              <th style="text-align:right;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);"># LIST</th>
+              <th style="text-align:left;padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">PIPEDRIVE</th>
+              <th class="col-secondary" style="text-align:left;padding:9px 14px 9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);">ACTIONS</th>
+            </tr></thead>
+            <tbody>
+              <sc-for list="{{ brokersView }}" as="b" hint-placeholder-count="8">
+                <tr style="{{ b.rowStyle }}" style-hover="{{ b.rowHover }}">
+                  <td style="padding:0 0 0 14px;"><input type="checkbox" aria-label="Select broker" checked="{{ b.selected }}" onChange="{{ b.onToggle }}" style="accent-color:var(--accent);"/></td>
+                  <td style="padding:10px 8px;font-weight:500;white-space:nowrap;">{{ b.name }}</td>
+                  <td style="padding:10px 8px;color:var(--text2);white-space:nowrap;">{{ b.firm }}</td>
+                  <td class="col-secondary" style="padding:10px 8px;color:var(--text2);font-family:var(--mono);font-size:11.5px;">{{ b.phone }}</td>
+                  <td style="padding:10px 8px;font-family:var(--mono);font-size:11.5px;"><span style="color:var(--accent);background:var(--accent-dim);padding:2px 6px;border-radius:4px;">{{ b.cell }}</span></td>
+                  <td class="col-secondary" style="padding:10px 8px;color:var(--text2);font-size:11.5px;">{{ b.email }}</td>
+                  <td style="padding:10px 8px;color:var(--text2);white-space:nowrap;">{{ b.mkts }}</td>
+                  <td style="padding:10px 8px;text-align:right;font-family:var(--mono);">{{ b.listings }}</td>
+                  <td style="padding:10px 8px;"><span style="{{ b.syncStyle }}"><sc-if value="{{ b.synced }}" hint-placeholder-val="{{ false }}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg></sc-if>{{ b.syncLabel }}</span></td>
+                  <td class="col-secondary" style="padding:10px 14px 10px 8px;white-space:nowrap;"><button class="tap" onClick="{{ b.viewListings }}" style="height:26px;padding:0 9px;background:var(--surface3);border:1px solid var(--border2);border-radius:5px;color:var(--text2);font-size:11px;cursor:pointer;">View listings</button></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-list" style="flex-direction:column;flex:1;overflow-y:auto;min-height:0;">
+          <sc-for list="{{ brokersView }}" as="b" hint-placeholder-count="6">
+            <div style="{{ b.cardStyle }}">
+              <div style="display:flex;align-items:center;gap:9px;">
+                <span style="font-weight:600;font-size:14.5px;flex:1;">{{ b.name }}</span>
+                <span style="{{ b.syncStyle }}"><sc-if value="{{ b.synced }}" hint-placeholder-val="{{ false }}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg></sc-if>{{ b.syncLabel }}</span>
+              </div>
+              <div style="display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;">
+                <span>{{ b.firm }}</span><span>{{ b.mkts }}</span><span style="font-family:var(--mono);">{{ b.listings }} listings</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-family:var(--mono);font-size:11.5px;color:var(--accent);background:var(--accent-dim);padding:2px 7px;border-radius:4px;">{{ b.cell }}</span>
+                <button class="tap" onClick="{{ b.viewListings }}" style="margin-left:auto;height:30px;padding:0 12px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;cursor:pointer;">View listings</button>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ isMapView }}" hint-placeholder-val="{{ false }}">
+        <div class="map-view" data-map="{{ mapMode }}" style="flex:1;position:relative;min-height:0;overflow:hidden;background:var(--map-land);">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;display:block;">
+            <ellipse cx="26" cy="30" rx="20" ry="15" fill="var(--map-blob)"></ellipse>
+            <ellipse cx="58" cy="54" rx="24" ry="17" fill="var(--map-blob)"></ellipse>
+            <ellipse cx="40" cy="82" rx="16" ry="12" fill="var(--map-blob)"></ellipse>
+            <path d="M100,36 L82,42 Q73,55 76,68 L69,79 Q66,90 72,100 L100,100 Z" fill="var(--map-water)"></path>
+            <path d="M64,59 q6,3 5,10 q-5,2 -8,-2 q-1,-6 3,-8 z" fill="var(--map-water)"></path>
+            <path d="M100,36 L82,42 Q73,55 76,68 L69,79 Q66,90 72,100" fill="none" stroke="var(--map-coast)" stroke-width="1.2" vector-effect="non-scaling-stroke"></path>
+            <path d="M17,5 Q27,27 25,47 T35,93" fill="none" stroke="var(--map-water)" stroke-width="2.4" vector-effect="non-scaling-stroke" stroke-linecap="round"></path>
+            <path d="M5,21 L95,29" stroke="var(--map-road)" stroke-width="1.5" vector-effect="non-scaling-stroke" fill="none"></path>
+            <path d="M45,3 L40,97" stroke="var(--map-road)" stroke-width="1.5" vector-effect="non-scaling-stroke" fill="none"></path>
+            <path d="M7,66 Q50,57 90,49" stroke="var(--map-road)" stroke-width="1.3" vector-effect="non-scaling-stroke" fill="none"></path>
+            <path d="M13,43 L80,73" stroke="var(--map-road2)" stroke-width="1" vector-effect="non-scaling-stroke" fill="none"></path>
+            <path d="M31,10 L67,90" stroke="var(--map-road2)" stroke-width="1" vector-effect="non-scaling-stroke" fill="none"></path>
+            <path d="M58,8 Q70,30 66,60" stroke="var(--map-road2)" stroke-width="1" vector-effect="non-scaling-stroke" fill="none"></path>
+            <g stroke="var(--map-parcel)" stroke-width="0.8" vector-effect="non-scaling-stroke">
+              <path d="M38,19 H52 M38,22 H52 M38,25 H52 M38,28 H52"></path>
+              <path d="M40,17 V30 M43,17 V30 M46,17 V30 M49,17 V30"></path>
+            </g>
+            <g stroke="var(--map-parcel)" stroke-width="0.8" vector-effect="non-scaling-stroke">
+              <path d="M49,43 H61 M49,46 H61 M49,49 H61"></path>
+              <path d="M51,41 V51 M54,41 V51 M57,41 V51"></path>
+            </g>
+          </svg>
+
+          <sc-for list="{{ mapLabels }}" as="l" hint-placeholder-count="5"><div style="{{ l.style }}">{{ l.name }}</div></sc-for>
+          <sc-for list="{{ clusters }}" as="c" hint-placeholder-count="3"><div style="{{ c.style }}">{{ c.n }}</div></sc-for>
+          <sc-for list="{{ visibleProps }}" as="p" hint-placeholder-count="9"><div onClick="{{ p.onPin }}" onMouseEnter="{{ p.onHover }}" onMouseLeave="{{ p.offHover }}" onKeyDown="{{ p.onKeyPin }}" tabindex="0" role="button" aria-label="{{ p.tipText }}" style="{{ p.pinStyle }}"></div></sc-for>
+          <sc-if value="{{ hasHoverTip }}" hint-placeholder-val="{{ false }}"><div style="{{ hoverTipStyle }}"><div style="font-weight:600;margin-bottom:2px;">{{ hoverTip.addr }}</div><div style="display:flex;align-items:center;gap:5px;color:var(--text2);"><span style="{{ hoverTip.dot }}"></span>{{ hoverTip.meta }}</div></div></sc-if>
+
+          <div style="position:absolute;top:12px;left:12px;display:flex;gap:2px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:7px;z-index:6;">
+            <button class="tap" onClick="{{ mapClean }}" aria-label="Clean basemap" style="{{ mapCleanBtn }}">Clean</button>
+            <button class="tap" onClick="{{ mapSat }}" aria-label="Satellite basemap" style="{{ mapSatBtn }}">Satellite</button>
+          </div>
+          <div style="position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:6px;padding:9px 11px;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:6;font-size:11px;color:var(--text2);">
+            <div style="display:flex;align-items:center;gap:7px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--green);"></span>Actionable</div>
+            <div style="display:flex;align-items:center;gap:7px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--amber);"></span>Tentative</div>
+            <div style="display:flex;align-items:center;gap:7px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--red);"></span>Pass</div>
+            <div style="height:1px;background:var(--border);margin:2px 0;"></div>
+            <div style="display:flex;align-items:center;gap:7px;"><span style="width:10px;height:10px;border-radius:50%;border:2px solid var(--text2);box-sizing:border-box;"></span>Off-market</div>
+            <div style="display:flex;align-items:center;gap:7px;"><span style="display:inline-block;width:9px;height:9px;background:var(--text2);border-radius:50% 50% 50% 0;transform:rotate(-45deg);"></span>On-market</div>
+          </div>
+          <div style="position:absolute;right:13px;bottom:46px;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:7px;overflow:hidden;z-index:6;">
+            <button class="tap" aria-label="Zoom in" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--text2);cursor:pointer;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></button>
+            <div style="height:1px;background:var(--border);"></div>
+            <button class="tap" aria-label="Zoom out" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--text2);cursor:pointer;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"></path></svg></button>
+          </div>
+          <div aria-label="North" style="position:absolute;right:15px;bottom:122px;width:28px;height:28px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:6;color:var(--text3);gap:1px;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--accent)" stroke="var(--accent)" stroke-width="1" stroke-linejoin="round"><path d="M12 2l4 9-4-2-4 2 4-9z"></path></svg>
+            <span style="font-size:7px;font-weight:700;letter-spacing:.05em;">N</span>
+          </div>
+          <div style="position:absolute;left:12px;bottom:14px;display:flex;align-items:flex-end;gap:6px;z-index:6;color:var(--text3);font-size:9.5px;font-family:var(--mono);">
+            <div style="width:46px;height:6px;border:1px solid var(--text3);border-top:none;"></div>2 mi
+          </div>
+          <div style="position:absolute;left:50%;bottom:13px;transform:translateX(-50%);z-index:6;color:var(--text3);font-size:10px;opacity:.9;white-space:nowrap;pointer-events:none;">Preview map — live Leaflet / Mapbox map on implementation</div>
+
+          <sc-if value="{{ hasPopup }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;left:16px;bottom:46px;width:min(300px,72vw);background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:14px;z-index:7;box-shadow:0 10px 30px rgba(0,0,0,.4);">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="{{ popup.chDot }}"></span><span style="font-weight:600;font-size:13px;">{{ popup.addr }}</span><button onClick="{{ closePopup }}" aria-label="Close" style="display:flex;margin-left:auto;background:none;border:none;color:var(--text3);cursor:pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"></path></svg></button></div>
+              <div style="display:flex;gap:14px;font-size:11.5px;color:var(--text2);margin-bottom:10px;flex-wrap:wrap;">
+                <span>{{ popup.mkt }}</span><span style="font-family:var(--mono);">{{ popup.sfFmt }} SF</span><span style="display:inline-flex;align-items:center;gap:5px;"><span style="{{ popup.scDot }}"></span>{{ popup.cat }} {{ popup.score }}</span>
+              </div>
+              <div style="font-size:11.5px;color:var(--text2);margin-bottom:12px;">{{ popup.ownerOrBroker }}</div>
+              <div style="display:flex;gap:8px;"><button class="tap" onClick="{{ popup.onOpen }}" style="flex:1;height:30px;background:var(--accent);border:none;border-radius:6px;color:#06120F;font-weight:600;font-size:11.5px;cursor:pointer;">Open record</button><button class="tap" style="height:30px;padding:0 10px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;cursor:pointer;">Add to queue</button></div>
+            </div>
+          </sc-if>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ showEmptyState }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;">
+          <div style="width:48px;height:48px;border-radius:12px;border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;color:var(--text3);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg></div>
+          <div style="text-align:center;"><div style="font-size:14px;color:var(--text2);font-weight:500;margin-bottom:4px;">No properties match these filters</div><div style="font-size:12px;color:var(--text3);">Re-enable a score category or widen the channel.</div></div>
+          <button class="tap" onClick="{{ clearAll }}" style="height:34px;padding:0 14px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;cursor:pointer;">Clear all filters</button>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ showBulk }}" hint-placeholder-val="{{ false }}">
+          <div class="bulk-bar" style="position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:9px 10px 9px 18px;background:var(--surface3);border:1px solid var(--border2);border-radius:11px;box-shadow:0 12px 34px rgba(0,0,0,.45);z-index:20;">
+            <span style="font-size:12.5px;font-weight:500;white-space:nowrap;"><span style="font-family:var(--mono);color:var(--accent);">{{ bulkCount }}</span> selected</span>
+            <div style="width:1px;height:20px;background:var(--border2);"></div>
+            <button class="tap" style="height:32px;padding:0 13px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap;">{{ bulkPrimary }}</button>
+            <sc-if value="{{ showBulkQueue }}" hint-placeholder-val="{{ true }}"><button class="tap" style="height:32px;padding:0 13px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;cursor:pointer;white-space:nowrap;">Add {{ bulkCount }} to call queue</button></sc-if>
+            <button onClick="{{ clearSel }}" aria-label="Clear selection" style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:transparent;border:none;color:var(--text3);cursor:pointer;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ hasDrawer }}" hint-placeholder-val="{{ false }}">
+          <div class="detail-scrim" onClick="{{ closeDrawer }}" style="position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:25;"></div>
+          <div class="detail-drawer" style="position:absolute;top:0;right:0;bottom:0;width:430px;background:var(--surface);border-left:1px solid var(--border2);z-index:26;display:flex;flex-direction:column;animation:drawerin .18s ease;box-shadow:-14px 0 40px rgba(0,0,0,.35);">
+            <div style="flex:0 0 auto;padding:16px 18px;border-bottom:1px solid var(--border);">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;">
+                <span style="{{ drawer.chDot }}"></span>
+                <span style="{{ drawer.chTag }}">{{ drawer.chLabel }}</span>
+                <button onClick="{{ closeDrawer }}" aria-label="Close detail" class="tap" style="display:flex;align-items:center;justify-content:center;margin-left:auto;background:none;border:none;color:var(--text3);cursor:pointer;width:30px;height:30px;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+              </div>
+              <div style="font-size:17px;font-weight:600;letter-spacing:-.01em;">{{ drawer.addr }}</div>
+              <div style="color:var(--text2);font-size:12.5px;margin-top:2px;">{{ drawer.cityLine }}</div>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:16px 18px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:18px;">
+                <div style="background:var(--surface2);padding:10px 12px;"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">Building SF</div><div style="font-family:var(--mono);font-size:15px;margin-top:3px;">{{ drawer.sfFmt }}</div></div>
+                <div style="background:var(--surface2);padding:10px 12px;"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">Year built</div><div style="font-family:var(--mono);font-size:15px;margin-top:3px;">{{ drawer.year }}</div></div>
+                <div style="background:var(--surface2);padding:10px 12px;"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">Clear ht</div><div style="font-family:var(--mono);font-size:15px;margin-top:3px;">{{ drawer.clear }} ft</div></div>
+              </div>
+
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <div style="font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;">Score breakdown</div>
+                <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;"><span style="{{ drawer.scDot }}"></span><span style="{{ drawer.scLabel }}">{{ drawer.cat }}</span><span style="font-family:var(--mono);">{{ drawer.score }}/100</span></span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px;">
+                <sc-for list="{{ drawer.breakdown }}" as="c" hint-placeholder-count="4">
+                  <div>
+                    <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px;"><span style="color:var(--text2);">{{ c.label }}</span><span style="font-family:var(--mono);color:var(--text3);">{{ c.val }}</span></div>
+                    <div style="height:5px;border-radius:3px;background:var(--surface3);overflow:hidden;"><div style="{{ c.barStyle }}"></div></div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <sc-if value="{{ drawer.isOff }}" hint-placeholder-val="{{ true }}">
+                <div style="font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:8px;">Owner on title</div>
+                <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:18px;">
+                  <div style="font-weight:600;margin-bottom:4px;">{{ drawer.owner }}</div>
+                  <div style="font-size:11.5px;color:var(--text2);">{{ drawer.ownerType }} · Mailing: {{ drawer.mail }}</div>
+                  <sc-if value="{{ drawer.oosFlag }}" hint-placeholder-val="{{ true }}"><div style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--off);background:rgba(147,137,214,.14);padding:3px 8px;border-radius:5px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><path d="M4 22v-7"></path></svg>Out-of-state owner · {{ drawer.oos }}</div></sc-if>
+                </div>
+                <div style="font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:8px;">Distress evidence</div>
+                <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:18px;font-size:12px;color:var(--text2);line-height:1.7;">• {{ drawer.signal }}<br/>• Owner-occupied: no (inferred)<br/>• Last sale: 2006 · no permits since 2019</div>
+              </sc-if>
+              <sc-if value="{{ drawer.isOn }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:8px;">Listing</div>
+                <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:18px;">
+                  <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="font-weight:600;">{{ drawer.broker }}</span><span style="font-family:var(--mono);color:var(--accent);">{{ drawer.askFmt }}/SF</span></div>
+                  <div style="font-size:11.5px;color:var(--text2);">{{ drawer.firm }} · {{ drawer.daysOn }} days on market · {{ drawer.signal }}</div>
+                </div>
+              </sc-if>
+
+              <div style="font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:8px;">Imagery</div>
+              <div style="height:120px;border-radius:8px;border:1px dashed var(--border2);background:repeating-linear-gradient(45deg,var(--surface2),var(--surface2) 10px,var(--surface) 10px,var(--surface) 20px);display:flex;align-items:center;justify-content:center;color:var(--text3);font-family:var(--mono);font-size:11px;">aerial / streetview</div>
+            </div>
+            <div style="flex:0 0 auto;padding:13px 18px;border-top:1px solid var(--border);display:flex;gap:9px;">
+              <button class="tap" style="flex:1;height:38px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;cursor:pointer;">{{ drawer.pushLabel }}</button>
+              <button class="tap" style="height:38px;padding:0 14px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;cursor:pointer;">Add to call queue</button>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ============ SUPPLY MODEL MODULE ============ -->
+    <sc-if value="{{ isSupply }}" hint-placeholder-val="{{ false }}">
+    <div class="content-pad" data-screen-label="Supply Model" style="flex:1;overflow-y:auto;min-height:0;padding:22px 26px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+        <h2 style="margin:0;font-size:18px;font-weight:600;letter-spacing:-.01em;">Supply Model</h2>
+        <span style="font-size:10.5px;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:6px;font-weight:500;">Internal · CoStar-licensed</span>
+        <div style="flex:1;"></div>
+        <select aria-label="Select market" style="height:34px;padding:0 12px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;"><option>Columbus, OH</option><option>Nashville, TN</option><option>Charlotte, NC</option><option>Charleston, SC</option></select>
+      </div>
+
+      <div class="supply-kpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;"><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);">Total existing supply</div><div style="font-family:var(--mono);font-size:26px;font-weight:500;margin-top:7px;">9.83M<span style="font-size:14px;color:var(--text3);"> SF</span></div></div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;"><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);">Buildings</div><div style="font-family:var(--mono);font-size:26px;font-weight:500;margin-top:7px;">99</div></div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;"><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);">Metro vacancy</div><div style="font-family:var(--mono);font-size:26px;font-weight:500;margin-top:7px;">6.2<span style="font-size:14px;color:var(--text3);">%</span></div></div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;"><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);">Avg asking rent</div><div style="font-family:var(--mono);font-size:26px;font-weight:500;margin-top:7px;">$8.40<span style="font-size:14px;color:var(--text3);">/SF</span></div></div>
+      </div>
+
+      <div class="supply-grid" style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px;">
+          <div style="font-size:13px;font-weight:600;margin-bottom:16px;">Submarket breakdown</div>
+          <sc-for list="{{ submarkets }}" as="s" hint-placeholder-count="4">
+            <div style="margin-bottom:14px;">
+              <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px;"><span>{{ s.name }}</span><span style="font-family:var(--mono);color:var(--text2);">{{ s.pctLabel }} · {{ s.sfLabel }}</span></div>
+              <div style="height:9px;border-radius:5px;background:var(--surface3);overflow:hidden;"><div style="{{ s.barStyle }}"></div></div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--accent-line);border-radius:10px;padding:18px;">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">New development impact</div>
+          <div style="font-size:11.5px;color:var(--text3);margin-bottom:16px;">Model a new building against current supply</div>
+          <label style="display:block;font-size:11px;color:var(--text2);font-weight:500;margin-bottom:6px;">Building size (SF)</label>
+          <input type="number" aria-label="Building size in square feet" value="{{ devSF }}" onInput="{{ onDevSF }}" style="width:100%;height:38px;padding:0 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-family:var(--mono);font-size:15px;outline:none;margin-bottom:14px;"/>
+          <label style="display:block;font-size:11px;color:var(--text2);font-weight:500;margin-bottom:6px;">Submarket</label>
+          <select aria-label="Select submarket" onChange="{{ onSubmarket }}" style="width:100%;height:38px;padding:0 10px;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;margin-bottom:18px;">
+            <option>Hilliard</option><option>SW Columbus</option><option>Downtown West</option><option>Grandview</option>
+          </select>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:16px;">
+            <div style="font-family:var(--mono);font-size:13px;color:var(--text2);margin-bottom:12px;">{{ devSFFmt }} SF added →</div>
+            <div style="display:flex;gap:20px;flex-wrap:wrap;">
+              <div><div style="font-family:var(--mono);font-size:24px;font-weight:500;color:var(--accent);">+{{ metroPct }}%</div><div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-top:2px;">of metro supply</div></div>
+              <div><div style="font-family:var(--mono);font-size:24px;font-weight:500;color:var(--accent);">+{{ subPct }}%</div><div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-top:2px;">of {{ submarket }}</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ============ AI CALLER MODULE ============ -->
+    <sc-if value="{{ isCaller }}" hint-placeholder-val="{{ false }}">
+    <div data-screen-label="AI Caller" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+      <div style="flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:12px 20px;background:rgba(203,154,72,.07);border-bottom:1px solid var(--border);flex-wrap:wrap;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+        <span style="font-size:12px;color:var(--amber);font-weight:500;">Stub-safe — no live calls placed without an active provider connection.</span>
+        <div style="flex:1;"></div>
+        <div style="display:flex;gap:16px;font-size:11.5px;flex-wrap:wrap;">
+          <span style="display:flex;align-items:center;gap:6px;color:var(--green);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>DNC-checked</span>
+          <span style="display:flex;align-items:center;gap:6px;color:var(--text2);"><span style="width:7px;height:7px;border-radius:50%;background:var(--green);"></span>TCPA window: open (9a–8p local)</span>
+          <span style="display:flex;align-items:center;gap:6px;color:var(--text2);font-family:var(--mono);">{{ callsRun }}/100 calls this run</span>
+        </div>
+      </div>
+      <div class="caller-tabs" style="flex:0 0 auto;gap:3px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg);">
+        <button class="tap" onClick="{{ callerActiveTab }}" style="{{ ctActive }}">Active</button>
+        <button class="tap" onClick="{{ callerQueueTab }}" style="{{ ctQueue }}">Queue</button>
+        <button class="tap" onClick="{{ callerRecentTab }}" style="{{ ctRecent }}">Recent</button>
+      </div>
+      <div class="caller-grid" data-tab="{{ callerTab }}" style="flex:1;display:grid;grid-template-columns:300px 1fr 300px;min-height:0;">
+        <div class="caller-queue" style="border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;">
+          <div style="flex:0 0 auto;padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;display:flex;justify-content:space-between;">Call queue <span style="font-family:var(--mono);color:var(--text3);font-weight:400;">{{ queueCount }}</span></div>
+          <div style="flex:1;overflow-y:auto;min-height:0;">
+            <sc-for list="{{ callQueue }}" as="q" hint-placeholder-count="6">
+              <div style="{{ q.rowStyle }}">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;"><span style="{{ q.scDot }}"></span><span style="font-weight:500;font-size:12.5px;">{{ q.addr }}</span><span style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text3);">{{ q.score }}</span></div>
+                <div style="font-size:11px;color:var(--text2);">{{ q.owner }}</div>
+                <div style="display:flex;justify-content:space-between;margin-top:4px;"><span style="font-family:var(--mono);font-size:11px;color:var(--text3);">{{ q.phone }}</span><span style="font-size:10.5px;color:var(--text3);">{{ q.last }}</span></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div class="caller-active" style="display:flex;flex-direction:column;min-height:0;background:var(--bg);">
+          <div style="flex:1;overflow-y:auto;min-height:0;padding:22px 24px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--accent);animation:pulse 1.1s infinite;"></span><span style="font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;">Dialing</span></div>
+            <div style="font-family:var(--mono);font-size:24px;font-weight:500;margin-bottom:2px;">{{ active.phone }}</div>
+            <div style="font-size:13px;color:var(--text2);margin-bottom:18px;">{{ active.owner }} · {{ active.addr }}</div>
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:14px 16px;margin-bottom:16px;">
+              <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:7px;">AI disclosure opener</div>
+              <div style="font-size:13px;line-height:1.65;color:var(--text);">"Hi, this is an automated assistant calling on behalf of SimiCapital. This call may be recorded. We're reaching out about your property at {{ active.addr }} — do you have a moment?"</div>
+            </div>
+            <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:8px;">Live transcript</div>
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:14px 16px;min-height:120px;display:flex;flex-direction:column;gap:10px;">
+              <sc-for list="{{ transcript }}" as="t" hint-placeholder-count="2">
+                <div style="{{ t.style }}"><span style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);">{{ t.who }}</span><div style="font-size:12.5px;margin-top:2px;">{{ t.text }}</div></div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:0 0 auto;padding:14px 24px;border-top:1px solid var(--border);background:var(--bg);">
+            <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:9px;">Disposition</div>
+            <div style="display:flex;gap:9px;flex-wrap:wrap;">
+              <button class="tap" onClick="{{ dispWarm }}" style="flex:1;min-width:150px;height:40px;background:var(--green-tint);border:1px solid var(--green);border-radius:8px;color:var(--green);font-weight:600;font-size:12.5px;cursor:pointer;">Warm → Pipedrive task</button>
+              <button class="tap" onClick="{{ dispNext }}" style="height:40px;padding:0 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:12.5px;cursor:pointer;">No answer</button>
+              <button class="tap" onClick="{{ dispNext }}" style="height:40px;padding:0 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:12.5px;cursor:pointer;">Not interested</button>
+              <button class="tap" onClick="{{ dispNext }}" style="height:40px;padding:0 14px;background:var(--red-tint);border:1px solid var(--red);border-radius:8px;color:var(--red);font-size:12.5px;cursor:pointer;">Do-not-call</button>
+            </div>
+          </div>
+        </div>
+        <div class="caller-recent" style="border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0;">
+          <div style="flex:0 0 auto;padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;">Recent calls</div>
+          <div style="flex:1;overflow-y:auto;min-height:0;">
+            <sc-for list="{{ recentCalls }}" as="r" hint-placeholder-count="6">
+              <div style="padding:11px 16px;border-bottom:1px solid var(--border);">
+                <div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:12.5px;font-weight:500;">{{ r.owner }}</span><span style="font-size:10.5px;color:var(--text3);">{{ r.time }}</span></div>
+                <div style="font-size:11px;color:var(--text2);margin-bottom:5px;">{{ r.addr }}</div>
+                <span style="{{ r.dispStyle }}">{{ r.disp }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ============ DEALS DB MODULE ============ -->
+    <sc-if value="{{ isDeals }}" hint-placeholder-val="{{ false }}">
+    <div class="content-pad" data-screen-label="Deals DB" style="flex:1;overflow-y:auto;min-height:0;padding:24px 26px;">
+      <div style="max-width:1100px;margin:0 auto;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <h2 style="margin:0;font-size:18px;font-weight:600;letter-spacing:-.01em;">Deals DB</h2>
+          <span style="font-size:10.5px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);padding:3px 9px;border-radius:6px;">Internal · confidential</span>
+        </div>
+        <div style="font-size:12.5px;color:var(--text3);margin-bottom:16px;">Search-first memory of past deals and LOIs · nothing auto-sends</div>
+
+        <div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border2);border-radius:11px;padding:4px 4px 4px 16px;margin-bottom:8px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text2);flex:0 0 auto;"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.35-4.35"></path></svg>
+          <input aria-label="Search past deals and LOIs" value="{{ dealsQuery }}" onInput="{{ onDealsInput }}" onKeyDown="{{ onDealsKey }}" placeholder="Have we ever LOI'd this owner?  ·  What did we offer on Park Ave in 2022?" style="flex:1;height:40px;background:transparent;border:none;outline:none;color:var(--text);font-size:14px;min-width:0;"/>
+          <button class="tap" onClick="{{ runDeals }}" style="height:38px;padding:0 18px;background:var(--accent);border:none;border-radius:8px;color:#06120F;font-weight:600;font-size:13px;cursor:pointer;">Ask</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap;">
+          <sc-for list="{{ exampleQ }}" as="q" hint-placeholder-count="3">
+            <button onClick="{{ q.onClick }}" style="height:28px;padding:0 12px;background:var(--surface2);border:1px solid var(--border);border-radius:14px;color:var(--text2);font-size:11.5px;cursor:pointer;white-space:nowrap;">{{ q.t }}</button>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ dealsAnswered }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--surface);border:1px solid var(--accent-line);border-radius:10px;padding:16px 18px;margin-bottom:22px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);"></span><span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;">Answer</span><span style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 6px;">Sample</span></div>
+            <div style="font-size:13.5px;line-height:1.65;margin-bottom:12px;">Yes — SimiCapital previously engaged the <strong>Lowcountry Asset Trust</strong> on <strong>1450 Meeting St, Charleston</strong>. We submitted a $7.1M LOI at a 7.2% cap in Aug 2024, which <strong>closed</strong>. We also passed on Park Ave Logistics (Mar 2022) after the seller countered above buy box.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:5px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10l5 5-5 5"></path><path d="M4 4v7a4 4 0 0 0 4 4h12"></path></svg>LOI_MeetingSt_2024.pdf</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:5px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10l5 5-5 5"></path><path d="M4 4v7a4 4 0 0 0 4 4h12"></path></svg>DealMemo_ParkAve_2022.docx</span>
+            </div>
+          </div>
+        </sc-if>
+
+        <div class="deals-grid" style="display:grid;grid-template-columns:1fr 280px;gap:16px;align-items:start;">
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border);">
+              <span style="font-size:11.5px;font-weight:600;color:var(--text2);">Past deals &amp; LOIs</span>
+              <span style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 6px;">Sample data</span>
+            </div>
+            <div class="data-table-wrap" style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <thead><tr style="background:var(--surface2);">
+                <th style="text-align:left;padding:10px 12px;font-weight:600;color:var(--text2);font-size:10px;letter-spacing:.04em;">DEAL</th>
+                <th style="text-align:left;padding:10px 12px;font-weight:600;color:var(--text2);font-size:10px;letter-spacing:.04em;">OWNER</th>
+                <th style="text-align:right;padding:10px 12px;font-weight:600;color:var(--text2);font-size:10px;letter-spacing:.04em;">OUR LOI</th>
+                <th style="text-align:right;padding:10px 12px;font-weight:600;color:var(--text2);font-size:10px;letter-spacing:.04em;">CAP</th>
+                <th style="text-align:left;padding:10px 12px;font-weight:600;color:var(--text2);font-size:10px;letter-spacing:.04em;">STATUS</th>
+                <th class="col-secondary" style="text-align:left;padding:10px 12px;font-weight:600;color:var(--text2);font-size:10px;letter-spacing:.04em;">WHY PASSED</th>
+                <th class="col-secondary" style="text-align:left;padding:10px 12px;font-weight:600;color:var(--text2);font-size:10px;letter-spacing:.04em;">DATE</th>
+              </tr></thead>
+              <tbody>
+                <sc-for list="{{ deals }}" as="d" hint-placeholder-count="5">
+                  <tr style="border-top:1px solid var(--border);">
+                    <td style="padding:11px 12px;"><div style="font-weight:500;">{{ d.deal }}</div><div style="font-size:10.5px;color:var(--text3);">{{ d.prop }}</div></td>
+                    <td style="padding:11px 12px;color:var(--text2);">{{ d.owner }}</td>
+                    <td style="padding:11px 12px;text-align:right;font-family:var(--mono);">{{ d.offer }}</td>
+                    <td style="padding:11px 12px;text-align:right;font-family:var(--mono);color:var(--text2);">{{ d.cap }}</td>
+                    <td style="padding:11px 12px;"><span style="{{ d.statusStyle }}">{{ d.status }}</span></td>
+                    <td class="col-secondary" style="padding:11px 12px;color:var(--text2);font-size:11.5px;">{{ d.why }}</td>
+                    <td class="col-secondary" style="padding:11px 12px;color:var(--text3);font-family:var(--mono);font-size:11px;white-space:nowrap;">{{ d.date }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+            </div>
+            <div class="card-list" style="flex-direction:column;">
+              <sc-for list="{{ deals }}" as="d" hint-placeholder-count="5">
+                <div style="display:flex;flex-direction:column;gap:7px;padding:14px;border-top:1px solid var(--border);">
+                  <div style="display:flex;align-items:center;gap:9px;"><span style="font-weight:600;font-size:14px;flex:1;">{{ d.deal }}</span><span style="{{ d.statusStyle }}">{{ d.status }}</span></div>
+                  <div style="font-size:11.5px;color:var(--text3);">{{ d.prop }}</div>
+                  <div style="display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;"><span>{{ d.owner }}</span><span style="font-family:var(--mono);">{{ d.offer }} · {{ d.cap }}</span></div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;">
+            <div style="font-size:12.5px;font-weight:600;margin-bottom:3px;">Dedupe check</div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:13px;">Guardrail the sourcing engine calls before any outreach.</div>
+            <input aria-label="Check owner or address for prior contact" value="{{ dedupeQuery }}" onInput="{{ onDedupe }}" placeholder="Owner or address…" style="width:100%;height:36px;padding:0 11px;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;outline:none;margin-bottom:13px;"/>
+            <div style="{{ dedupeBoxStyle }}">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;"><span style="{{ dedupeDot }}"></span><span style="font-weight:600;font-size:13px;">{{ dedupeVerdict }}</span></div>
+              <div style="font-size:11.5px;color:var(--text2);line-height:1.6;">{{ dedupeDetail }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+
+  <!-- ===================== BOTTOM TAB BAR (phone) ===================== -->
+  <div class="bottom-tabs" style="flex:0 0 auto;align-items:stretch;height:56px;border-top:1px solid var(--border);background:var(--surface);padding-bottom:env(safe-area-inset-bottom);">
+    <button onClick="{{ goProps }}" style="{{ tabProps }}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>Properties</button>
+    <button onClick="{{ goSupply }}" style="{{ tabSupply }}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><rect x="7" y="10" width="3" height="7"></rect><rect x="12" y="6" width="3" height="11"></rect><rect x="17" y="13" width="3" height="4"></rect></svg>Supply</button>
+    <button onClick="{{ goCaller }}" style="{{ tabCaller }}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>Caller</button>
+    <button onClick="{{ goDeals }}" style="{{ tabDeals }}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14a9 3 0 0 0 18 0V5"></path><path d="M3 12a9 3 0 0 0 18 0"></path></svg>Deals</button>
+  </div>
+
+  <!-- ===================== PHONE SHEETS ===================== -->
+  <sc-if value="{{ searchOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;background:var(--bg);z-index:120;display:flex;flex-direction:column;animation:fadein .15s ease;padding-top:env(safe-area-inset-top);">
+      <div style="display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:9px;flex:1;height:44px;padding:0 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text2);"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.35-4.35"></path></svg>
+          <input autofocus aria-label="Search" placeholder="Search address · owner · broker · APN" style="flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:15px;"/>
+        </div>
+        <button class="tap" onClick="{{ closeSearch }}" style="height:44px;padding:0 14px;background:transparent;border:none;color:var(--accent);font-size:14px;font-weight:500;cursor:pointer;">Cancel</button>
+      </div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12.5px;">Type to search the sourced universe.</div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ statusOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeStatus }}" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:120;animation:fadein .15s ease;"></div>
+    <div style="position:fixed;left:0;right:0;bottom:0;z-index:121;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--border2);padding:18px 18px calc(18px + env(safe-area-inset-bottom));animation:sheetup .24s ease;">
+      <div style="width:38px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 14px;"></div>
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px;">
+        <span style="{{ sourcingMiniDot2 }}"></span>
+        <span style="font-size:15px;font-weight:600;">{{ statusTitle }}</span>
+        <button class="tap" onClick="{{ closeStatus }}" aria-label="Close" style="display:flex;align-items:center;justify-content:center;margin-left:auto;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);cursor:pointer;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+      </div>
+      <div style="display:flex;gap:18px;margin-bottom:16px;">
+        <div><div style="font-family:var(--mono);font-size:22px;font-weight:500;">{{ totalFmt }}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">scanned</div></div>
+        <div><div style="font-family:var(--mono);font-size:22px;font-weight:500;color:var(--accent);">+{{ newCount }}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">new</div></div>
+        <div style="margin-left:auto;text-align:right;"><div style="font-size:11px;color:var(--text2);">Updated</div><div style="font-size:11px;color:var(--text3);">{{ lastUpdated }}</div></div>
+      </div>
+      <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:10px;">Per-source</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px;">
+        <sc-for list="{{ sources }}" as="s" hint-placeholder-count="6">
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px;"><span style="color:var(--text2);">{{ s.n }}</span><span style="font-family:var(--mono);color:var(--text3);">{{ s.pctLabel }}</span></div>
+            <div style="height:5px;border-radius:3px;background:var(--surface3);overflow:hidden;"><div style="{{ s.barStyle }}"></div></div>
+          </div>
+        </sc-for>
+      </div>
+      <button class="tap" onClick="{{ toggleSourcing }}" style="width:100%;height:48px;border-radius:9px;cursor:pointer;font-size:13.5px;font-weight:600;{{ statusBtnStyle }}">{{ statusBtnLabel }}</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ acctOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeAcct }}" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:120;animation:fadein .15s ease;"></div>
+    <div style="position:fixed;left:0;right:0;bottom:0;z-index:121;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--border2);padding:18px 18px calc(18px + env(safe-area-inset-bottom));animation:sheetup .24s ease;">
+      <div style="width:38px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 14px;"></div>
+      <div style="display:flex;align-items:center;gap:11px;margin-bottom:18px;">
+        <div style="width:42px;height:42px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--text2);">JS</div>
+        <div style="flex:1;"><div style="font-size:14px;font-weight:600;">J. Simi</div><div style="font-size:11.5px;color:var(--text3);">Acquisitions analyst</div></div>
+        <button class="tap" onClick="{{ closeAcct }}" aria-label="Close" style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);cursor:pointer;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+      </div>
+      <button class="tap" onClick="{{ toggleTheme }}" style="display:flex;align-items:center;gap:10px;width:100%;height:48px;padding:0 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:13.5px;cursor:pointer;margin-bottom:10px;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>Toggle light / dark theme</button>
+      <div style="display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:10px 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:13.5px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex:0 0 auto;"></span><div style="flex:1;">Markets</div><span style="font-size:12px;color:var(--text3);">All 10 metros</span></div>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = {
+    theme: 'dark',
+    module: 'properties', view: 'table', channel: 'both',
+    scoreFilter: { Actionable: true, Tentative: true, Pass: true },
+    selProps: [], selBrokers: [], drawerId: null, popupId: null, hoverPin: null,
+    sourcing: false, total: 1847, newCount: 0, lastUpdated: '2m ago',
+    sources: [
+      { n: 'County GIS', p: 0.62 }, { n: 'Crexi', p: 0.41 }, { n: 'Colliers', p: 0.78 },
+      { n: 'CBRE', p: 0.55 }, { n: 'JLL', p: 0.33 }, { n: 'Cushman', p: 0.69 }
+    ],
+    mapStyle: 'clean',
+    devSF: 250000, submarket: 'Hilliard',
+    callsRun: 14, recent: [
+      { owner: 'Reading Road LLC', addr: '8120 Reading Rd', disp: 'Warm', time: '6m' },
+      { owner: 'Westbelt Logistics LLC', addr: '5500 Westbelt Dr', disp: 'No answer', time: '11m' },
+      { owner: 'Graham Industrial Trust', addr: '1180 N Graham St', disp: 'Not interested', time: '18m' },
+      { owner: 'Train Ave Properties LLC', addr: '3401 Train Ave', disp: 'Do-not-call', time: '26m' },
+      { owner: 'Couchville Holdings LLC', addr: '2400 Couchville Pike', disp: 'Warm', time: '34m' },
+    ],
+    activeIdx: 0,
+    dealsQuery: '', dealsAnswered: false, dedupeQuery: '',
+    railOpen: false, searchOpen: false, statusOpen: false, acctOpen: false, callerTab: 'active',
+  };
+
+  PROPS = [
+    { id: 1, channel: 'off', addr: '2400 Couchville Pike', mkt: 'Nashville', st: 'TN', sf: 142000, cat: 'Actionable', score: 88, signal: 'Tax-delinquent · 2yr', owner: 'Couchville Holdings LLC', ownerType: 'LLC', oos: 'TX', clear: 28, year: 1998, contact: 'Skip-traced', x: 14, y: 45, mail: '1200 Main St, Dallas, TX 75201' },
+    { id: 2, channel: 'off', addr: '1180 N Graham St', mkt: 'Charlotte', st: 'NC', sf: 96000, cat: 'Tentative', score: 64, signal: 'Inferred vacant', owner: 'Graham Industrial Trust', ownerType: 'Trust', oos: 'IL', clear: 22, year: 1985, contact: 'No contact', x: 50, y: 45, mail: '55 W Wacker Dr, Chicago, IL 60601' },
+    { id: 3, channel: 'off', addr: '5500 Westbelt Dr', mkt: 'Columbus', st: 'OH', sf: 210000, cat: 'Actionable', score: 81, signal: 'Code violation', owner: 'Westbelt Logistics LLC', ownerType: 'LLC', oos: 'FL', clear: 32, year: 2001, contact: 'Owner phone found', x: 41, y: 26, mail: '700 Brickell Ave, Miami, FL 33131' },
+    { id: 4, channel: 'off', addr: '3401 Train Ave', mkt: 'Cleveland', st: 'OH', sf: 78000, cat: 'Pass', score: 28, signal: 'No material signal', owner: 'Train Ave Properties LLC', ownerType: 'LLC', oos: null, clear: 18, year: 1972, contact: 'No contact', x: 38, y: 10, mail: '3401 Train Ave, Cleveland, OH 44113' },
+    { id: 5, channel: 'off', addr: '8120 Reading Rd', mkt: 'Cincinnati', st: 'OH', sf: 124000, cat: 'Tentative', score: 58, signal: 'Tax-delinquent · 1yr', owner: 'Reading Road LLC', ownerType: 'LLC', oos: null, clear: 24, year: 1990, contact: 'Skip-traced', x: 31, y: 33, mail: '8120 Reading Rd, Cincinnati, OH 45215' },
+    { id: 6, channel: 'off', addr: '1450 Meeting St', mkt: 'Charleston', st: 'SC', sf: 88000, cat: 'Actionable', score: 76, signal: 'Out-of-state · vacant', owner: 'Lowcountry Asset Trust', ownerType: 'Trust', oos: 'NY', clear: 26, year: 1995, contact: 'Owner phone found', x: 60, y: 60, mail: '410 Park Ave, New York, NY 10022' },
+    { id: 7, channel: 'on', addr: '4225 Sam Wilson Rd', mkt: 'Charlotte', st: 'NC', sf: 165000, cat: 'Actionable', score: 84, signal: 'Priced below market', broker: 'Marcus Hale', firm: 'CBRE', ask: 7.85, clear: 32, year: 2016, contact: 'Broker contact', x: 56, y: 48, daysOn: 41 },
+    { id: 8, channel: 'on', addr: '900 Aviation Pkwy', mkt: 'Raleigh', st: 'NC', sf: 118000, cat: 'Tentative', score: 61, signal: 'Long days-on-market', broker: 'Dana Pruitt', firm: 'JLL', ask: 8.20, clear: 28, year: 2008, contact: 'Broker contact', x: 64, y: 40, daysOn: 96 },
+    { id: 9, channel: 'on', addr: '2600 Charleston Regional Pkwy', mkt: 'Charleston', st: 'SC', sf: 192000, cat: 'Actionable', score: 79, signal: 'New to market', broker: 'Will Tanner', firm: 'Colliers', ask: 7.40, clear: 36, year: 2019, contact: 'Broker contact', x: 63, y: 65, daysOn: 12 },
+    { id: 10, channel: 'on', addr: '7300 NW 25th St', mkt: 'Miami', st: 'FL', sf: 134000, cat: 'Pass', score: 35, signal: 'Overpriced vs comps', broker: 'Sofia Reyes', firm: 'Cushman & Wakefield', ask: 11.20, clear: 30, year: 2004, contact: 'Broker contact', x: 73, y: 92, daysOn: 58 },
+    { id: 11, channel: 'on', addr: '5151 NW 35th Ave', mkt: 'Boca Raton', st: 'FL', sf: 72000, cat: 'Tentative', score: 55, signal: 'Small footprint', broker: 'Greg Olin', firm: 'Newmark', ask: 13.50, clear: 24, year: 1999, contact: 'Broker contact', x: 70, y: 86, daysOn: 33 },
+    { id: 12, channel: 'on', addr: '1980 Australian Ave', mkt: 'West Palm Beach', st: 'FL', sf: 88000, cat: 'Actionable', score: 72, signal: 'Value-add play', broker: 'Priya Nair', firm: 'NAI', ask: 12.10, clear: 26, year: 2011, contact: 'Broker contact', x: 68, y: 81, daysOn: 21 },
+    { id: 13, channel: 'on', addr: '6100 Westerville Rd', mkt: 'Columbus', st: 'OH', sf: 240000, cat: 'Actionable', score: 86, signal: 'Class A · below market', broker: 'Marcus Hale', firm: 'CBRE', ask: 6.95, clear: 36, year: 2021, contact: 'Broker contact', x: 46, y: 23, daysOn: 18 },
+  ];
+
+  BROKERS = [
+    { id: 1, name: 'Marcus Hale', firm: 'CBRE', phone: '(704) 555-0142', cell: '(704) 555-8890', email: 'marcus.hale@cbre.com', mkts: 'Charlotte · Columbus', spec: 'Industrial', listings: 7, source: 'Crexi', synced: true },
+    { id: 2, name: 'Dana Pruitt', firm: 'JLL', phone: '(919) 555-0188', cell: '(919) 555-4410', email: 'dana.pruitt@jll.com', mkts: 'Raleigh', spec: 'Industrial · Flex', listings: 4, source: 'JLL', synced: false },
+    { id: 3, name: 'Will Tanner', firm: 'Colliers', phone: '(843) 555-0119', cell: '(843) 555-7723', email: 'will.tanner@colliers.com', mkts: 'Charleston', spec: 'Industrial', listings: 5, source: 'Colliers', synced: true },
+    { id: 4, name: 'Sofia Reyes', firm: 'Cushman & Wakefield', phone: '(305) 555-0177', cell: '(305) 555-2204', email: 'sofia.reyes@cushwake.com', mkts: 'Miami', spec: 'Industrial', listings: 9, source: 'Cushman', synced: false },
+    { id: 5, name: 'Greg Olin', firm: 'Newmark', phone: '(561) 555-0133', cell: '(561) 555-9981', email: 'greg.olin@nmrk.com', mkts: 'Boca Raton · WPB', spec: 'Industrial', listings: 3, source: 'Newmark', synced: false },
+    { id: 6, name: 'Priya Nair', firm: 'NAI', phone: '(561) 555-0166', cell: '(561) 555-6650', email: 'priya.nair@naicommercial.com', mkts: 'West Palm Beach', spec: 'Industrial · Land', listings: 6, source: 'NAI', synced: true },
+    { id: 7, name: 'Tom Becker', firm: 'JLL', phone: '(614) 555-0102', cell: '(614) 555-3318', email: 'tom.becker@jll.com', mkts: 'Columbus', spec: 'Industrial', listings: 8, source: 'Crexi', synced: false },
+    { id: 8, name: 'Alyssa Crane', firm: 'Colliers', phone: '(615) 555-0150', cell: '(615) 555-7711', email: 'alyssa.crane@colliers.com', mkts: 'Nashville', spec: 'Industrial · Flex', listings: 5, source: 'Colliers', synced: true },
+  ];
+
+  DEALS = [
+    { deal: 'Park Ave Logistics', prop: '870 Park Ave · Nashville', owner: 'Park Ave Holdings LLC', offer: '$9.2M', cap: '6.8%', status: 'Passed', why: 'Seller countered above buy box', date: 'Mar 2022' },
+    { deal: 'Westerville Box', prop: '6100 Westerville Rd · Columbus', owner: 'WV Industrial LLC', offer: '$18.5M', cap: '5.9%', status: 'Under LOI', why: '—', date: 'Jan 2026' },
+    { deal: 'Meeting St Warehouse', prop: '1450 Meeting St · Charleston', owner: 'Lowcountry Asset Trust', offer: '$7.1M', cap: '7.2%', status: 'Closed', why: '—', date: 'Aug 2024' },
+    { deal: 'Reading Rd Flex', prop: '8120 Reading Rd · Cincinnati', owner: 'Reading Road LLC', offer: '$5.4M', cap: '7.8%', status: 'Passed', why: 'Environmental Phase II flag', date: 'Nov 2023' },
+    { deal: 'Sam Wilson Distribution', prop: '4225 Sam Wilson Rd · Charlotte', owner: 'CBRE listing', offer: '$13.0M', cap: '6.4%', status: 'Lost', why: 'Outbid by institutional buyer', date: 'Sep 2025' },
+  ];
+
+  componentWillUnmount() { clearInterval(this._t); }
+
+  _go = (m) => this.setState({ module: m, railOpen: false, statusOpen: false, searchOpen: false, acctOpen: false, popupId: null });
+  toggleTheme = () => this.setState(s => ({ theme: s.theme === 'dark' ? 'light' : 'dark' }));
+  toggleMktMenu = () => {};
+  goProps = () => this._go('properties');
+  goSupply = () => this._go('supply');
+  goCaller = () => this._go('caller');
+  goDeals = () => this._go('deals');
+  vMap = () => this.setState({ view: 'map' });
+  vTable = () => this.setState({ view: 'table' });
+  vBrokers = () => this.setState({ view: 'brokers' });
+  setCh = (c) => this.setState({ channel: c, popupId: null });
+  tgScore = (k) => this.setState(s => ({ scoreFilter: { ...s.scoreFilter, [k]: !s.scoreFilter[k] } }));
+  mapClean = () => this.setState({ mapStyle: 'clean' });
+  mapSat = () => this.setState({ mapStyle: 'sat' });
+  toggleRail = () => this.setState(s => ({ railOpen: !s.railOpen }));
+  closeRail = () => this.setState({ railOpen: false });
+  openSearch = () => this.setState({ searchOpen: true });
+  closeSearch = () => this.setState({ searchOpen: false });
+  openStatus = () => this.setState({ statusOpen: true });
+  closeStatus = () => this.setState({ statusOpen: false });
+  openAcct = () => this.setState({ acctOpen: true });
+  closeAcct = () => this.setState({ acctOpen: false });
+  callerActiveTab = () => this.setState({ callerTab: 'active' });
+  callerQueueTab = () => this.setState({ callerTab: 'queue' });
+  callerRecentTab = () => this.setState({ callerTab: 'recent' });
+  onHoverPin = (id) => this.setState({ hoverPin: id });
+  offHoverPin = () => this.setState({ hoverPin: null });
+
+  toggleSourcing = () => {
+    if (this.state.sourcing) { clearInterval(this._t); this.setState({ sourcing: false }); }
+    else {
+      this.setState({ sourcing: true, newCount: 0, lastUpdated: 'just now' });
+      this._t = setInterval(() => {
+        this.setState(s => ({
+          total: s.total + Math.floor(2 + Math.random() * 5),
+          newCount: s.newCount + Math.floor(1 + Math.random() * 3),
+          sources: s.sources.map(x => ({ ...x, p: x.p >= 0.97 ? 0.06 : Math.min(1, x.p + Math.random() * 0.09) })),
+        }));
+      }, 1100);
+    }
+  };
+
+  toggleProp = (id) => this.setState(s => ({ selProps: s.selProps.includes(id) ? s.selProps.filter(x => x !== id) : [...s.selProps, id] }));
+  toggleBroker = (id) => this.setState(s => ({ selBrokers: s.selBrokers.includes(id) ? s.selBrokers.filter(x => x !== id) : [...s.selBrokers, id] }));
+  clearSel = () => this.setState({ selProps: [], selBrokers: [] });
+  clearAll = () => this.setState({ channel: 'both', scoreFilter: { Actionable: true, Tentative: true, Pass: true }, selProps: [], selBrokers: [] });
+  selAllProps = () => { const v = this._visibleRaw(); const all = v.every(p => this.state.selProps.includes(p.id)); this.setState({ selProps: all ? [] : v.map(p => p.id) }); };
+  selAllBrok = () => { const all = this.BROKERS.every(b => this.state.selBrokers.includes(b.id)); this.setState({ selBrokers: all ? [] : this.BROKERS.map(b => b.id) }); };
+  openDrawer = (id) => this.setState({ drawerId: id });
+  closeDrawer = () => this.setState({ drawerId: null });
+  setPopup = (id) => this.setState({ popupId: id });
+  closePopup = () => this.setState({ popupId: null });
+
+  onDevSF = (e) => { const v = parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0; this.setState({ devSF: v }); };
+  onSubmarket = (e) => this.setState({ submarket: e.target.value });
+
+  dispWarm = () => this.setState(s => ({ activeIdx: (s.activeIdx + 1) % this._queueRaw().length, callsRun: s.callsRun + 1, recent: [{ owner: this._active().owner, addr: this._active().addr, disp: 'Warm', time: 'now' }, ...s.recent].slice(0, 8) }));
+  dispNext = () => this.setState(s => ({ activeIdx: (s.activeIdx + 1) % this._queueRaw().length, callsRun: s.callsRun + 1, recent: [{ owner: this._active().owner, addr: this._active().addr, disp: 'No answer', time: 'now' }, ...s.recent].slice(0, 8) }));
+
+  onDealsInput = (e) => this.setState({ dealsQuery: e.target.value });
+  onDealsKey = (e) => { if (e.key === 'Enter') this.setState({ dealsAnswered: true }); };
+  runDeals = () => this.setState({ dealsAnswered: true });
+  setDealsQ = (t) => this.setState({ dealsQuery: t, dealsAnswered: true });
+  onDedupe = (e) => this.setState({ dedupeQuery: e.target.value });
+
+  _visibleRaw() {
+    const s = this.state;
+    return this.PROPS.filter(p => (s.channel === 'both' || p.channel === s.channel) && s.scoreFilter[p.cat]);
+  }
+  _queueRaw() { return this.PROPS.filter(p => p.channel === 'off'); }
+  _active() { const q = this._queueRaw(); return q[this.state.activeIdx % q.length]; }
+
+  renderVals() {
+    const s = this.state;
+    const SC = { Actionable: 'var(--green)', Tentative: 'var(--amber)', Pass: 'var(--red)' };
+    const SCB = { Actionable: 'rgba(87,169,119,.5)', Tentative: 'rgba(203,154,72,.5)', Pass: 'rgba(195,100,88,.5)' };
+    const TINT = { Actionable: 'var(--green-tint)', Tentative: 'var(--amber-tint)', Pass: 'var(--red-tint)' };
+    const CH = { off: { c: 'var(--off)', b: 'rgba(147,137,214,.5)', bg: 'rgba(147,137,214,.13)', label: 'Off-market' }, on: { c: 'var(--on)', b: 'rgba(94,138,192,.5)', bg: 'rgba(94,138,192,.13)', label: 'On-market' } };
+    const segOn = 'display:flex;align-items:center;gap:6px;height:26px;padding:0 13px;border:none;border-radius:6px;background:var(--surface3);color:var(--text);font-size:12px;font-weight:500;cursor:pointer;box-shadow:inset 0 0 0 1px var(--border2);white-space:nowrap;';
+    const segOff = 'display:flex;align-items:center;gap:6px;height:26px;padding:0 13px;border:none;border-radius:6px;background:transparent;color:var(--text2);font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;';
+    const seg = c => c ? segOn : segOff;
+    const chipOn = (col) => `display:flex;align-items:center;gap:6px;flex:1;justify-content:center;height:30px;padding:0 6px;border-radius:6px;border:1px solid ${col};background:var(--surface3);color:var(--text);font-size:11px;font-weight:500;white-space:nowrap;cursor:pointer;`;
+    const chipOff = 'display:flex;align-items:center;gap:6px;flex:1;justify-content:center;height:30px;padding:0 6px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--text2);font-size:11px;font-weight:500;white-space:nowrap;cursor:pointer;';
+
+    const selP = new Set(s.selProps);
+    const selB = new Set(s.selBrokers);
+
+    const visibleProps = this._visibleRaw().map(p => {
+      const sel = selP.has(p.id);
+      const col = SC[p.cat];
+      const ch = CH[p.channel];
+      const chDot = p.channel === 'off'
+        ? 'display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid var(--off);box-sizing:border-box;flex:0 0 auto;'
+        : 'display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--on);flex:0 0 auto;';
+      const ring = `position:absolute;left:${p.x}%;top:${p.y}%;width:15px;height:15px;border-radius:50%;border:2.5px solid ${col};background:radial-gradient(circle, ${col} 0 1.6px, transparent 2.2px);transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(0,0,0,.55)${sel ? ',0 0 0 3px var(--accent-dim),0 0 0 4.5px var(--accent)' : ''};cursor:pointer;z-index:${sel ? 9 : 5};`;
+      const pin = `position:absolute;left:${p.x}%;top:${p.y}%;width:15px;height:15px;background:${col};border-radius:50% 50% 50% 0;transform:translate(-50%,-100%) rotate(-45deg);transform-origin:50% 100%;box-shadow:2px 2px 5px rgba(0,0,0,.5)${sel ? ',0 0 0 3px var(--accent-dim),0 0 0 4.5px var(--accent)' : ''};cursor:pointer;z-index:${sel ? 9 : 5};`;
+      return {
+        ...p, selected: sel,
+        sfFmt: p.sf.toLocaleString(),
+        askFmt: p.ask ? '$' + p.ask.toFixed(2) : '—',
+        ownerOrBroker: p.channel === 'off' ? p.owner : (p.broker + ' · ' + p.firm),
+        cardSub: p.channel === 'off' ? ('Owner: ' + p.ownerType) : ('Broker: ' + p.firm),
+        chLabel: ch.label,
+        chTagStyle: `font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:${ch.c};border:1px solid ${ch.b};background:${ch.bg};padding:2px 7px;border-radius:4px;font-weight:600;`,
+        scChipStyle: `display:inline-flex;align-items:center;gap:5px;font-size:11px;color:${col};border:1px solid ${SCB[p.cat]};background:var(--surface2);padding:3px 8px;border-radius:5px;font-weight:500;`,
+        chDot, scDot: `display:inline-block;width:7px;height:7px;border-radius:50%;background:${col};flex:0 0 auto;`,
+        scLabel: `color:${col};font-weight:500;`,
+        contactStyle: p.contact === 'No contact'
+          ? 'font-size:11px;color:var(--text3);'
+          : 'font-size:11px;color:var(--text2);background:var(--surface3);padding:2px 7px;border-radius:4px;',
+        rowStyle: `border-bottom:1px solid var(--border);cursor:pointer;background:${sel ? 'var(--accent-dim)' : TINT[p.cat]};`,
+        rowHover: 'box-shadow:inset 3px 0 0 var(--accent);',
+        cardStyle: `display:flex;flex-direction:column;gap:8px;padding:15px 16px;border-bottom:1px solid var(--border);cursor:pointer;background:${sel ? 'var(--accent-dim)' : 'transparent'};`,
+        pinStyle: p.channel === 'off' ? ring : pin,
+        onOpen: () => this.openDrawer(p.id),
+        onPin: () => this.setPopup(p.id),
+        onToggle: () => this.toggleProp(p.id),
+        onHover: () => this.onHoverPin(p.id),
+        offHover: this.offHoverPin,
+        onKeyRow: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.openDrawer(p.id); } },
+        onKeyPin: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.setPopup(p.id); } },
+        tipText: p.addr + ' — ' + p.cat + ' ' + p.score,
+        stop: (e) => e.stopPropagation(),
+      };
+    });
+
+    const brokersView = this.BROKERS.map(b => ({
+      ...b, selected: selB.has(b.id),
+      rowStyle: `border-bottom:1px solid var(--border);background:${selB.has(b.id) ? 'var(--accent-dim)' : 'transparent'};`,
+      rowHover: 'box-shadow:inset 3px 0 0 var(--border2);background:var(--surface2);',
+      cardStyle: `display:flex;flex-direction:column;gap:9px;padding:15px 16px;border-bottom:1px solid var(--border);background:${selB.has(b.id) ? 'var(--accent-dim)' : 'transparent'};`,
+      syncLabel: b.synced ? 'Synced' : 'Not synced',
+      syncStyle: b.synced
+        ? 'display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--green);background:var(--green-tint);padding:2px 8px;border-radius:5px;'
+        : 'display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text3);background:var(--surface3);padding:2px 8px;border-radius:5px;',
+      onToggle: () => this.toggleBroker(b.id),
+      viewListings: () => this.setState({ view: 'table' }),
+    }));
+
+    const shortNames = ['GIS', 'Crexi', 'Colliers', 'CBRE', 'JLL', 'Cushman'];
+    const sources = s.sources.map((x, i) => ({ ...x, short: shortNames[i] || x.n, pctLabel: Math.round(x.p * 100) + '%', barStyle: `width:${Math.round(x.p * 100)}%;height:100%;background:var(--accent);transition:width .5s ease;` }));
+    const avgPct = Math.round(s.sources.reduce((a, x) => a + x.p, 0) / s.sources.length * 100);
+    const aggBarStyle = `width:${avgPct}%;height:100%;background:var(--accent);transition:width .5s ease;`;
+
+    const dp = this.PROPS.find(p => p.id === s.drawerId);
+    let drawer = null;
+    if (dp) {
+      const comps = dp.channel === 'off'
+        ? [{ label: 'Distress signals', v: 38 }, { label: 'Buy-box fit', v: 27 }, { label: 'Owner profile', v: 16 }, { label: 'Contactability', v: 7 }]
+        : [{ label: 'Pricing vs comps', v: 34 }, { label: 'Buy-box fit', v: 29 }, { label: 'Days-on-market', v: 14 }, { label: 'Broker quality', v: 9 }];
+      const maxes = [40, 30, 20, 10];
+      drawer = {
+        ...dp, sfFmt: dp.sf.toLocaleString(), askFmt: dp.ask ? '$' + dp.ask.toFixed(2) : '—',
+        cityLine: dp.mkt + ', ' + dp.st + (dp.channel === 'off' ? ' · Off-market lead' : ' · On-market listing'),
+        isOff: dp.channel === 'off', isOn: dp.channel === 'on',
+        oosFlag: !!dp.oos,
+        chDot: dp.channel === 'off'
+          ? 'display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid var(--off);box-sizing:border-box;'
+          : 'display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--on);',
+        chLabel: dp.channel === 'off' ? 'Off-market' : 'On-market',
+        chTag: `font-size:11px;font-weight:600;color:${dp.channel === 'off' ? 'var(--off)' : 'var(--on)'};`,
+        scDot: `display:inline-block;width:7px;height:7px;border-radius:50%;background:${SC[dp.cat]};`,
+        scLabel: `color:${SC[dp.cat]};font-weight:500;`,
+        pushLabel: dp.channel === 'off' ? 'Send Lead to Pipedrive' : 'Send Deal to Pipedrive',
+        breakdown: comps.map((c, i) => ({ label: c.label, val: c.v + '/' + maxes[i], barStyle: `width:${(c.v / maxes[i]) * 100}%;height:100%;background:${SC[dp.cat]};` })),
+      };
+    }
+
+    const matchMap = { both: 847, off: 412, on: 435 };
+    const chanProps = this.PROPS.filter(p => s.channel === 'both' || p.channel === s.channel);
+    const matchFrac = chanProps.length ? visibleProps.length / chanProps.length : 0;
+    const matchShown = Math.round(matchMap[s.channel] * matchFrac).toLocaleString();
+    const emptyProps = visibleProps.length === 0;
+    const bulkCount = s.view === 'brokers' ? s.selBrokers.length : s.selProps.length;
+    const showBulk = bulkCount > 0;
+
+    const pp = visibleProps.find(p => p.id === s.popupId);
+    const hp = visibleProps.find(p => p.id === s.hoverPin);
+    const hoverTip = hp ? { addr: hp.addr, meta: hp.cat + ' · ' + hp.score, dot: `display:inline-block;width:7px;height:7px;border-radius:50%;background:${SC[hp.cat]};` } : null;
+    const hoverTipStyle = hp ? `position:absolute;left:${hp.x}%;top:${hp.y}%;transform:translate(-50%,calc(-100% - 16px));background:var(--surface);border:1px solid var(--border2);border-radius:7px;padding:6px 10px;font-size:11px;white-space:nowrap;box-shadow:0 8px 20px rgba(0,0,0,.45);z-index:8;pointer-events:none;color:var(--text);` : '';
+
+    const clusters = [
+      { n: 18, x: 24, y: 15 }, { n: 11, x: 80, y: 38 }, { n: 7, x: 82, y: 92 },
+    ].map(c => ({ n: c.n, style: `position:absolute;left:${c.x}%;top:${c.y}%;transform:translate(-50%,-50%);min-width:30px;height:30px;padding:0 7px;border-radius:16px;background:var(--surface);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.4),0 0 0 5px rgba(46,166,160,.1);z-index:4;cursor:pointer;` }));
+
+    const mapLabels = [
+      { name: 'COLUMBUS', x: 44, y: 18 }, { name: 'NASHVILLE', x: 15, y: 40 }, { name: 'CHARLOTTE', x: 54, y: 40 }, { name: 'CHARLESTON', x: 62, y: 62 }, { name: 'ATLANTIC OCEAN', x: 88, y: 80, water: true },
+    ].map(l => ({ name: l.name, style: `position:absolute;left:${l.x}%;top:${l.y}%;transform:translate(-50%,-50%);font-size:9px;letter-spacing:.14em;font-weight:600;text-transform:uppercase;color:${l.water ? 'var(--map-coast)' : 'var(--map-label)'};text-shadow:0 1px 3px rgba(0,0,0,.6);pointer-events:none;z-index:3;${l.water ? 'font-style:italic;font-weight:500;' : ''}` }));
+
+    const metroSF = 9830000;
+    const shares = { Hilliard: 0.57, 'SW Columbus': 0.17, 'Downtown West': 0.16, Grandview: 0.09 };
+    const submarkets = Object.keys(shares).map(k => ({
+      name: k, pctLabel: Math.round(shares[k] * 100) + '%',
+      sfLabel: (metroSF * shares[k] / 1e6).toFixed(2) + 'M SF',
+      barStyle: `width:${shares[k] * 100}%;height:100%;background:var(--accent);border-radius:5px;`,
+    }));
+    const subSF = metroSF * (shares[s.submarket] || 0.57);
+    const metroPct = (s.devSF / metroSF * 100).toFixed(1);
+    const subPct = (s.devSF / subSF * 100).toFixed(1);
+
+    const qraw = this._queueRaw();
+    const callQueue = qraw.map((q, i) => ({
+      ...q, score: q.score,
+      scDot: `display:inline-block;width:7px;height:7px;border-radius:50%;background:${SC[q.cat]};flex:0 0 auto;`,
+      last: q.contact === 'No contact' ? 'no prior' : 'skip-traced',
+      rowStyle: `padding:11px 16px;border-bottom:1px solid var(--border);${i === s.activeIdx % qraw.length ? 'background:var(--accent-dim);box-shadow:inset 3px 0 0 var(--accent);' : ''}`,
+    }));
+    const active = this._active();
+    const transcript = [
+      { who: 'AI', text: '…calling about your property at ' + active.addr + '. Do you have a moment?', off: false },
+      { who: 'Owner', text: '[awaiting connection — stub mode]', off: true },
+    ].map(t => ({ ...t, style: t.off ? 'align-self:flex-end;max-width:80%;text-align:right;' : 'align-self:flex-start;max-width:80%;' }));
+    const dispColor = { Warm: 'var(--green)', 'No answer': 'var(--text3)', 'Not interested': 'var(--amber)', 'Do-not-call': 'var(--red)' };
+    const recentCalls = s.recent.map(r => ({ ...r, dispStyle: `font-size:11px;color:${dispColor[r.disp]};border:1px solid ${dispColor[r.disp]};padding:1px 7px;border-radius:5px;` }));
+
+    const statusColor = { Passed: 'var(--text3)', 'Under LOI': 'var(--accent)', Closed: 'var(--green)', Lost: 'var(--red)' };
+    const deals = this.DEALS.map(d => ({ ...d, statusStyle: `font-size:11px;color:${statusColor[d.status]};border:1px solid ${statusColor[d.status]};padding:1px 8px;border-radius:5px;white-space:nowrap;` }));
+    const exampleQ = [
+      "Have we ever LOI'd this owner?", 'What did we offer on Park Ave in 2022?', 'Every deal we passed on for cap rate',
+    ].map(t => ({ t, onClick: () => this.setDealsQ(t) }));
+
+    const dq = s.dedupeQuery.trim().toLowerCase();
+    let dedupeVerdict = 'Enter an owner or address', dedupeDetail = 'The engine checks every lead against past contact before any outreach.', match = null;
+    if (dq.length > 2) {
+      match = this.DEALS.find(d => (d.owner + ' ' + d.prop).toLowerCase().includes(dq)) || this.PROPS.find(p => (p.owner || '' + p.addr).toLowerCase().includes(dq) && p.addr.toLowerCase().includes(dq));
+      if (match && match.owner !== undefined && match.cap !== undefined) {
+        dedupeVerdict = 'Previously contacted — yes';
+        dedupeDetail = `${match.deal} · ${match.offer} LOI (${match.cap}) · ${match.status} · ${match.date}`;
+      } else if (match) {
+        dedupeVerdict = 'In sourcing — not yet contacted';
+        dedupeDetail = `${match.addr} · ${match.mkt} · no outreach logged`;
+      } else {
+        dedupeVerdict = 'No — clear to contact';
+        dedupeDetail = 'No prior deal, LOI, or call found for this owner / address.';
+      }
+    }
+    const dverColor = dedupeVerdict.startsWith('Previously') ? 'var(--amber)' : dedupeVerdict.startsWith('No —') ? 'var(--green)' : dedupeVerdict.startsWith('In sourcing') ? 'var(--accent)' : 'var(--text3)';
+    const dedupeBoxStyle = `background:var(--surface2);border:1px solid ${dq.length > 2 ? dverColor : 'var(--border)'};border-radius:8px;padding:12px;`;
+    const dedupeDot = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${dverColor};`;
+
+    // active filter chips (phone)
+    const activeChips = [];
+    if (s.channel !== 'both') activeChips.push({ label: s.channel === 'off' ? 'Off-market' : 'On-market', onClear: () => this.setCh('both') });
+    ['Actionable', 'Tentative', 'Pass'].forEach(k => { if (!s.scoreFilter[k]) activeChips.push({ label: 'Hidden: ' + k, onClear: () => this.tgScore(k) }); });
+
+    // tab bar styles
+    const tabBase = (active) => `display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1;border:none;background:transparent;cursor:pointer;font-size:9.5px;font-weight:500;letter-spacing:.01em;color:${active ? 'var(--accent)' : 'var(--text3)'};`;
+    // caller sub-tabs
+    const ctOn = 'flex:1;height:36px;border:none;border-radius:6px;background:var(--surface3);color:var(--text);font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:inset 0 0 0 1px var(--border2);';
+    const ctOff = 'flex:1;height:36px;border:none;border-radius:6px;background:transparent;color:var(--text2);font-size:12.5px;font-weight:500;cursor:pointer;';
+
+    return {
+      theme: s.theme,
+      marketsLabel: 'All markets',
+      isProperties: s.module === 'properties', isSupply: s.module === 'supply', isCaller: s.module === 'caller', isDeals: s.module === 'deals',
+      moduleSub: { properties: 'Off-market + on-market universe', supply: 'CoStar market-supply analysis', caller: 'Compliant AI outreach cockpit', deals: 'Deal & LOI memory' }[s.module],
+      modProps: seg(s.module === 'properties'), modSupply: seg(s.module === 'supply'), modCaller: seg(s.module === 'caller'), modDeals: seg(s.module === 'deals'),
+      goProps: this.goProps, goSupply: this.goSupply, goCaller: this.goCaller, goDeals: this.goDeals, toggleTheme: this.toggleTheme, toggleMktMenu: this.toggleMktMenu,
+      tabProps: tabBase(s.module === 'properties'), tabSupply: tabBase(s.module === 'supply'), tabCaller: tabBase(s.module === 'caller'), tabDeals: tabBase(s.module === 'deals'),
+
+      sourcing: s.sourcing, notSourcing: !s.sourcing, toggleSourcing: this.toggleSourcing,
+      totalFmt: s.total.toLocaleString() + ' props', newCount: s.newCount, lastUpdated: s.lastUpdated, sources, aggBarStyle,
+      sourcingMiniBorder: s.sourcing ? 'var(--accent-line)' : 'var(--border)',
+      sourcingMiniDot: s.sourcing ? 'position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.1s infinite;border:1.5px solid var(--surface2);' : 'display:none;',
+      sourcingMiniDot2: `display:inline-block;width:9px;height:9px;border-radius:50%;background:${s.sourcing ? 'var(--accent)' : 'var(--text3)'};${s.sourcing ? 'animation:pulse 1.1s infinite;' : ''}`,
+      statusTitle: s.sourcing ? 'Sourcing live' : 'Sourcing paused',
+      statusBtnStyle: s.sourcing ? 'background:var(--surface2);border:1px solid var(--border2);color:var(--text);' : 'background:var(--accent);border:none;color:#06120F;',
+      statusBtnLabel: s.sourcing ? 'Stop sourcing' : 'Start sourcing',
+
+      isTableView: s.view === 'table' && !emptyProps, isBrokersView: s.view === 'brokers', isMapView: s.view === 'map' && !emptyProps,
+      showEmptyState: (s.view === 'table' || s.view === 'map') && emptyProps,
+      viewMap: seg(s.view === 'map'), viewTable: seg(s.view === 'table'), viewBrokers: seg(s.view === 'brokers'),
+      vMap: this.vMap, vTable: this.vTable, vBrokers: this.vBrokers,
+
+      chBtnOff: s.channel === 'off' ? chipOn('var(--off)') : chipOff,
+      chBtnOn: s.channel === 'on' ? chipOn('var(--on)') : chipOff,
+      chBtnBoth: s.channel === 'both' ? chipOn('var(--accent)') : chipOff,
+      chOff: () => this.setCh('off'), chOn: () => this.setCh('on'), chBoth: () => this.setCh('both'),
+      scActionable: s.scoreFilter.Actionable ? chipOn('var(--green)') : chipOff,
+      scTentative: s.scoreFilter.Tentative ? chipOn('var(--amber)') : chipOff,
+      scPass: s.scoreFilter.Pass ? chipOn('var(--red)') : chipOff,
+      tgActionable: () => this.tgScore('Actionable'), tgTentative: () => this.tgScore('Tentative'), tgPass: () => this.tgScore('Pass'),
+
+      visibleProps, brokersView,
+      matchShown,
+      allPropsSel: visibleProps.length > 0 && visibleProps.every(p => p.selected),
+      allBrokSel: brokersView.every(b => b.selected),
+      selAllProps: this.selAllProps, selAllBrok: this.selAllBrok, clearAll: this.clearAll,
+
+      railOpenFlag: s.railOpen ? '1' : '0', showRailScrim: s.railOpen,
+      toggleRail: this.toggleRail, closeRail: this.closeRail,
+      activeChips, hasActiveChips: activeChips.length > 0, filterCount: activeChips.length,
+
+      showBulk, bulkCount, showBulkQueue: s.view !== 'brokers',
+      bulkPrimary: s.view === 'brokers' ? 'Send ' + bulkCount + ' to Pipedrive (Person)' : 'Send ' + bulkCount + ' to Pipedrive', clearSel: this.clearSel,
+
+      hasDrawer: !!drawer, drawer, closeDrawer: this.closeDrawer,
+
+      mapMode: s.mapStyle,
+      mapCleanBtn: seg(s.mapStyle === 'clean'), mapSatBtn: seg(s.mapStyle === 'sat'),
+      mapClean: this.mapClean, mapSat: this.mapSat,
+      hasPopup: !!pp, popup: pp ? { ...pp, onOpen: () => this.openDrawer(pp.id) } : null, closePopup: this.closePopup,
+      hasHoverTip: !!hp, hoverTip, hoverTipStyle, clusters, mapLabels,
+
+      submarkets, devSF: s.devSF, devSFFmt: s.devSF.toLocaleString(), submarket: s.submarket, metroPct, subPct,
+      onDevSF: this.onDevSF, onSubmarket: this.onSubmarket,
+
+      callsRun: s.callsRun, queueCount: qraw.length, callQueue, active, transcript, recentCalls,
+      dispWarm: this.dispWarm, dispNext: this.dispNext,
+      callerTab: s.callerTab, callerActiveTab: this.callerActiveTab, callerQueueTab: this.callerQueueTab, callerRecentTab: this.callerRecentTab,
+      ctActive: s.callerTab === 'active' ? ctOn : ctOff, ctQueue: s.callerTab === 'queue' ? ctOn : ctOff, ctRecent: s.callerTab === 'recent' ? ctOn : ctOff,
+
+      dealsQuery: s.dealsQuery, dealsAnswered: s.dealsAnswered, deals, exampleQ,
+      onDealsInput: this.onDealsInput, onDealsKey: this.onDealsKey, runDeals: this.runDeals,
+      dedupeQuery: s.dedupeQuery, onDedupe: this.onDedupe, dedupeVerdict, dedupeDetail, dedupeBoxStyle, dedupeDot,
+
+      searchOpen: s.searchOpen, openSearch: this.openSearch, closeSearch: this.closeSearch,
+      statusOpen: s.statusOpen, openStatus: this.openStatus, closeStatus: this.closeStatus,
+      acctOpen: s.acctOpen, openAcct: this.openAcct, closeAcct: this.closeAcct,
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+/* Design tokens + base + responsive — ported from the updated Claude Design handoff
+   (sourcing-platform/design-source/.../SimiCapital Console.dc.html). */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body { font-family: 'Inter', system-ui, sans-serif; background: #0E1116; -webkit-font-smoothing: antialiased; }
+input, button, select { font-family: inherit; }
+input::placeholder { color: var(--text2); opacity: .85; }
+
+:root {
+  --bg:#0E1116; --surface:#151A21; --surface2:#1A2028; --surface3:#222A33; --border:#232A33; --border2:#2C353F;
+  --text:#E6E9ED; --text2:#A7B1BD; --text3:#6B7682;
+  --accent:#2EA6A0; --accent-dim:rgba(46,166,160,.16); --accent-line:rgba(46,166,160,.5);
+  --off:#9389D6; --on:#5E8AC0; --green:#57A977; --amber:#CB9A48; --red:#C36458;
+  --green-tint:rgba(87,169,119,.085); --amber-tint:rgba(203,154,72,.085); --red-tint:rgba(195,100,88,.07);
+  --mono:'JetBrains Mono', ui-monospace, monospace;
+}
+[data-theme="light"] {
+  --bg:#EBEEF2; --surface:#FFFFFF; --surface2:#F6F8FA; --surface3:#EDF0F4; --border:#E2E6EC; --border2:#D2D7DF;
+  --text:#161B22; --text2:#4C5663; --text3:#7B8590;
+  --green-tint:rgba(87,169,119,.13); --amber-tint:rgba(203,154,72,.13); --red-tint:rgba(195,100,88,.10);
+}
+[data-map="clean"] { --map-land:#161d26; --map-water:#0d131a; --map-coast:#3a4651; --map-road:#323d48; --map-road2:#262f38; --map-parcel:#2a333d; --map-blob:transparent; --map-label:#828d98; }
+[data-map="sat"]   { --map-land:#15201a; --map-water:#0a1014; --map-coast:rgba(126,156,144,.4); --map-road:rgba(150,162,150,.18); --map-road2:rgba(150,162,150,.1); --map-parcel:rgba(150,162,150,.12); --map-blob:rgba(64,96,66,.5); --map-label:#b6bfc7; }
+
+@keyframes pulse { 0%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.6)} 100%{opacity:1;transform:scale(1)} }
+@keyframes shimmer { 0%{background-position:-260px 0} 100%{background-position:260px 0} }
+@keyframes drawerin { from{transform:translateX(24px);opacity:0} to{transform:translateX(0);opacity:1} }
+@keyframes sheetup { from{transform:translateY(100%)} to{transform:translateY(0)} }
+@keyframes fadein { from{opacity:0} to{opacity:1} }
+::-webkit-scrollbar { width:9px; height:9px } ::-webkit-scrollbar-thumb { background:#2C353F; border-radius:5px } ::-webkit-scrollbar-track { background:transparent }
+.skel { background:linear-gradient(90deg,var(--surface2) 25%,var(--surface3) 50%,var(--surface2) 75%); background-size:460px 100%; animation:shimmer 1.4s infinite linear; border-radius:3px }
+
+*:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+input:focus-visible, select:focus-visible, tr:focus-visible { outline:2px solid var(--accent); outline-offset:-1px; }
+
+button { cursor:pointer; }
+.hov { transition: filter .12s ease, background .12s ease; }
+.hov:hover { filter: brightness(1.16); }
+
+/* Responsive: these are hidden on desktop and revealed at the breakpoints below. */
+.bottom-tabs, .filters-btn, .search-icon-btn, .sourcing-mini, .legend-mini, .legend-phone, .caller-tabs, .card-list, .rail-close, .src-aggregate, .active-chips { display:none; }
+
+@media (max-width:1179px) {
+  .brand-suffix { display:none!important; }
+  .search-box { width:158px!important; min-width:120px!important; }
+  .legend-full { display:none!important; }
+  .legend-mini { display:inline-flex!important; }
+  .src-strip { display:none!important; }
+  .src-aggregate { display:flex!important; }
+  .props-rail { position:absolute!important; left:0; top:0; bottom:0; z-index:60; width:292px!important; flex:0 0 292px!important; transform:translateX(-104%); box-shadow:16px 0 48px rgba(0,0,0,.5); }
+  .props-rail[data-open="1"] { transform:translateX(0)!important; }
+  .filters-btn { display:inline-flex!important; }
+  .rail-close { display:inline-flex!important; }
+  .col-secondary { display:none!important; }
+  .detail-drawer { width:min(430px,62vw)!important; }
+  .supply-kpis { grid-template-columns:1fr 1fr!important; }
+  .caller-grid { grid-template-columns:1fr 284px!important; grid-template-rows:1fr 1fr!important; grid-template-areas:'active queue' 'active recent'!important; }
+  .caller-queue { grid-area:queue; min-height:0; }
+  .caller-active { grid-area:active; min-height:0; }
+  .caller-recent { grid-area:recent; min-height:0; border-top:1px solid var(--border); }
+  .deals-grid, .reuse-grid { grid-template-columns:1fr!important; }
+}
+@media (max-width:767px) {
+  .topbar { height:48px!important; flex-basis:48px!important; gap:9px!important; padding:0 12px!important; }
+  .sample-pill, .markets-btn, .search-box, .sourcing-full { display:none!important; }
+  .search-icon-btn, .sourcing-mini { display:inline-flex!important; }
+  .modswitcher { display:none!important; }
+  .bottom-tabs { display:flex!important; }
+  .legend-phone { display:flex!important; }
+  .hide-phone { display:none!important; }
+  .props-rail { position:fixed!important; left:0!important; right:0!important; bottom:0!important; top:auto!important; width:100%!important; height:88vh!important; flex:none!important; transform:translateY(104%); border-right:none!important; border-radius:18px 18px 0 0; border-top:1px solid var(--border2); z-index:95; }
+  .props-rail[data-open="1"] { transform:translateY(0)!important; }
+  .data-table-wrap { display:none!important; }
+  .card-list { display:flex!important; }
+  .detail-drawer { width:100vw!important; border-left:none!important; }
+  .bulk-bar { left:0!important; right:0!important; bottom:0!important; transform:none!important; width:100%!important; border-radius:0!important; border-left:none!important; border-right:none!important; }
+  .supply-grid { grid-template-columns:1fr!important; }
+  .caller-grid { display:block!important; }
+  .caller-tabs { display:flex!important; }
+  .caller-queue, .caller-active, .caller-recent { display:none!important; height:100%!important; border:none!important; }
+  .caller-grid[data-tab="active"] .caller-active { display:flex!important; }
+  .caller-grid[data-tab="queue"] .caller-queue { display:flex!important; }
+  .caller-grid[data-tab="recent"] .caller-recent { display:flex!important; }
+  .deals-grid, .reuse-grid { grid-template-columns:1fr!important; }
+  .active-chips { display:flex!important; }
+  .content-pad { padding:16px 14px!important; }
+  .tap { min-height:44px!important; }
+}

@@ -1,0 +1,82 @@
+# markets/nashville.yaml — market config for Davidson County, TN.
+# This captures EVERYTHING market-specific so the pipeline can be re-pointed by
+# selecting a market (MARKET=nashville, the default) instead of editing Python.
+# Values here reproduce the original hardcoded Nashville behavior exactly.
+# Scoring weights (market-agnostic) stay in weights.yaml; only `gates` below overlay it.
+
+market: nashville
+db_schema: public          # Nashville's data lives in the default public schema (existing 2,301 rows)
+crs: 4326
+home_state: TN             # mailing state <> this => owner is_out_of_state (normalize.py)
+
+# --- ArcGIS REST sources (verified 2026-06-11; see DATA_NOTES.md) ---
+sources:
+  parcels: "https://maps.nashville.gov/arcgis/rest/services/Cadastral/Parcels/MapServer/0"
+  building_chars: "https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Parcels_with_Building_Characteristics_view/FeatureServer/0"
+  violations: "https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Property_Standards_Violations_2/FeatureServer/0"
+  permits: "https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Building_Permits_Issued_2/FeatureServer/0"
+
+# --- gates: market-specific; overlay weights.yaml gates (same keys, no mapping) ---
+gates:
+  min_building_sf: 75000
+  manual_review_sf_floor: 60000
+  max_distance_miles: 10.0
+  icbd_center_lat: 36.1627          # 5th & Broadway, Nashville
+  icbd_center_lon: -86.7816
+
+# --- land use: numeric LUCode, matched on CODE not text (DATA_NOTES.md) ---
+land_use:
+  code_field: LUCode
+  industrial_codes:                 # code -> description (membership + iteration both work)
+    "064": SMALL WAREHOUSE
+    "077": TERMINAL/DISTRIBUTION WAREHOUSE
+    "071": LIGHT MANUFACTURING
+    "072": HEAVY MANUFACTURING
+    "070": VACANT INDUSTRIAL LAND
+  excluded_structure_types:         # dropped before summing building_sf (self-storage)
+    - MINI WAREHOUSE
+    - CLIMATE CONTROL MINI WAREHOUSE
+
+# --- how building_sf is derived for the 75k gate ---
+building_sf:
+  strategy: cama_sum                # SUM(FinishedArea) over CAMA building rows joined on APN
+
+# --- buy-box geometry ---
+buybox_geojson: imports/submarkets.geojson
+
+# --- field mapping: source field -> our normalized column (consumed by ingest) ---
+fields:
+  parcels:
+    apn: APN
+    owner: Owner
+    own_addr: OwnAddr1
+    own_city: OwnCity
+    own_state: OwnState            # separate state column (unlike Columbus)
+    own_zip: OwnZip
+    own_date: OwnDate              # epoch ms
+    sale_price: SalePrice
+    situs_address: PropAddr
+    land_use_code: LUCode
+    land_use_desc: LUDesc
+    acres: Acres
+    appraised: TotlAppr
+    assessed: TotlAssd
+  building_chars:
+    apn: APN
+    card: AssessorCardNumber
+    structure_type: StructureType
+    finished_area: FinishedArea
+    year_built: YearBuilt
+  violations:
+    apn: Property_APN
+    date: Date_Received
+    request_nbr: Request_Nbr
+    problem: Reported_Problem
+    status: Status
+  permits:
+    apn: Parcel
+    permit_nbr: Permit__
+    type: Permit_Type_Description
+    date_issued: Date_Issued
+    const_cost: Const_Cost
+    status: null                    # Issued feed has NO finaled/expired status (DATA_NOTES.md)

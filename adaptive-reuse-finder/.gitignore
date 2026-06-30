@@ -1,0 +1,40 @@
+# NOTE: gitignore has no inline comments — keep comments on their own lines, and exclude
+# directory *contents* (dir/*) not the dir itself, so the !re-includes below can work.
+
+# --- Secrets ---
+.env
+*.env
+!.env.example
+
+# --- Category-A PII: anything naming real properties / owners / addresses ---
+# Candidate outputs and any populated area files carry property addresses (PII by our policy).
+output/*
+!output/.gitkeep
+!output/SCHEMA.md
+data/areas/*
+!data/areas/.gitkeep
+# EXAMPLE_*.csv are illustrative (no real target) — safe to track.
+!data/areas/EXAMPLE_*.csv
+
+# --- Ephemeral imagery (we do NOT archive Street View screenshots; ToS + PII) ---
+image_cache/
+imagery_cache/
+screenshots/
+*.png
+*.jpg
+*.jpeg
+# (allow doc diagrams if any are added later)
+!docs/**/*.png
+
+# --- Local-only continuity / private files (offmarket convention) ---
+private/
+*.private.*
+LESSONS.md
+
+# --- Python / OS junk ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.DS_Store

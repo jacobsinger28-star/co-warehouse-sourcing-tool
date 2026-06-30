@@ -1,0 +1,110 @@
+# markets/charlotte.yaml — market config for Charlotte / Mecklenburg County, NC.
+# All endpoints + fields verified live 2026-06-16 (see DATA_NOTES_CHARLOTTE.md and
+# lib/sources_charlotte.py). Select with MARKET=charlotte. Scoring weights stay
+# shared in weights.yaml; only `gates` below overlay it.
+
+market: charlotte
+db_schema: charlotte       # isolated Postgres schema (search_path); Nashville is public
+crs: 4326
+home_state: NC             # mailing state <> this => owner is_out_of_state (normalize.py)
+
+# --- ArcGIS REST sources (verified live 2026-06-16) ---
+# Two governments: Mecklenburg County GIS owns CAMA + permits; City of Charlotte
+# owns code enforcement. All plain ArcGIS REST (lib/arcgis.py POST + paging).
+sources:
+  # ONE CAMA layer carries owner + land use + building SF + year + sale + vac/imp +
+  # geometry, keyed on `pid`. (Nashville needed two layers joined on APN.)
+  parcels: "https://meckgis.mecklenburgcountync.gov/server/rest/services/TaxParcel_camadata/FeatureServer/0"
+  # Code enforcement (City of Charlotte HNS). NOTE: rolling ~8-week window only — see
+  # DATA_NOTES_CHARLOTTE.md. The weekly cron must accumulate history going forward.
+  violations: "https://gis.charlottenc.gov/arcgis/rest/services/HNS/CodeEnforcementCasesAll/MapServer/0"
+  # Building permits (Mecklenburg County GIS): 36yr deep, has permitstat + compldate.
+  permits: "https://meckgis.mecklenburgcountync.gov/server/rest/services/BuildingPermits/FeatureServer/0"
+
+# --- gates (overlay weights.yaml). Center = uptown Charlotte. Radius + buy-box are
+#     a SUGGESTION — FOUNDER MUST CONFIRM the real submarkets. County-wide on first run. ---
+gates:
+  min_building_sf: 75000
+  manual_review_sf_floor: 60000
+  max_distance_miles: 20.0          # county-wide first pass (Huntersville ~18mi N); founder tightens
+  icbd_center_lat: 35.2271          # uptown Charlotte (Trade & Tryon)
+  icbd_center_lon: -80.8431
+
+# --- land use: Mecklenburg `landuse_description` TEXT (lusecode is many-to-many and
+#     UNRELIABLE — the INVERSE of Nashville; see DATA_NOTES_CHARLOTTE.md). Matched on
+#     the parcel-level description, stored verbatim in parcels.land_use_code. ---
+land_use:
+  code_field: landuse_description
+  industrial_codes:                 # exact parcel-level descriptions kept (verified live)
+    "INDUSTRIAL": INDUSTRIAL
+    "INDUSTRIAL PARK": INDUSTRIAL PARK
+    "INDUSTRIAL COMMON AREA": INDUSTRIAL COMMON AREA
+    "LIGHT MANUFACTURING": LIGHT MANUFACTURING
+    "HEAVY MANUFACTURING": HEAVY MANUFACTURING
+    "TRUCK TERMINAL": TRUCK TERMINAL
+  excluded_landuse:                 # matched a keyword but NOT a target
+    - MINI WAREHOUSE                 # self-storage competing use
+    - WAREHOUSE CONDOMINIUM          # fractured ownership
+    - WAREHOUSE CONDOMINIUM COMMON AREA
+  # Building-level bldgtype values dropped before summing building_sf (self-storage,
+  # condos, retail big-box, and the MANUFACTURED-HOME "MANUF" trap).
+  excluded_structure_types:
+    - MINI WAREHOUSE
+    - MINI WAREHOUSE CLIMATE CONTROL
+    - PREFAB/MINIMAL WAREHOUSE
+    - WAREHOUSE CONDOMINIUM
+    - RETAIL WAREHOUSE DISCOUNT STORE
+    - MANUFACTURED HOME-SINGLEWIDE
+    - MANUFACTURED HOME-DOUBLEWIDE
+
+# --- how building_sf is derived for the 75k gate ---
+building_sf:
+  strategy: cama_sum_distinct_heatedarea   # SUM(DISTINCT heatedarea) per pid, excl self-storage
+  strategy_note: >
+    SUM(DISTINCT heatedarea) per pid. The Mecklenburg CAMA feed mixes three shapes and
+    DISTINCT is robust to all: (a) heatedarea repeated as a parcel total -> collapses to one
+    value; (b) genuine multi-building parcels with differing per-building SF -> summed
+    (matches the founder's Nashville "SUM of structures" decision); (c) literal duplicate
+    rows the feed returns -> deduped (a raw SUM would multiply them). building_sf_largest =
+    MAX, building_count = COUNT(DISTINCT) stored alongside. ~570 parcels clear the 75k gate.
+
+# --- buy-box geometry (PENDING founder; placeholder ~20mi circle around uptown) ---
+buybox_geojson: imports/charlotte_submarkets.geojson
+
+# --- field mapping: Mecklenburg/Charlotte source field -> our normalized column ---
+fields:
+  parcels:                          # TaxParcel_camadata
+    apn: pid
+    owner_last: ownrlstnme          # entity name OR person last name
+    owner_first: ownrfrstnme        # person first name (blank for entities)
+    own_addr: mailaddr1
+    own_addr2: mailaddr2
+    own_city: city                  # owner mailing city
+    own_state: state                # separate state column -> is_out_of_state vs NC
+    own_zip: zipcode
+    own_date: saledate              # esri epoch ms
+    sale_price: saleprice
+    situs_address: address          # situs street address
+    situs_city: loccity
+    land_use_desc_src: landuse_description   # parcel-level use -> land_use_code (the gate key)
+    bldgtype: bldgtype              # building-level descriptor -> land_use_desc (display)
+    building_sf: heatedarea
+    finished_area: finarea
+    year_built: yearbuilt
+    vac_or_improved: vacorimprov    # 'VAC'|'IMP' -> direct vacancy signal
+    assessed: totalvalue
+  violations:                       # HNS CodeEnforcementCasesAll
+    apn: ParcelId
+    case_nbr: CaseNumber
+    type: CaseType
+    status: CaseStatus
+    date: DateCreated
+    detail: DetailedDescription
+  permits:                          # BuildingPermits (HAS status + compldate)
+    apn: parcelnum
+    permit_nbr: permitnum
+    type: permittype
+    date_issued: issuedate
+    date_complete: compldate
+    status: permitstat              # enables lapsed/expired-permit signal (unlike Nashville)
+    const_cost: bldgcost
