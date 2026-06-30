@@ -47,4 +47,11 @@
 - **Regenerate the Pipedrive API token** — it passed through chat; swap the new one into both `.env`.
 - **Build email/phone enrichment into the scraper** (the Google-panel → flyer/bio/permit → phone-match playbook) so brokers come in populated.
 - **Betty Macias** and the rest are done; owner-lead *phones* remain a skip-trace job, not web search.
-- General-scraping code changes (`pipedrive.py`, `pipedrive_backfill.py`) are on disk, uncommitted — commit to that repo when ready (keep `.env` gitignored).
+- Get a GitHub remote for `sourcing-platform` (Railway-bound) so it can be pushed.
+
+## Close-out — repos committed (2026-06-30)
+- **Pipedrive token** saved as `PIPEDRIVE_API_TOKEN` in `general-scraping/backend/.env` + `offmarket-scraping/.env` (both gitignored). Regenerate it (chat-exposed) and swap.
+- **general-scraping** → committed + **pushed** to `origin/main` (`d3023fa`): `pipedrive.py` owner→Raz + `pipedrive_backfill.py`.
+- **offmarket-scraping** → clean (only the gitignored `.env` changed); nothing to commit.
+- **sourcing-platform** → **initialized as its own git repo** (first commit `c8457c6`, 216 files, PII-verified clean — `data.real.json`/`private/`/`.env`/DBs/spreadsheets excluded); this session log + `tools/pull_pipedrive_brokers.py` committed. **No remote yet** → can't push until one is created.
+- **root (SimiCapital)** → recorded the session-log relocation (`b63d105`); local-only, no remote.
