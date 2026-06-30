@@ -4,6 +4,27 @@ Live status of record (most-recent section first). What's built, every decision,
 
 ---
 
+## §5 — 2026-06-30 — Verification-status clarification (no code change)
+
+Q&A call answering: *for the sourced "adaptive reuse" results, was each property Street-View-verified
+via the Chrome extension, or is LoopNet the only source?* Recorded the honest status so it isn't
+mis-stated later:
+
+- **The 20 §4 buy-box deals (10 Orlando + 10 Nashville) are LoopNet-card-only.** The Chrome extension
+  was used to *pull the listing cards* (address, SF, year, sale status, URL), **not** to Street-View
+  or aerial-verify the properties. `output/assessments/orlando-nashville-buybox-batch2.md` flags this
+  in its own header ("SF/year from LoopNet cards — verify"; "Yard/IOS not yet confirmed per-property").
+- **Only two properties ever got a live Street View pass** via the extension — the only two rows in
+  `output/adaptive_reuse_candidates.csv`: the Columbus POC (§1) and 1900 W New Hampshire, Orlando (§2).
+- **LoopNet is a finder, not a verifier.** Per the rubric/runbook: marketed SF is suspect (reconcile
+  vs. county gross/heated SF), `year_built` must be cross-checked to kill imitation-newbuild, and the
+  defining yard/IOS feature needs a satellite pass — none of which a LoopNet card settles.
+- **Offered next (not started):** the 3-pass verification on the §4 in-band standouts — Street View
+  facade pass (conversion/IOS tells) + aerial (yard/coverage) + county GIS (`year_built` + SF
+  reconcile) → a *verified* shortlist. Awaiting go-ahead.
+
+---
+
 ## §4 — 2026-06-25 — Deal sourcing against the buy-box (Orlando + Nashville)
 
 Used the buy-box (§3) to source matching deals and pulled real LoopNet URLs via the Chrome
