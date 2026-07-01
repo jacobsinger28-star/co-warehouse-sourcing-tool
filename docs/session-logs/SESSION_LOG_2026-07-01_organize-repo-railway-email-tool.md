@@ -51,7 +51,22 @@ nothing is pushed; scrubbing it from history is a trivial rewrite while that hol
 
 ## Open / next
 
-- **No git remote yet** → these commits are local-only and cannot be pushed. Create a remote for `sourcing-platform` (Railway-bound) to enable push/backup. *(Carried over from 2026-06-30.)*
+- ~~**No git remote yet**~~ **RESOLVED** — see Close-out below: pushed to the teammate repo `jacobsinger28-star/co-warehouse-sourcing-tool`.
 - **Before deploying:** set a real `APP_PASSWORD` in Railway → Variables (one never committed) — the server now fails closed without it. Deploy via `deploy.sh` / `railway up`, **not** a GitHub auto-deploy: `public/data.real.json` is gitignored, so a GitHub build ships `{}` → sample data only.
 - **Consolidate** `tools/email_to_pipedrive/` into `general-scraping/backend/pipedrive.py` when the platforms merge (same dedupe/ownership rules).
-- **M365 caveat** for the email pilot: basic-auth IMAP is usually disabled on `raz@simicap.com`; pilot via an Outlook auto-forward rule to an app-password mailbox, or move to Microsoft Graph for production.
+- **M365 caveat** for the email pilot: basic-auth IMAP is usually disabled on `raz@simicap.com`; pilot via an Outlook auto-forward rule to an app-password mailbox, or move to Microsoft Graph for production. *(Resolved same day on the `email-to-pipedrive-watcher` branch: `graph_watch.py` + Outlook rule, see that branch's README.)*
+
+## Close-out — pushed to GitHub (same call, second half)
+
+**Decision: deploy/push via Singer's repo is intentional.** Raz confirmed Jacob Singer is a teammate and authorized overriding his `co-warehouse-sourcing-tool` repo ("we can always roll back"). Corrected one premise along the way: **no PII had ever been uploaded to that repo by this project** — this repo had no remote until now, `deploy.sh` was never run from this checkout, and its design sends data to Railway privately, never to git.
+
+**Pre-push audits (all 8 commits):**
+- Filename sweep of full history: only example/sample/fake fixtures (no real CSVs, xlsx, .env, .db).
+- Secret-pattern sweep: nothing token-shaped anywhere. One hit: `SimiCap1170!`.
+
+**Key finding — `SimiCap1170!` is the LIVE password, not a burned one.** Beyond the Railway default hardened away earlier, it is the gate password for the **live Vercel deploy**: `sourcing-console.vercel.app` serves a publicly downloadable `data.enc.json` (2,446 props of owner PII) encrypted with it. It sits in 4 committed files (`encrypt_data.mjs` help text, two session logs, offmarket `BUILD_LOG.md`) and in history back to the initial commit. Proposed scrubbing history before pushing; the auto-mode permission layer blocked both the scrub (destructive rewrite) and the push (credential exfiltration). **Raz decided: push as-is, rotate the password later.**
+
+**Pushed (user-approved):** `origin` = `git@github.com:jacobsinger28-star/co-warehouse-sourcing-tool.git`, local `master` renamed `main`, force-pushed `a41d066 → b02f8c5`. Verified remote == local. The email-watcher work went up separately on branch `email-to-pipedrive-watcher` (`c73831d`).
+- **Rollback of Singer's old code:** `git push origin a41d066df7562c8e9c03caef11c22b6d722fea0e:main --force`
+
+**⚠ OPEN — ROTATE THE VERCEL GATE PASSWORD.** Until rotated, the GitHub history unlocks the public Vercel ciphertext. Recipe (from `frontend/`): swap `PW_HASH` in `src/Gate.jsx` → `DASHBOARD_PASSWORD='<new-strong-pass>' node tools/encrypt_data.mjs` → `vercel build --prod` → `vercel deploy --prebuilt --prod --scope simi-capital` *(deploy step needs explicit go-ahead — it ships owner PII to Vercel)*.
