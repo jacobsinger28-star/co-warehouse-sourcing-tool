@@ -1,0 +1,202 @@
+"""Pull a broker (and the deals they mention) out of a raw email.
+
+Live path uses Claude (mirrors general-scraping/backend/outreach/draft.py: same
+SDK, same claude-opus-4-8, same ANTHROPIC_API_KEY env var). If no key is set we
+fall back to a deterministic regex pass so the pipeline runs end-to-end offline
+for testing — same philosophy as draft.py's template fallback.
+
+Returns a Broker dataclass ready for pipedrive_sync.upsert_broker().
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+from dataclasses import dataclass, field, asdict
+from typing import Optional
+
+MODEL = "claude-opus-4-8"
+
+_SYSTEM = """You extract a commercial real estate BROKER (or deal intermediary) \
+and the deals they mention out of a forwarded email. The email is often a messy \
+off-market "deal sheet". Return ONLY JSON, no prose, matching exactly:
+
+{
+  "name": string|null,            // the broker/sender's full name
+  "company": string|null,         // their firm / entity (e.g. "JMS Premier Builder's")
+  "email": string|null,           // their best contact email
+  "phone": string|null,           // office/work number if given
+  "cell": string|null,            // mobile/cell if given
+  "title": string|null,           // e.g. "broker", "developer", null if unknown
+  "markets": [string],            // cities/markets the deals are in
+  "deals": [ {"summary": string, "address": string|null, "price": string|null} ],
+  "context": string|null          // 1 short line describing who they are / the deal flow
+}
+
+Rules: never invent a phone/email that isn't in the text. If a field is unknown, \
+use null (or [] for lists). Prefer the sender's own signature for contact info."""
+
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+# US phone: (347) 472-9085 / 347-472-9085 / 347.472.9085 / 3474729085 / +1 ...
+_PHONE_RE = re.compile(
+    r"(?:\+?1[\s.\-]?)?(?:\(\d{3}\)|\d{3})[\s.\-]?\d{3}[\s.\-]?\d{4}"
+)
+
+
+@dataclass
+class Broker:
+    name: Optional[str] = None
+    company: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    cell: Optional[str] = None
+    title: Optional[str] = None
+    markets: list[str] = field(default_factory=list)
+    deals: list[dict] = field(default_factory=list)
+    context: Optional[str] = None
+    extractor: str = "regex"          # "claude" or "regex"
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+    def is_actionable(self) -> bool:
+        # Enough to create/dedupe a Pipedrive person.
+        return bool(self.email or self.phone or self.cell or self.name)
+
+
+class BrokerExtractor:
+    def __init__(self, api_key: Optional[str] = None, model: str = MODEL):
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.model = model
+        self.live = bool(self.api_key)
+
+    def extract(self, *, subject: str = "", body: str = "",
+                from_name: str = "", from_email: str = "") -> Broker:
+        if self.live:
+            b = self._extract_live(subject, body, from_name, from_email)
+            if b and b.is_actionable():
+                return b
+        return self._extract_regex(subject, body, from_name, from_email)
+
+    # --- live (Claude) -----------------------------------------------------
+    def _extract_live(self, subject, body, from_name, from_email) -> Optional[Broker]:
+        try:
+            import anthropic
+        except ImportError:
+            return None
+        user = (
+            f"From: {from_name} <{from_email}>\n"
+            f"Subject: {subject}\n\n"
+            f"{body}\n\n---\nExtract the broker + deals as JSON."
+        )
+        try:
+            client = anthropic.Anthropic(api_key=self.api_key)
+            resp = client.messages.create(
+                model=self.model,
+                max_tokens=1500,
+                thinking={"type": "adaptive"},
+                output_config={"effort": "low"},
+                system=_SYSTEM,
+                messages=[{"role": "user", "content": user}],
+            )
+        except Exception:
+            return None
+        text = "".join(b.text for b in resp.content if b.type == "text").strip()
+        data = _first_json(text)
+        if not data:
+            return None
+        b = Broker(
+            name=data.get("name") or from_name or None,
+            company=data.get("company"),
+            email=data.get("email") or (from_email or None),
+            phone=data.get("phone"),
+            cell=data.get("cell"),
+            title=data.get("title"),
+            markets=list(data.get("markets") or []),
+            deals=list(data.get("deals") or []),
+            context=data.get("context"),
+            extractor="claude",
+        )
+        return b
+
+    # --- fallback (regex) --------------------------------------------------
+    def _extract_regex(self, subject, body, from_name, from_email) -> Broker:
+        text = f"{subject}\n{body}"
+        emails = [e for e in _EMAIL_RE.findall(text) if not e.lower().endswith(("png", "jpg", "gif"))]
+        phones = _dedupe_phones(_PHONE_RE.findall(text))
+        email = from_email or (emails[0] if emails else None)
+        cell = phones[0] if phones else None
+        phone = phones[1] if len(phones) > 1 else None
+        company = _guess_company(text, email)
+        return Broker(
+            name=from_name or _guess_name(text) or None,
+            company=company,
+            email=email,
+            phone=phone,
+            cell=cell,
+            markets=_guess_markets(text),
+            deals=[],
+            context="(regex fallback — set ANTHROPIC_API_KEY for full extraction)",
+            extractor="regex",
+        )
+
+
+def _first_json(text: str) -> Optional[dict]:
+    text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        m = re.search(r"\{.*\}", text, re.S)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except Exception:
+                return None
+    return None
+
+
+def _dedupe_phones(raw: list[str]) -> list[str]:
+    out, seen = [], set()
+    for p in raw:
+        digits = re.sub(r"\D", "", p)
+        if len(digits) == 11 and digits.startswith("1"):
+            digits = digits[1:]
+        if len(digits) != 10 or digits in seen:
+            continue
+        seen.add(digits)
+        out.append(f"({digits[:3]}) {digits[3:6]}-{digits[6:]}")
+    return out
+
+
+def _guess_company(text: str, email: Optional[str]) -> Optional[str]:
+    m = re.search(r"\b([A-Z][A-Za-z&.,'\- ]{2,40}(?:LLC|Inc|Group|Realty|Builders|Partners|Capital|Advisors|Company|Co\.?))\b", text)
+    if m:
+        return m.group(1).strip(" ,.")
+    if email and "@" in email:
+        dom = email.split("@", 1)[1].split(".")[0]
+        if dom not in ("gmail", "yahoo", "outlook", "hotmail", "icloud", "aol"):
+            return dom.replace("-", " ").title()
+    return None
+
+
+def _guess_name(text: str) -> Optional[str]:
+    for line in reversed([l.strip() for l in text.splitlines() if l.strip()][-8:]):
+        m = re.match(r"^([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)$", line)
+        if m:
+            return m.group(1)
+    return None
+
+
+_MARKET_HINTS = [
+    "Cape Coral", "North Miami Beach", "North Miami", "Miami Beach", "Miami",
+    "West Palm Beach", "Fort Lauderdale", "Tampa", "Orlando", "Naples",
+    "Fort Myers", "Boca Raton", "Jacksonville",
+]
+
+
+def _guess_markets(text: str) -> list[str]:
+    out = []
+    for m in _MARKET_HINTS:
+        if re.search(rf"\b{re.escape(m)}\b", text, re.I) and m not in out:
+            out.append(m)
+    return out
