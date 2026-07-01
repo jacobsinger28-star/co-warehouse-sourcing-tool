@@ -16,10 +16,15 @@ import fs from 'node:fs'
 const ITER = 250000
 const inPath = process.argv[2] || 'public/data.real.json'
 const outPath = process.argv[3] || 'public/data.enc.json'
+// No hardcoded default — a committed password is a public password. Fails LOUDLY
+// (not a silent skip) so a forgotten env var can't quietly ship stale/sample data.
 const password = process.env.DASHBOARD_PASSWORD
-
 if (!password) {
-  console.error('refusing to encrypt: set DASHBOARD_PASSWORD (kept out of argv/history)')
+  console.error(
+    '\n⛔ DASHBOARD_PASSWORD is not set — nothing was encrypted.\n' +
+    '   Re-run with the gate password, e.g.:\n\n' +
+    "     DASHBOARD_PASSWORD='SimiCap1170!' node tools/encrypt_data.mjs\n"
+  )
   process.exit(2)
 }
 if (!fs.existsSync(inPath)) {
