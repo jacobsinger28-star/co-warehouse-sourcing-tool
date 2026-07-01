@@ -1,0 +1,18 @@
+# Railway deploy for the sourcing console (server-side-auth, PII-safe).
+# The data.real.json (owner/broker PII) is baked into the image but served ONLY
+# via POST /api/data with the correct APP_PASSWORD — never a public static file.
+#
+# Deploy:
+#   npm i -g @railway/cli
+#   cd frontend && railway login && railway init
+#   railway variables set APP_PASSWORD='SimiCap1170!'   # or a stronger one
+#   railway up
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

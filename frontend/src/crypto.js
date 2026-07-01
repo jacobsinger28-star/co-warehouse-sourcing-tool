@@ -21,14 +21,30 @@ export async function decryptJson(password, enc) {
   return JSON.parse(new TextDecoder().decode(buf))
 }
 
-// Load the real dataset: prefer the encrypted blob (decrypt with the password);
-// fall back to a plaintext data.real.json if present (local dev only). Returns the
-// parsed dataset, or null if neither is available / decryption fails.
+// Load the real dataset. Order of preference:
+//   1. POST /api/data  — Railway server-side auth (data never a public file; the
+//      password is checked on the server). This is the secure production path.
+//   2. data.enc.json   — encrypted static blob (Vercel static deploy), decrypted here.
+//   3. data.real.json  — plaintext (local dev only).
+// Returns the parsed dataset, or null (→ app uses synthetic sample data).
 export async function loadRealData(password, baseUrl = '/') {
+  // 1. server-side auth (Railway)
+  try {
+    const r = await fetch(`${baseUrl}api/data`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password }),
+      cache: 'no-store',
+    })
+    if (r.ok) return await r.json()
+    if (r.status === 401) return null // server says wrong password — no static fallback
+  } catch { /* no backend (static host) → try static blobs */ }
+  // 2. encrypted static blob (Vercel)
   try {
     const r = await fetch(`${baseUrl}data.enc.json`, { cache: 'no-store' })
     if (r.ok) return await decryptJson(password, await r.json())
-  } catch { /* fall through to plaintext / synthetic */ }
+  } catch { /* fall through */ }
+  // 3. plaintext (local dev)
   try {
     const r = await fetch(`${baseUrl}data.real.json`, { cache: 'no-store' })
     if (r.ok) return await r.json()

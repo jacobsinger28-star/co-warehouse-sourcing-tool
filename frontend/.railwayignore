@@ -1,0 +1,8 @@
+node_modules
+dist
+.vercel
+.git
+.DS_Store
+*.log
+# public/data.real.json is intentionally uploaded (owner/broker PII) — the Docker
+# build moves it out of the public bundle and the server gates it behind /api/data.

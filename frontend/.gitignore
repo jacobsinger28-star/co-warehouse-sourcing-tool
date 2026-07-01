@@ -1,2 +1,29 @@
+# co-warehouse-sourcing-tool — keep this repo CLEAN. Owner/broker PII must never
+# be committed (your AUDIT-BEFORE-PUSH policy). The data reaches the deploy via a
+# Railway volume / hosting env var, NOT git.
+
+# ── OWNER/BROKER PII — never commit ──
+data.real.json
+data.enc.json
+public/data.real.json
+public/data.enc.json
+*.db
+
+# ── secrets ──
+.env
+.env.*
+*.env
+.vercel/
+.env.local
+!.env.example
+
+# ── build / deps ──
+node_modules
+dist
 .vercel
-.env*
+.railway
+
+# ── os / editor ──
+.DS_Store
+*.log
+npm-debug.log*
