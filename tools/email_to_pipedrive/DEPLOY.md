@@ -2,7 +2,7 @@
 
 Goal: Andrew forwards a broker email with `#pipedrive` → it's in Pipedrive a
 couple minutes later, with nobody starting anything. The watcher runs 24/7 on
-Railway (`graph_watch.py --live --loop 120`).
+Railway (`graph_watch.py --live --loop 30`).
 
 These steps need your Railway login, so **you run them** — I can't sign into
 your Railway account. It's ~5 commands.

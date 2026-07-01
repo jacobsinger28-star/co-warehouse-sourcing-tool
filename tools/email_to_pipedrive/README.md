@@ -41,7 +41,7 @@ use the **Graph watcher** (set up below). The IMAP watcher is only for mailboxes
 that allow an app password (e.g. Gmail):
 
 ```bash
-python graph_watch.py --live --loop 120       # your M365 mailbox via Graph
+python graph_watch.py --live --loop 30       # your M365 mailbox via Graph
 # or an app-password mailbox:
 IMAP_HOST=imap.gmail.com IMAP_USER=you@x.com IMAP_PASS='app-password' \
   python imap_watch.py --live --loop 60
@@ -68,7 +68,7 @@ Both pieces are live:
    - client id `2d3783b0-9454-4b79-aad5-258c5f8f20ab`
    - tenant    `25960412-5a50-44b0-879b-cb1bac0280b8`
 
-   Needs `pip install msal`. Run `python graph_watch.py --live --loop 120`. To
+   Needs `pip install msal`. Run `python graph_watch.py --live --loop 30`. To
    keep it running unattended, wrap it in a launchd/systemd service or cron loop.
 
 ## Safety
