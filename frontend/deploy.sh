@@ -10,14 +10,19 @@
 # staging copy. The running server gates the data behind a server-side password
 # (POST /api/data) — it is never a downloadable file and never on GitHub.
 #
-# Override the password:  APP_PASSWORD='your-pass' bash deploy.sh
+# Required — set the password (never committed):  APP_PASSWORD='your-pass' bash deploy.sh
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 REPO="git@github.com:jacobsinger28-star/co-warehouse-sourcing-tool.git"
-APP_PASSWORD="${APP_PASSWORD:-SimiCap1170!}"
 STAGE="/tmp/cw-deploy"
+
+# APP_PASSWORD must be provided — never hardcode it (this script is committed).
+if [ -z "${APP_PASSWORD:-}" ]; then
+  echo "⛔ APP_PASSWORD is required. Run:  APP_PASSWORD='your-strong-pass' bash deploy.sh"
+  exit 1
+fi
 
 # ── 1. push CLEAN code to GitHub (owner PII excluded) ────────────────────────
 echo "==> [1/4] git: push code (PII excluded)"

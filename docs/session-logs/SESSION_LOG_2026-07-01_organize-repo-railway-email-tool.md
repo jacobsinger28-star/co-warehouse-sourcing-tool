@@ -34,9 +34,24 @@
 - Committed sample contains no real PII (example.com address, 555 phone).
 - No hardcoded secrets in the new deploy/tool files.
 
+## Follow-up — server auth hardened (same session)
+
+Reviewed how `server.mjs` wires up the deploy env vars, then hardened it:
+- **Fail closed:** `APP_PASSWORD` no longer has a default. If it's unset, `/api/data`
+  returns 503 and serves nothing — a blank/missing password can't leak PII.
+- **Dropped the committed default `SimiCap1170!`** from `server.mjs`, `deploy.sh`,
+  and `railway.toml`; `deploy.sh` now aborts unless `APP_PASSWORD` is passed in.
+- **Fixed the misleading "mounted volume" comment** — data is baked into the image
+  by the Dockerfile; `DATA_DIR` is only an optional override.
+- Verified live: unset → 503, wrong password → 401, right password → 200 + data.
+
+⚠️ `SimiCap1170!` still exists in history (commit `4631bca`). Treat it as burned —
+pick a fresh `APP_PASSWORD` in Railway that was never committed. No remote yet, so
+nothing is pushed; scrubbing it from history is a trivial rewrite while that holds.
+
 ## Open / next
 
 - **No git remote yet** → these commits are local-only and cannot be pushed. Create a remote for `sourcing-platform` (Railway-bound) to enable push/backup. *(Carried over from 2026-06-30.)*
-- **Before deploying:** confirm Railway env vars wire up `server.mjs` — the app password + data-volume path the `/api/data` auth path expects. Not yet reviewed.
+- **Before deploying:** set a real `APP_PASSWORD` in Railway → Variables (one never committed) — the server now fails closed without it. Deploy via `deploy.sh` / `railway up`, **not** a GitHub auto-deploy: `public/data.real.json` is gitignored, so a GitHub build ships `{}` → sample data only.
 - **Consolidate** `tools/email_to_pipedrive/` into `general-scraping/backend/pipedrive.py` when the platforms merge (same dedupe/ownership rules).
 - **M365 caveat** for the email pilot: basic-auth IMAP is usually disabled on `raz@simicap.com`; pilot via an Outlook auto-forward rule to an app-password mailbox, or move to Microsoft Graph for production.

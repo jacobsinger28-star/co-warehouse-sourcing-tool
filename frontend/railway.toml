@@ -5,7 +5,7 @@
 # Deploy:
 #   npm i -g @railway/cli
 #   cd frontend && railway login && railway init
-#   railway variables set APP_PASSWORD='SimiCap1170!'   # or a stronger one
+#   railway variables set APP_PASSWORD='<strong-password-not-in-git>'
 #   railway up
 [build]
 builder = "DOCKERFILE"
