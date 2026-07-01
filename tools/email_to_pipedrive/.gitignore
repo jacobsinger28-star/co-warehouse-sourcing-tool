@@ -1,0 +1,4 @@
+# Secrets + local state — never commit
+.env
+.graph_token_cache.json
+.graph_seen_ids.json

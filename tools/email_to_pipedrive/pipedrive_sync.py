@@ -23,6 +23,8 @@ from broker_extract import Broker
 _BASE = "https://api.pipedrive.com/v1"
 _ROOT = Path(__file__).resolve().parents[2]          # sourcing-platform/
 _TOOL_LABEL = "email-intake-tool"                    # provenance tag (in the note)
+_LABEL = "from-email"                                # Pipedrive Person label to set
+_label_id_cache: int | None = None
 
 
 def _token() -> str:
@@ -49,6 +51,50 @@ def _post(url: str, payload: dict) -> dict:
     )
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.load(r)
+
+
+def _put(url: str, payload: dict) -> dict:
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"}, method="PUT",
+    )
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.load(r)
+
+
+def _label_field(token: str) -> dict | None:
+    d = _get(f"{_BASE}/personFields?api_token={token}")
+    return next((f for f in (d.get("data") or []) if f.get("key") == "label"), None)
+
+
+def _get_label_id(token: str, create: bool = True) -> int | None:
+    """Resolve the Person 'label' option id for _LABEL ("from-email"), creating
+    it (preserving existing options) when create=True. Mirrors pipedrive.py."""
+    global _label_id_cache
+    if _label_id_cache is not None:
+        return _label_id_cache
+    try:
+        field = _label_field(token)
+        if not field:
+            return None
+        opts = field.get("options") or []
+        match = next((o for o in opts if (o.get("label") or "").lower() == _LABEL.lower()), None)
+        if match:
+            _label_id_cache = match["id"]
+            return _label_id_cache
+        if not create:
+            return None
+        new_opts = [{"id": o["id"], "label": o["label"]} for o in opts]  # keep existing
+        new_opts.append({"label": _LABEL})
+        _put(f"{_BASE}/personFields/{field['id']}?api_token={token}", {"options": new_opts})
+        field2 = _label_field(token) or {}
+        _label_id_cache = next(
+            (o["id"] for o in (field2.get("options") or [])
+             if (o.get("label") or "").lower() == _LABEL.lower()), None)
+    except Exception as exc:  # noqa: BLE001 — label is best-effort, never blocks
+        print(f"  ! label lookup failed: {exc}", file=sys.stderr)
+        _label_id_cache = None
+    return _label_id_cache
 
 
 def _digits(s: Optional[str]) -> str:
@@ -133,9 +179,14 @@ def upsert_broker(broker: Broker, dry_run: bool = True) -> dict:
     payload = _build_payload(broker, owner_id)
 
     if dry_run:
-        return {"status": "dry_run", "would_create": payload,
+        label_id = _get_label_id(token, create=False)   # don't create the option in a dry run
+        preview = {**payload, **({"label": label_id} if label_id else {})}
+        return {"status": "dry_run", "would_create": preview, "label": _LABEL,
                 "note": _note_body(broker), "owner_id": owner_id}
 
+    label_id = _get_label_id(token, create=True)         # get-or-create "from-email"
+    if label_id:
+        payload["label"] = label_id
     data = _post(f"{_BASE}/persons?api_token={token}", payload)
     if not data.get("success"):
         return {"status": "error", "error": data.get("error"), "payload": payload}

@@ -13,9 +13,34 @@ import json
 import os
 import re
 from dataclasses import dataclass, field, asdict
+from pathlib import Path
 from typing import Optional
 
 MODEL = "claude-opus-4-8"
+
+# Where we look for ANTHROPIC_API_KEY if it isn't already an env var: a local
+# gitignored .env here, then the general-scraping backend .env. You put the key
+# in one of these once; the watcher and CLI both read it. Never commit it.
+_ENV_FILES = [
+    Path(__file__).resolve().parent / ".env",
+    Path(__file__).resolve().parents[2].parent / "general-scraping" / "backend" / ".env",
+]
+
+
+def _env(name: str) -> Optional[str]:
+    v = os.getenv(name)
+    if v:
+        return v
+    for f in _ENV_FILES:
+        try:
+            if f.exists():
+                for line in f.read_text().splitlines():
+                    line = line.strip()
+                    if line.startswith(f"{name}="):
+                        return line.split("=", 1)[1].strip().strip('"').strip("'")
+        except OSError:
+            pass
+    return None
 
 _SYSTEM = """You extract a commercial real estate BROKER (or deal intermediary) \
 and the deals they mention out of a forwarded email. The email is often a messy \
@@ -37,9 +62,17 @@ Rules: never invent a phone/email that isn't in the text. If a field is unknown,
 use null (or [] for lists). Prefer the sender's own signature for contact info."""
 
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
-# US phone: (347) 472-9085 / 347-472-9085 / 347.472.9085 / 3474729085 / +1 ...
+# Forwarded-message headers — the real broker is the ORIGINAL sender inside a
+# forward, not whoever forwarded it. "From: Name <email>" (Outlook) and
+# "On <date>, Name <email> wrote:" (reply-style).
+_FWD_FROM_RE = re.compile(
+    r"From:\s*([^<\n]+?)\s*<([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})>", re.I)
+_FWD_WROTE_RE = re.compile(
+    r"On\b.{0,80}?<([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})>\s*wrote:", re.I)
+# US phone. Separators allow spaces AND dashes/dots together, so spaced forms
+# like "(347) 472 - 9085" match, not just "(347) 472-9085".
 _PHONE_RE = re.compile(
-    r"(?:\+?1[\s.\-]?)?(?:\(\d{3}\)|\d{3})[\s.\-]?\d{3}[\s.\-]?\d{4}"
+    r"(?:\+?1[\s.\-]{0,2})?(?:\(\d{3}\)|\d{3})[\s.\-]{0,3}\d{3}[\s.\-]{0,3}\d{4}"
 )
 
 
@@ -66,7 +99,7 @@ class Broker:
 
 class BrokerExtractor:
     def __init__(self, api_key: Optional[str] = None, model: str = MODEL):
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.api_key = api_key or _env("ANTHROPIC_API_KEY")
         self.model = model
         self.live = bool(self.api_key)
 
@@ -122,14 +155,19 @@ class BrokerExtractor:
     # --- fallback (regex) --------------------------------------------------
     def _extract_regex(self, subject, body, from_name, from_email) -> Broker:
         text = f"{subject}\n{body}"
+        # If this is a forward, the broker is the original sender in the body,
+        # not the forwarder. Prefer an external-domain original sender.
+        orig_name, orig_email = _original_sender(body, from_email)
+        eff_name = orig_name or from_name
+        eff_email = orig_email or from_email
         emails = [e for e in _EMAIL_RE.findall(text) if not e.lower().endswith(("png", "jpg", "gif"))]
         phones = _dedupe_phones(_PHONE_RE.findall(text))
-        email = from_email or (emails[0] if emails else None)
+        email = eff_email or (emails[0] if emails else None)
         cell = phones[0] if phones else None
         phone = phones[1] if len(phones) > 1 else None
         company = _guess_company(text, email)
         return Broker(
-            name=from_name or _guess_name(text) or None,
+            name=eff_name or _guess_name(text) or None,
             company=company,
             email=email,
             phone=phone,
@@ -153,6 +191,29 @@ def _first_json(text: str) -> Optional[dict]:
             except Exception:
                 return None
     return None
+
+
+def _original_sender(body: str, forwarder_email: Optional[str]):
+    """From a forwarded/replied body, return the (name, email) of the ORIGINAL
+    sender — the first forwarded 'From:' whose address isn't the forwarder's.
+    Prefers a sender on a different domain (an outside broker)."""
+    fwd = (forwarder_email or "").lower()
+    fdom = fwd.split("@")[-1] if "@" in fwd else ""
+    cands: list[tuple[str, str]] = []
+    for name, email in _FWD_FROM_RE.findall(body or ""):
+        e = email.strip().lower()
+        if e and e != fwd:
+            cands.append((name.strip(), email.strip()))
+    for email in _FWD_WROTE_RE.findall(body or ""):
+        e = email.strip().lower()
+        if e and e != fwd and not any(c[1].lower() == e for c in cands):
+            cands.append(("", email.strip()))
+    if not cands:
+        return None, None
+    for name, email in cands:                       # prefer an external sender
+        if email.split("@")[-1].lower() != fdom:
+            return (name or None), email
+    return (cands[0][0] or None), cands[0][1]
 
 
 def _dedupe_phones(raw: list[str]) -> list[str]:
