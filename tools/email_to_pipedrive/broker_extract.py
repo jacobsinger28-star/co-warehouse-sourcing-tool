@@ -89,6 +89,7 @@ class Broker:
     markets: list[str] = field(default_factory=list)
     deals: list[dict] = field(default_factory=list)
     context: Optional[str] = None
+    source_email: str = ""            # full forwarded email, saved as a note
     extractor: str = "regex"          # "claude" or "regex"
 
     def as_dict(self) -> dict:
@@ -107,11 +108,15 @@ class BrokerExtractor:
 
     def extract(self, *, subject: str = "", body: str = "",
                 from_name: str = "", from_email: str = "") -> Broker:
+        b = None
         if self.live:
             b = self._extract_live(subject, body, from_name, from_email)
-            if b and b.is_actionable():
-                return b
-        return self._extract_regex(subject, body, from_name, from_email)
+            if not (b and b.is_actionable()):
+                b = None
+        if b is None:
+            b = self._extract_regex(subject, body, from_name, from_email)
+        b.source_email = f"{subject}\n\n{body}".strip()[:5000]   # saved as the note
+        return b
 
     # --- live (Claude) -----------------------------------------------------
     def _extract_live(self, subject, body, from_name, from_email) -> Optional[Broker]:

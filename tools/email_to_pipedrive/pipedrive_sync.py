@@ -165,6 +165,9 @@ def _note_body(broker: Broker) -> str:
         line = " • ".join(filter(None, [s, addr, price]))
         if line:
             bits.append(html.escape(line))
+    if getattr(broker, "source_email", ""):
+        bits.append("<br><b>Full email:</b><br>"
+                    + html.escape(broker.source_email).replace("\n", "<br>"))
     return "<br>".join(bits)
 
 
