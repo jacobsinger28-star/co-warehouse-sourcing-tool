@@ -202,3 +202,61 @@ def upsert_broker(broker: Broker, dry_run: bool = True) -> dict:
         print(f"  ! note failed for person {new_id}: {exc}", file=sys.stderr)
     return {"status": "created", "person_id": new_id,
             "url": f"https://app.pipedrive.com/person/{new_id}"}
+
+
+# --------------------------- deals: "passed but tracking" ---------------------------
+# The dedicated "Tracking" pipeline/stage (created once via the Pipedrive API).
+# Non-secret ids, overridable via env if you rebuild the pipeline.
+_TRACK_STAGE_ID = int(os.getenv("TRACK_STAGE_ID", "33"))
+
+
+def _search_deal_by_title(token: str, title: str) -> Optional[int]:
+    """Return an existing deal id with this exact title (avoids duplicate deals
+    when the same email is re-read, e.g. after a Railway restart)."""
+    if not title:
+        return None
+    q = urllib.parse.urlencode({"api_token": token, "term": title, "fields": "title", "limit": 5})
+    try:
+        items = ((_get(f"{_BASE}/deals/search?{q}").get("data") or {}).get("items")) or []
+        for it in items:
+            if (it["item"].get("title") or "").strip().lower() == title.strip().lower():
+                return it["item"]["id"]
+    except Exception as exc:  # noqa: BLE001 — search is best-effort
+        print(f"  ! deal search failed ({title}): {exc}", file=sys.stderr)
+    return None
+
+
+def create_deal(deal, dry_run: bool = True) -> dict:
+    """Create a Pipedrive Deal in the Tracking pipeline (a deal we passed on but
+    want to keep watching). Dedupes by title. `deal` is a broker_extract.Deal."""
+    token = _token()
+    existing = _search_deal_by_title(token, deal.title)
+    if existing:
+        return {"status": "exists", "deal_id": existing,
+                "url": f"https://app.pipedrive.com/deal/{existing}"}
+
+    owner_id = _owner_user_id(token)
+    payload: dict = {"title": deal.title, "stage_id": _TRACK_STAGE_ID, "status": "open"}
+    if deal.value:
+        payload["value"] = deal.value
+        payload["currency"] = "USD"
+    if owner_id:
+        payload["user_id"] = owner_id                    # deal owner = Raz
+
+    if dry_run:
+        return {"status": "dry_run", "would_create": payload, "note": deal.note[:200]}
+
+    data = _post(f"{_BASE}/deals?api_token={token}", payload)
+    if not data.get("success"):
+        return {"status": "error", "error": data.get("error"), "payload": payload}
+    did = data["data"]["id"]
+    try:  # save the email as the deal's note so the context is there
+        import html
+        _post(f"{_BASE}/notes?api_token={token}",
+              {"content": "<b>Tracked via email-intake-tool (passed, watching)</b><br>"
+                          + html.escape(deal.note).replace("\n", "<br>"),
+               "deal_id": did})
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ! deal note failed for {did}: {exc}", file=sys.stderr)
+    return {"status": "created", "deal_id": did,
+            "url": f"https://app.pipedrive.com/deal/{did}"}

@@ -263,3 +263,42 @@ def _guess_markets(text: str) -> list[str]:
         if re.search(rf"\b{re.escape(m)}\b", text, re.I) and m not in out:
             out.append(m)
     return out
+
+
+# --------------------------- deals (the #track flow) ---------------------------
+@dataclass
+class Deal:
+    title: str
+    value: Optional[float] = None
+    note: str = ""
+    markets: list = field(default_factory=list)
+
+
+_PRICE_RE = re.compile(r"\$\s*([\d,]+(?:\.\d+)?)\s*(mm|m|million|k)?\b", re.I)
+
+
+def extract_deal(subject: str = "", body: str = "", from_name: str = "", from_email: str = "") -> Deal:
+    """Turn a forwarded email into a trackable Deal: a title (the subject, stripped
+    of Fw:/Re:/#track, else the first real body line), the first dollar value, and
+    the whole email saved as the note. Deterministic — runs anywhere, no Claude."""
+    t = re.sub(r"(?i)^\s*(fw|fwd|re)\s*:\s*", "", subject or "").strip()
+    t = re.sub(r"(?i)#?track\b", "", t).strip(" -–|")
+    if not t or len(t) < 3:
+        for line in (body or "").splitlines():
+            line = line.strip()
+            if len(line) > 8 and not re.match(r"(?i)^(from|sent|to|subject|on)\b", line):
+                t = line[:90]
+                break
+    t = t or "Tracked deal"
+    value = None
+    m = _PRICE_RE.search(body or "")
+    if m:
+        n = float(m.group(1).replace(",", ""))
+        suf = (m.group(2) or "").lower()
+        if suf in ("m", "mm", "million"):
+            n *= 1_000_000
+        elif suf == "k":
+            n *= 1_000
+        value = n
+    note = f"{subject}\n\n{body}".strip()[:5000]
+    return Deal(title=t, value=value, note=note, markets=_guess_markets(f"{subject}\n{body}"))

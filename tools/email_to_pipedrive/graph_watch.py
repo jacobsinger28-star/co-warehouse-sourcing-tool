@@ -32,8 +32,8 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.parse import quote, urlencode
 
-from broker_extract import BrokerExtractor
-from pipedrive_sync import upsert_broker
+from broker_extract import BrokerExtractor, extract_deal
+from pipedrive_sync import upsert_broker, create_deal
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 SCOPES = ["Mail.Read"]
@@ -43,7 +43,12 @@ SCOPES = ["Mail.Read"]
 CLIENT_ID = os.getenv("GRAPH_CLIENT_ID", "2d3783b0-9454-4b79-aad5-258c5f8f20ab")
 AUTHORITY = os.getenv("GRAPH_AUTHORITY",
                       "https://login.microsoftonline.com/25960412-5a50-44b0-879b-cb1bac0280b8")
-FOLDER = os.getenv("GRAPH_FOLDER", "To Pipedrive")
+# Each folder -> an action. "broker" creates a Person; "deal" creates a tracked
+# Deal (something we passed on but want to watch). Override names via env.
+FOLDERS = [
+    (os.getenv("GRAPH_FOLDER", "To Pipedrive"), "broker"),
+    (os.getenv("TRACK_FOLDER", "Tracked Deals"), "deal"),
+]
 HERE = Path(__file__).resolve().parent
 CACHE = HERE / ".graph_token_cache.json"          # gitignored; holds the refresh token
 SEEN = HERE / ".graph_seen_ids.json"              # message ids already processed
@@ -96,12 +101,12 @@ def _get(url: str, token: str) -> dict:
         return json.load(r)
 
 
-def _folder_id(token: str) -> str | None:
+def _folder_id(token: str, name: str) -> str | None:
     # List top-level folders and match by name in Python (avoids URL-encoding an
-    # OData $filter with spaces). "To Pipedrive" is a top-level folder.
+    # OData $filter with spaces). Target folders are top-level.
     q = urlencode({"$top": 200, "$select": "id,displayName"}, quote_via=quote)
     for f in (_get(f"{GRAPH}/me/mailFolders?{q}", token).get("value") or []):
-        if f.get("displayName") == FOLDER:
+        if f.get("displayName") == name:
             return f["id"]
     return None
 
@@ -136,39 +141,48 @@ def _save_seen(seen: set[str]) -> None:
 
 
 def _one_pass(token: str, live: bool, extractor: BrokerExtractor) -> None:
-    folder_id = _folder_id(token)
-    if not folder_id:
-        print(f"! folder {FOLDER!r} not found in your mailbox", file=sys.stderr)
-        return
     seen = _load_seen()
-    msgs = _messages(token, folder_id)
-    fresh = [m for m in msgs if m["id"] not in seen]
-    print(f"[{FOLDER}] {len(msgs)} message(s), {len(fresh)} new")
-    batch_emails: set[str] = set()          # guard vs. Pipedrive search-index lag
-    for m in fresh:
-        subject = m.get("subject") or ""
-        frm = (m.get("from") or {}).get("emailAddress") or {}
-        body = m.get("body") or {}
-        text = _html_to_text(body.get("content", "")) if body.get("contentType") == "html" \
-            else (body.get("content") or m.get("bodyPreview") or "")
-        broker = extractor.extract(subject=subject, body=text,
-                                   from_name=frm.get("name", ""), from_email=frm.get("address", ""))
-        if not broker.is_actionable():
-            print(f"  - skip (no broker): {subject[:60]}")
-            seen.add(m["id"]); continue
-        ekey = (broker.email or "").lower()
-        if ekey and ekey in batch_emails:   # same broker earlier in this same run
-            print(f"  - skip (dup in batch): {broker.name or broker.email}")
-            seen.add(m["id"]); continue
-        res = upsert_broker(broker, dry_run=not live)
-        if ekey:
-            batch_emails.add(ekey)
-        who = broker.name or broker.email
-        loc = res.get("url", "")
-        print(f"  - {res['status']}: {who} {loc}")
-        if live or res["status"] == "dry_run":
-            seen.add(m["id"])          # in dry run, mark seen so we don't spam re-reads
-    _save_seen(seen)
+    changed = False
+    for name, action in FOLDERS:
+        fid = _folder_id(token, name)
+        if not fid:
+            continue                              # folder not created yet — skip quietly
+        msgs = _messages(token, fid)
+        fresh = [m for m in msgs if m["id"] not in seen]
+        print(f"[{name}] {len(msgs)} message(s), {len(fresh)} new")
+        batch: set[str] = set()                   # in-run dedupe vs. Pipedrive search lag
+        for m in fresh:
+            subject = m.get("subject") or ""
+            frm = (m.get("from") or {}).get("emailAddress") or {}
+            body = m.get("body") or {}
+            text = _html_to_text(body.get("content", "")) if body.get("contentType") == "html" \
+                else (body.get("content") or m.get("bodyPreview") or "")
+            if action == "deal":
+                deal = extract_deal(subject=subject, body=text,
+                                    from_name=frm.get("name", ""), from_email=frm.get("address", ""))
+                if deal.title.lower() in batch:
+                    seen.add(m["id"]); changed = True; continue
+                res = create_deal(deal, dry_run=not live)
+                batch.add(deal.title.lower())
+                print(f"  - deal {res['status']}: {deal.title[:60]} {res.get('url', '')}")
+            else:
+                broker = extractor.extract(subject=subject, body=text,
+                                           from_name=frm.get("name", ""), from_email=frm.get("address", ""))
+                if not broker.is_actionable():
+                    print(f"  - skip (no broker): {subject[:60]}")
+                    seen.add(m["id"]); changed = True; continue
+                ekey = (broker.email or "").lower()
+                if ekey and ekey in batch:
+                    print(f"  - skip (dup in batch): {broker.name or broker.email}")
+                    seen.add(m["id"]); changed = True; continue
+                res = upsert_broker(broker, dry_run=not live)
+                if ekey:
+                    batch.add(ekey)
+                print(f"  - {res['status']}: {broker.name or broker.email} {res.get('url', '')}")
+            if res.get("status") != "error":
+                seen.add(m["id"]); changed = True
+    if changed:
+        _save_seen(seen)
 
 
 def main() -> None:
@@ -178,7 +192,8 @@ def main() -> None:
     args = ap.parse_args()
     token = _token()
     extractor = BrokerExtractor()
-    print(f"watching your mailbox folder {FOLDER!r} [{'LIVE' if args.live else 'DRY-RUN'}]")
+    folders = ", ".join(f"{n} ({a})" for n, a in FOLDERS)
+    print(f"watching {folders} [{'LIVE' if args.live else 'DRY-RUN'}]")
     while True:
         try:
             token = _token()          # refreshes silently from cache
