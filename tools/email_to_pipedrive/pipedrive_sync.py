@@ -208,6 +208,42 @@ def upsert_broker(broker: Broker, dry_run: bool = True) -> dict:
 # The dedicated "Tracking" pipeline/stage (created once via the Pipedrive API).
 # Non-secret ids, overridable via env if you rebuild the pipeline.
 _TRACK_STAGE_ID = int(os.getenv("TRACK_STAGE_ID", "33"))
+_deal_label_id_cache: int | None = None
+
+
+def _deal_label_field(token: str) -> dict | None:
+    d = _get(f"{_BASE}/dealFields?api_token={token}")
+    return next((f for f in (d.get("data") or []) if f.get("key") == "label"), None)
+
+
+def _get_deal_label_id(token: str, create: bool = True) -> int | None:
+    """Deal 'label' option id for _LABEL ("from-email"), created if missing.
+    Deal labels are a separate field from person labels."""
+    global _deal_label_id_cache
+    if _deal_label_id_cache is not None:
+        return _deal_label_id_cache
+    try:
+        field = _deal_label_field(token)
+        if not field:
+            return None
+        opts = field.get("options") or []
+        match = next((o for o in opts if (o.get("label") or "").lower() == _LABEL.lower()), None)
+        if match:
+            _deal_label_id_cache = match["id"]
+            return _deal_label_id_cache
+        if not create:
+            return None
+        new_opts = [{"id": o["id"], "label": o["label"]} for o in opts]  # keep existing
+        new_opts.append({"label": _LABEL})
+        _put(f"{_BASE}/dealFields/{field['id']}?api_token={token}", {"options": new_opts})
+        field2 = _deal_label_field(token) or {}
+        _deal_label_id_cache = next(
+            (o["id"] for o in (field2.get("options") or [])
+             if (o.get("label") or "").lower() == _LABEL.lower()), None)
+    except Exception as exc:  # noqa: BLE001 — label is best-effort
+        print(f"  ! deal label lookup failed: {exc}", file=sys.stderr)
+        _deal_label_id_cache = None
+    return _deal_label_id_cache
 
 
 def _search_deal_by_title(token: str, title: str) -> Optional[int]:
@@ -244,8 +280,13 @@ def create_deal(deal, dry_run: bool = True) -> dict:
         payload["user_id"] = owner_id                    # deal owner = Raz
 
     if dry_run:
-        return {"status": "dry_run", "would_create": payload, "note": deal.note[:200]}
+        label_id = _get_deal_label_id(token, create=False)   # don't create the option in a dry run
+        preview = {**payload, **({"label": label_id} if label_id else {})}
+        return {"status": "dry_run", "would_create": preview, "label": _LABEL, "note": deal.note[:200]}
 
+    label_id = _get_deal_label_id(token, create=True)         # get-or-create "from-email" deal label
+    if label_id:
+        payload["label"] = label_id
     data = _post(f"{_BASE}/deals?api_token={token}", payload)
     if not data.get("success"):
         return {"status": "error", "error": data.get("error"), "payload": payload}
