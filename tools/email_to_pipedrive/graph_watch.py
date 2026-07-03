@@ -22,6 +22,7 @@ Permissions requested: Mail.Read (delegated) — read-only on your mailbox.
 from __future__ import annotations
 
 import argparse
+import base64
 import html
 import json
 import os
@@ -33,7 +34,7 @@ from urllib.request import Request, urlopen
 from urllib.parse import quote, urlencode
 
 from broker_extract import BrokerExtractor, extract_deal
-from pipedrive_sync import upsert_broker, create_deal
+from pipedrive_sync import upsert_broker, create_deal, upload_file
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 SCOPES = ["Mail.Read"]
@@ -113,11 +114,35 @@ def _folder_id(token: str, name: str) -> str | None:
 
 def _messages(token: str, folder_id: str) -> list[dict]:
     q = urlencode({
-        "$select": "id,subject,from,body,bodyPreview,receivedDateTime",
+        "$select": "id,subject,from,body,bodyPreview,receivedDateTime,hasAttachments",
         "$orderby": "receivedDateTime desc",
         "$top": 25,
     }, quote_via=quote)
     return _get(f"{GRAPH}/me/mailFolders/{folder_id}/messages?{q}", token).get("value") or []
+
+
+def _attachments(token: str, msg_id: str) -> list[tuple]:
+    """An email's real file attachments as (filename, content_type, bytes),
+    skipping inline signature images. Ready to upload to Pipedrive."""
+    out: list[tuple] = []
+    try:
+        data = _get(f"{GRAPH}/me/messages/{msg_id}/attachments", token)
+    except Exception as exc:  # noqa: BLE001
+        print(f"    ! attachment fetch failed: {exc}", file=sys.stderr)
+        return out
+    for a in (data.get("value") or []):
+        if a.get("@odata.type") != "#microsoft.graph.fileAttachment" or a.get("isInline"):
+            continue
+        cb = a.get("contentBytes")
+        if not cb:
+            continue
+        try:
+            out.append((a.get("name") or "attachment",
+                        a.get("contentType") or "application/octet-stream",
+                        base64.b64decode(cb)))
+        except Exception:  # noqa: BLE001
+            continue
+    return out
 
 
 def _html_to_text(s: str) -> str:
@@ -179,6 +204,15 @@ def _one_pass(token: str, live: bool, extractor: BrokerExtractor) -> None:
                 if ekey:
                     batch.add(ekey)
                 print(f"  - {res['status']}: {broker.name or broker.email} {res.get('url', '')}")
+            # upload the email's attachments onto the newly created record
+            if res.get("status") == "created" and m.get("hasAttachments"):
+                for fname, ctype, fdata in _attachments(token, m["id"]):
+                    try:
+                        up = upload_file(fname, fdata, ctype,
+                                         deal_id=res.get("deal_id"), person_id=res.get("person_id"))
+                        print(f"    + file {fname}: {'ok' if up.get('success') else up.get('error')}")
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"    ! file {fname} failed: {exc}", file=sys.stderr)
             if res.get("status") != "error":
                 seen.add(m["id"]); changed = True
     if changed:

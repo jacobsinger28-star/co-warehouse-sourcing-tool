@@ -15,6 +15,7 @@ import os
 import sys
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -301,3 +302,30 @@ def create_deal(deal, dry_run: bool = True) -> dict:
         print(f"  ! deal note failed for {did}: {exc}", file=sys.stderr)
     return {"status": "created", "deal_id": did,
             "url": f"https://app.pipedrive.com/deal/{did}"}
+
+
+# --------------------------- attachments -> Pipedrive files ---------------------------
+def upload_file(name: str, data: bytes, content_type: str = "application/octet-stream",
+                *, deal_id: Optional[int] = None, person_id: Optional[int] = None) -> dict:
+    """Upload one file (an email attachment) to Pipedrive, linked to a deal
+    and/or person. Multipart built by hand to stay dependency-free (urllib)."""
+    token = _token()
+    boundary = "----eit" + uuid.uuid4().hex
+    b = boundary.encode()
+    parts: list[bytes] = []
+    for key, val in (("deal_id", deal_id), ("person_id", person_id)):
+        if val:
+            parts.append(b"--" + b + b"\r\nContent-Disposition: form-data; name=\""
+                         + key.encode() + b"\"\r\n\r\n" + str(val).encode() + b"\r\n")
+    safe = (name or "attachment").replace('"', "'")
+    parts.append(b"--" + b + b"\r\nContent-Disposition: form-data; name=\"file\"; filename=\""
+                 + safe.encode("utf-8") + b"\"\r\nContent-Type: "
+                 + (content_type or "application/octet-stream").encode() + b"\r\n\r\n")
+    parts.append(data)
+    parts.append(b"\r\n--" + b + b"--\r\n")
+    body = b"".join(parts)
+    req = urllib.request.Request(
+        f"{_BASE}/files?api_token={token}", data=body, method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.load(r)
