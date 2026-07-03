@@ -21,7 +21,10 @@ from typing import Optional
 from broker_extract import Broker
 
 _BASE = "https://api.pipedrive.com/v1"
-_ROOT = Path(__file__).resolve().parents[2]          # sourcing-platform/
+try:
+    _ROOT = Path(__file__).resolve().parents[2]      # sourcing-platform/ (local dev)
+except IndexError:
+    _ROOT = None                                     # deployed alone (e.g. Railway /app)
 _TOOL_LABEL = "email-intake-tool"                    # provenance tag (in the note)
 _LABEL = "from-email"                                # Pipedrive Person label to set
 _label_id_cache: int | None = None
@@ -31,11 +34,12 @@ def _token() -> str:
     tok = os.getenv("PIPEDRIVE_API_TOKEN", "")
     if tok:
         return tok
-    for env in (_ROOT.parent / "general-scraping" / "backend" / ".env",):
-        if env.exists():
-            for line in env.read_text().splitlines():
-                if line.startswith("PIPEDRIVE_API_TOKEN"):
-                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    if _ROOT is not None:
+        for env in (_ROOT.parent / "general-scraping" / "backend" / ".env",):
+            if env.exists():
+                for line in env.read_text().splitlines():
+                    if line.startswith("PIPEDRIVE_API_TOKEN"):
+                        return line.split("=", 1)[1].strip().strip('"').strip("'")
     sys.exit("no PIPEDRIVE_API_TOKEN (set env var or general-scraping/backend/.env)")
 
 

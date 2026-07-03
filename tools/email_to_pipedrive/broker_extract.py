@@ -21,10 +21,12 @@ MODEL = "claude-opus-4-8"
 # Where we look for ANTHROPIC_API_KEY if it isn't already an env var: a local
 # gitignored .env here, then the general-scraping backend .env. You put the key
 # in one of these once; the watcher and CLI both read it. Never commit it.
-_ENV_FILES = [
-    Path(__file__).resolve().parent / ".env",
-    Path(__file__).resolve().parents[2].parent / "general-scraping" / "backend" / ".env",
-]
+_ENV_FILES = [Path(__file__).resolve().parent / ".env"]
+try:  # local dev fallback — the sibling general-scraping repo; absent on Railway
+    _ENV_FILES.append(
+        Path(__file__).resolve().parents[2].parent / "general-scraping" / "backend" / ".env")
+except IndexError:
+    pass
 
 
 def _env(name: str) -> Optional[str]:
