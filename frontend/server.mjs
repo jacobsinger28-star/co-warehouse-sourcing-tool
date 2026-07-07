@@ -14,7 +14,7 @@ import express from 'express'
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { answerDealsQuestion } from './dealsChat.mjs'
+import { answerDealsQuestion, searchDeals } from './dealsChat.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 8080
@@ -49,6 +49,7 @@ const rateLimit = (max) => (req, res, next) => {
 }
 app.use('/api/data', rateLimit(20))
 app.use('/api/deals-chat', rateLimit(20))
+app.use('/api/deals', rateLimit(60))
 
 // the ONLY way to get the real data: correct password, server-checked.
 app.post('/api/data', (req, res) => {
@@ -56,6 +57,25 @@ app.post('/api/data', (req, res) => {
   if (!DATA) return res.status(404).json({ error: 'no real data on this server' })
   if ((req.body?.password || '') !== PASSWORD) return res.status(401).json({ error: 'wrong password' })
   res.json(DATA)
+})
+
+// Deals DB, no-LLM path: the live deal book + keyword search + known-question
+// presets, straight from Pipedrive. Same password gate as /api/data.
+//   {password}                    -> every deal (for the table)
+//   {password, q: "meeting st"}   -> keyword search with matched-note snippets
+//   {password, preset: "tracking"}-> a known question (tracking/open/won/lost/recent/noted)
+app.post('/api/deals', async (req, res) => {
+  if (!PASSWORD) return res.status(503).json({ error: 'server not configured (APP_PASSWORD unset)' })
+  if ((req.body?.password || '') !== PASSWORD) return res.status(401).json({ error: 'wrong password' })
+  try {
+    res.json(await searchDeals({
+      q: String(req.body?.q || '').slice(0, 500),
+      preset: String(req.body?.preset || ''),
+    }))
+  } catch (e) {
+    console.error('[deals]', e)
+    res.status(502).json({ error: e?.message || 'deals lookup failed' })
+  }
 })
 
 // Deals DB RAG chat: plain-English Q&A over the Pipedrive deal book. Same

@@ -63,7 +63,9 @@ async function pdPaged(path, token) {
   }
 }
 
-const stripHtml = (s) => (s || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#\d+;/g, ' ').trim()
+const stripHtml = (s) => (s || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+  .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+  .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#\d+;/g, ' ').trim()
 const day = (s) => (s || '').slice(0, 10)
 
 // Build one plain-text document per deal — this is what gets retrieved and what
@@ -96,8 +98,8 @@ async function syncCorpus() {
     pd('/stages', token).then((d) => d.data || []),
     pd('/pipelines', token).then((d) => d.data || []),
   ])
-  const stageName = (id) => stages.find((s) => s.id === id)?.name || `stage ${id}`
-  const pipelineName = (id) => pipelines.find((p) => p.id === id)?.name || `pipeline ${id}`
+  const stageName = (id) => (stages.find((s) => s.id === id)?.name || `stage ${id}`).trim()
+  const pipelineName = (id) => (pipelines.find((p) => p.id === id)?.name || `pipeline ${id}`).trim()
   const notesByDeal = new Map()
   for (const n of notes) {
     if (!n.deal_id) continue
@@ -114,7 +116,11 @@ async function syncCorpus() {
       pipeline: pipelineName(d.pipeline_id),
       value: d.value,
       currency: d.currency,
+      added: day(d.add_time),
       updated: day(d.update_time),
+      person: d.person_id?.name || null,
+      org: d.org_id?.name || null,
+      notesCount: (notesByDeal.get(d.id) || []).length,
       url: `https://app.pipedrive.com/deal/${d.id}`,
       doc: buildDoc(d, notesByDeal, stageName, pipelineName),
     })),
@@ -150,6 +156,63 @@ function rank(question, deals) {
       return { deal: d, score }
     })
     .sort((a, b) => b.score - a.score)
+}
+
+// ---------------------------------------------------------------- search (no LLM)
+const summarize = (d) => ({
+  id: d.id, title: d.title, status: d.status, stage: d.stage, pipeline: d.pipeline,
+  value: d.value, currency: d.currency, added: d.added, updated: d.updated,
+  person: d.person, org: d.org, notesCount: d.notesCount, url: d.url,
+})
+
+const byRecency = (a, b) => (b.updated || '').localeCompare(a.updated || '')
+
+// Known questions — deterministic Pipedrive queries, no model involved.
+export const PRESETS = {
+  tracking: { label: 'Tracking pipeline', match: (d) => d.pipeline.toLowerCase() === 'tracking' },
+  open: { label: 'Open deals', match: (d) => d.status === 'open' },
+  won: { label: 'Won deals', match: (d) => d.status === 'won' },
+  lost: { label: 'Lost deals', match: (d) => d.status === 'lost' },
+  recent: { label: 'Recently updated', match: () => true, limit: 10 },
+  noted: { label: 'Most discussed', match: (d) => d.notesCount > 0, sort: (a, b) => b.notesCount - a.notesCount, limit: 10 },
+}
+
+// Lines of the deal doc that contain a query term — shown as result snippets.
+function snippetsFor(deal, terms) {
+  const out = []
+  for (const line of deal.doc.split('\n').slice(1)) {           // skip the title line
+    const low = line.toLowerCase()
+    if (terms.some((t) => low.includes(t))) {
+      out.push(line.length > 220 ? `${line.slice(0, 220)}…` : line)
+      if (out.length >= 3) break
+    }
+  }
+  return out
+}
+
+// Search the deal book: `preset` runs a known query; `q` is keyword search over
+// titles + notes. No `q`/`preset` returns the whole book (for the live table).
+export async function searchDeals({ q = '', preset = '' } = {}) {
+  const c = await getCorpus()
+  const base = { dealCount: c.deals.length, syncedAt: c.syncedAt }
+
+  if (preset && PRESETS[preset]) {
+    const p = PRESETS[preset]
+    const matched = c.deals.filter(p.match).sort(p.sort || byRecency).slice(0, p.limit || 100)
+    return { ...base, mode: 'preset', label: p.label, results: matched.map((d) => ({ ...summarize(d), snippets: [] })) }
+  }
+
+  const question = String(q || '').trim()
+  if (!question) {
+    return { ...base, mode: 'all', results: [...c.deals].sort(byRecency).map(summarize) }
+  }
+
+  const terms = tokenize(question).filter((t) => !STOP.has(t))
+  const results = rank(question, c.deals)
+    .filter((r) => r.score > 0)
+    .slice(0, 20)
+    .map((r) => ({ ...summarize(r.deal), score: r.score, snippets: snippetsFor(r.deal, terms) }))
+  return { ...base, mode: 'search', results }
 }
 
 // ---------------------------------------------------------------- answer
