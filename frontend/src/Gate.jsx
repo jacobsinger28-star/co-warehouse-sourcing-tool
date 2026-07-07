@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { css } from './css.js'
 import { loadRealData } from './crypto.js'
 import { RealDataContext } from './RealDataContext.js'
+import { setSessionPassword } from './session.js'
 
 // Access gate for this internal, PII-bearing tool. The same password (a) passes a
 // SHA-256 check for fast UX feedback and (b) derives the AES-256-GCM key that
@@ -40,6 +41,7 @@ export default function Gate({ children }) {
     }
     // Correct password → decrypt the real dataset (null → synthetic fallback).
     const data = await loadRealData(pw, import.meta.env.BASE_URL).catch(() => null)
+    setSessionPassword(pw) // memory-only; authed API calls (deals chat) reuse it
     setRealData(data)
     setOk(true)
   }
