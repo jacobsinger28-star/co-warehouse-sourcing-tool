@@ -36,33 +36,40 @@ python process_email.py --eml samples/sample_deal_sheet.eml          # shows wha
 python process_email.py --eml samples/sample_deal_sheet.eml --live    # actually create the Person
 ```
 
-Watch a mailbox and add them automatically (the "without asking" mode):
+Watch your mailbox automatically (the "without asking" mode). On Microsoft 365
+use the **Graph watcher** (set up below). The IMAP watcher is only for mailboxes
+that allow an app password (e.g. Gmail):
 
 ```bash
+python graph_watch.py --live --loop 30       # your M365 mailbox via Graph
+# or an app-password mailbox:
 IMAP_HOST=imap.gmail.com IMAP_USER=you@x.com IMAP_PASS='app-password' \
-  python imap_watch.py --live --loop 60      # poll every 60s
+  python imap_watch.py --live --loop 60
 ```
 
 `--live` is required to write; leave it off to watch in dry run first.
 
-## Piloting on raz@simicap.com
+## Piloting on raz@simicap.com  (set up 2026-07-01)
 
-The keyword rule Andrew described maps to an **Outlook rule**:
+Both pieces are live:
 
-1. Pick a keyword (e.g. `#pipedrive`).
-2. Rule: when a message contains the keyword → move it to a folder (say `To Pipedrive`).
-3. Point the watcher at that folder: `python imap_watch.py --folder "To Pipedrive" --live --loop 120`.
+1. **Outlook rule "Send to Pipedrive"** (server-side, on the simicap account):
+   subject or body contains `#pipedrive` → move to the **To Pipedrive** folder.
+   Change the keyword anytime by editing the rule — the watcher is folder-driven
+   and doesn't care what it is.
 
-**Microsoft 365 caveat:** most M365 tenants disable basic-auth IMAP, so
-`imap_watch.py` can't log into `raz@simicap.com` directly with a password. Two
-ways around it:
+2. **Graph watcher** (`graph_watch.py`) reads that folder straight from your own
+   mailbox: no forwarding, no spare inbox. It signs in once via device code
+   (Mail.Read, read-only); the token caches to `.graph_token_cache.json`
+   (gitignored) so later runs are silent.
 
-- **Easiest for the pilot:** have the Outlook rule *auto-forward* keyword'd mail
-  to a mailbox that allows an app password (a Gmail with 2FA app password), and
-  point the watcher there.
-- **Production:** swap the IMAP poller for a Microsoft Graph subscription (watches
-  the inbox server-side via OAuth, no forwarding). Same `extract → upsert` core;
-  only the ingestion changes.
+   Entra app registration — single tenant, public client, Mail.Read. These are
+   public IDs (not secrets), baked in as defaults in `graph_watch.py`:
+   - client id `2d3783b0-9454-4b79-aad5-258c5f8f20ab`
+   - tenant    `25960412-5a50-44b0-879b-cb1bac0280b8`
+
+   Needs `pip install msal`. Run `python graph_watch.py --live --loop 30`. To
+   keep it running unattended, wrap it in a launchd/systemd service or cron loop.
 
 ## Safety
 
