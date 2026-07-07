@@ -14,6 +14,7 @@ import express from 'express'
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { answerDealsQuestion } from './dealsChat.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 8080
@@ -39,13 +40,15 @@ app.get('/health', (_req, res) => res.json({ ok: true }))
 // naive in-memory rate limit on the auth endpoint (per-IP, per-minute) so the
 // password can't be brute-forced quickly even though it's short.
 const hits = new Map()
-app.use('/api/data', (req, res, next) => {
+const rateLimit = (max) => (req, res, next) => {
   const ip = req.ip || 'x'
   const now = Date.now()
   const w = hits.get(ip)?.filter((t) => now - t < 60_000) || []
-  if (w.length >= 20) return res.status(429).json({ error: 'too many attempts' })
+  if (w.length >= max) return res.status(429).json({ error: 'too many attempts' })
   w.push(now); hits.set(ip, w); next()
-})
+}
+app.use('/api/data', rateLimit(20))
+app.use('/api/deals-chat', rateLimit(20))
 
 // the ONLY way to get the real data: correct password, server-checked.
 app.post('/api/data', (req, res) => {
@@ -53,6 +56,22 @@ app.post('/api/data', (req, res) => {
   if (!DATA) return res.status(404).json({ error: 'no real data on this server' })
   if ((req.body?.password || '') !== PASSWORD) return res.status(401).json({ error: 'wrong password' })
   res.json(DATA)
+})
+
+// Deals DB RAG chat: plain-English Q&A over the Pipedrive deal book. Same
+// password gate as /api/data — nothing here is reachable without it.
+app.post('/api/deals-chat', async (req, res) => {
+  if (!PASSWORD) return res.status(503).json({ error: 'server not configured (APP_PASSWORD unset)' })
+  if ((req.body?.password || '') !== PASSWORD) return res.status(401).json({ error: 'wrong password' })
+  const question = String(req.body?.question || '').trim().slice(0, 2000)
+  if (!question) return res.status(400).json({ error: 'question required' })
+  const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : []
+  try {
+    res.json(await answerDealsQuestion(question, history))
+  } catch (e) {
+    console.error('[deals-chat]', e)
+    res.status(502).json({ error: e?.message || 'deals chat failed' })
+  }
 })
 
 // static SPA + client-side routing fallback

@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { css } from '../css.js'
 import Icon from '../Icon.jsx'
 import { DEALS, EXAMPLE_QUERIES, PROPS } from '../data.js'
+import { getSessionPassword } from '../session.js'
 
 const statusVar = (s) => (s === 'Closed' ? '--green' : s === 'Under LOI' ? '--accent' : s === 'Lost' ? '--red' : '--amber')
 const statusStyle = (s) => `font-size:11px;color:var(${statusVar(s)});background:var(--surface2);border:1px solid var(--border);padding:2px 8px;border-radius:5px;white-space:nowrap;`
@@ -21,10 +22,42 @@ function checkDedupe(q) {
 
 export default function DealsDB() {
   const [query, setQuery] = useState('')
-  const [answered, setAnswered] = useState(false)
+  const [thread, setThread] = useState([])          // [{role, content, citations?}]
+  const [busy, setBusy] = useState(false)
+  const [chatErr, setChatErr] = useState('')
   const [dedupeQuery, setDedupeQuery] = useState('')
   const dedupe = checkDedupe(dedupeQuery)
-  const ask = (q) => { setQuery(q); setAnswered(true) }
+  const busyRef = useRef(false)
+
+  const ask = async (q) => {
+    const question = (q || '').trim()
+    if (!question || busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    setChatErr('')
+    setQuery('')
+    const history = thread.map(({ role, content }) => ({ role, content }))
+    setThread((t) => [...t, { role: 'user', content: question }])
+    try {
+      const r = await fetch(`${import.meta.env.BASE_URL}api/deals-chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ password: getSessionPassword(), question, history }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || `request failed (${r.status})`)
+      setThread((t) => [...t, { role: 'assistant', content: d.answer, citations: d.citations || [] }])
+    } catch (e) {
+      setChatErr(e.message === 'Failed to fetch'
+        ? 'No backend reachable — the deals chat needs the Railway server (npm run serve locally).'
+        : e.message)
+      setThread((t) => t.slice(0, -1)) // roll back the unanswered question
+      setQuery(question)
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="content-pad" data-screen-label="Deals DB" style={css('flex:1;overflow-y:auto;min-height:0;padding:24px 26px;')}>
@@ -37,8 +70,8 @@ export default function DealsDB() {
 
         <div style={css('display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border2);border-radius:11px;padding:4px 4px 4px 16px;margin-bottom:8px;')}>
           <Icon name="search" size={15} style={css('color:var(--text2);flex:0 0 auto;')} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && setAnswered(true)} aria-label="Search past deals and LOIs" placeholder="Have we ever LOI'd this owner?  ·  What did we offer on Park Ave in 2022?" style={css('flex:1;height:40px;background:transparent;border:none;outline:none;color:var(--text);font-size:14px;min-width:0;')} />
-          <button className="tap hov" onClick={() => setAnswered(true)} style={css('height:38px;padding:0 18px;background:var(--accent);border:none;border-radius:8px;color:#06120F;font-weight:600;font-size:13px;')}>Ask</button>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && ask(query)} aria-label="Search past deals and LOIs" placeholder="Have we ever LOI'd this owner?  ·  What did we offer on Park Ave in 2022?" style={css('flex:1;height:40px;background:transparent;border:none;outline:none;color:var(--text);font-size:14px;min-width:0;')} />
+          <button className="tap hov" onClick={() => ask(query)} disabled={busy} style={css(`height:38px;padding:0 18px;background:var(--accent);border:none;border-radius:8px;color:#06120F;font-weight:600;font-size:13px;opacity:${busy ? '.6' : '1'};`)}>{busy ? 'Thinking…' : 'Ask'}</button>
         </div>
         <div style={css('display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap;')}>
           {EXAMPLE_QUERIES.map((q) => (
@@ -46,14 +79,29 @@ export default function DealsDB() {
           ))}
         </div>
 
-        {answered && (
-          <div style={css('background:var(--surface);border:1px solid var(--accent-line);border-radius:10px;padding:16px 18px;margin-bottom:22px;')}>
-            <div style={css('display:flex;align-items:center;gap:8px;margin-bottom:9px;')}><span style={css('width:7px;height:7px;border-radius:50%;background:var(--accent);')} /><span style={css('font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;')}>Answer</span><span style={css(sampleTag)}>Sample</span></div>
-            <div style={css('font-size:13.5px;line-height:1.65;margin-bottom:12px;')}>Yes — SimiCapital previously engaged the <strong>Lowcountry Asset Trust</strong> on <strong>1450 Meeting St, Charleston</strong>. We submitted a $7.1M LOI at a 7.2% cap in Aug 2024, which <strong>closed</strong>. We also passed on Park Ave Logistics (Mar 2022) after the seller countered above buy box.</div>
-            <div style={css('display:flex;gap:8px;flex-wrap:wrap;')}>
-              <span style={css('display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:5px;')}><Icon name="cite" size={12} sw={1.8} />LOI_MeetingSt_2024.pdf</span>
-              <span style={css('display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:5px;')}><Icon name="cite" size={12} sw={1.8} />DealMemo_ParkAve_2022.docx</span>
-            </div>
+        {chatErr && (
+          <div role="alert" style={css('border:1px solid var(--red);background:var(--red-tint);border-radius:9px;padding:10px 13px;margin-bottom:14px;font-size:12px;color:var(--text2);')}>{chatErr}</div>
+        )}
+        {thread.length > 0 && (
+          <div style={css('display:flex;flex-direction:column;gap:10px;margin-bottom:22px;')}>
+            {thread.map((m, i) => m.role === 'user' ? (
+              <div key={i} style={css('align-self:flex-end;max-width:80%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:9px 13px;font-size:13px;color:var(--text);')}>{m.content}</div>
+            ) : (
+              <div key={i} style={css('background:var(--surface);border:1px solid var(--accent-line);border-radius:10px;padding:16px 18px;')}>
+                <div style={css('display:flex;align-items:center;gap:8px;margin-bottom:9px;')}><span style={css('width:7px;height:7px;border-radius:50%;background:var(--accent);')} /><span style={css('font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;')}>Answer</span><span style={css(sampleTag)}>Pipedrive · live</span></div>
+                <div style={css('font-size:13.5px;line-height:1.65;margin-bottom:12px;white-space:pre-wrap;')}>{m.content}</div>
+                {m.citations?.length > 0 && (
+                  <div style={css('display:flex;gap:8px;flex-wrap:wrap;')}>
+                    {m.citations.map((c) => (
+                      <a key={c.id} href={c.url} target="_blank" rel="noreferrer" style={css('display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:5px;text-decoration:none;')}><Icon name="cite" size={12} sw={1.8} />#{c.id} {c.title}</a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {busy && (
+              <div style={css('background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:13px 18px;font-size:12.5px;color:var(--text3);')}>Searching the deal book…</div>
+            )}
           </div>
         )}
 
