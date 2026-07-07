@@ -107,3 +107,20 @@ show real data instead of the demo/synthetic dataset.
 - Railway filesystem is ephemeral: the watcher's `.graph_seen_ids.json` resets on
   restart → it re-reads the folder (dedupe catches it, no dup records). A Volume
   would make it persistent if desired.
+
+---
+
+## Session closed (2026-07-07)
+
+- Both feature branches **merged to `main`** (`ff30218`): `35c16b0` = email→Pipedrive
+  `#broker`/`#track` watcher, `ff30218` = deals-rag-chat WIP + this log. Clean merge,
+  no conflicts (watcher in `tools/`, chat work in `frontend/`).
+- The **watcher runs 24/7 on Railway** from the `email-to-pipedrive-watcher` branch;
+  `main` now carries the same watcher code, so the two are in sync.
+- The **frontend Railway service deploys from `main`**, so this merge puts the
+  in-progress deals-rag-chat frontend into its deploy path. If that WIP isn't
+  build-ready, the deploy fails safe — the live site stays on the last good build.
+- **Still open — real data in the frontend:** deliberately NOT committing
+  `data.enc.json` (per the `frontend/.gitignore` PII policy). Awaiting Raz's call
+  between a Railway Volume / `/api/data` backend vs. explicitly overriding the policy.
+  Did NOT run `make deploy` (ships PII to Vercel; needs explicit go-ahead).
