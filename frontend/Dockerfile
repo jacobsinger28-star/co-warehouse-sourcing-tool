@@ -18,6 +18,7 @@ COPY package*.json ./
 RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.mjs ./server.mjs
+COPY --from=build /app/dealsChat.mjs ./dealsChat.mjs
 COPY --from=build /app/data.real.json ./data.real.json
 EXPOSE 8080
 CMD ["node", "server.mjs"]
