@@ -48,11 +48,24 @@ const SIG_DEFS = [
   ['oos', 'Out-of-state owner'],
   ['tax', 'Tax-delinquent'],
   ['code', 'Code violations'],
+  ['permit', 'Permit anomaly'],
   ['vacant', 'Inferred-vacant'],
+  ['distress', 'Any distress signal'],
   ['contact', 'Has owner / broker contact'],
 ]
 const SIG_LABEL = Object.fromEntries(SIG_DEFS)
-const EMPTY_FILTERS = { market: 'all', clearMax: '', yearMin: '', ownerType: 'all', sig: { oos: false, tax: false, code: false, vacant: false, contact: false } }
+// Full filter set — parity with the off-market tool's map/dashboard (search, SF
+// band, distance-to-core, hold, year range, held-since, owner location, manual-
+// review bucket). Numeric bounds are null-inclusive: a row with the field absent
+// passes through, so setting e.g. clear-height only narrows the markets that
+// carry that data (same semantics as the old map).
+const EMPTY_FILTERS = {
+  market: 'all', ownerType: 'all', ownerLoc: 'all', bucket: 'all',
+  clearMax: '', yearMin: '', yearMax: '', sfMin: '', sfMax: '',
+  distMax: '', holdMin: '', heldSince: '',
+  sig: { oos: false, tax: false, code: false, permit: false, vacant: false, distress: false, contact: false },
+}
+const numInput = 'height:32px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;outline:none;width:100%;'
 
 export default function App() {
   const [theme, setTheme] = useState('dark')
@@ -61,6 +74,7 @@ export default function App() {
   const [channel, setChannel] = useState('both')
   const [score, setScore] = useState({ Actionable: true, Tentative: true, Pass: true })
   const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const [q, setQ] = useState('')                 // search: address · owner · broker · APN · contact
   const setF = (k, v) => setFilters((f) => ({ ...f, [k]: v }))
   const toggleSig = (k) => setFilters((f) => ({ ...f, sig: { ...f.sig, [k]: !f.sig[k] } }))
   const [selProps, setSelProps] = useState([])
@@ -83,7 +97,7 @@ export default function App() {
     const d = realData
     if (!d || !Array.isArray(d.props) || !d.props.length) return
     const props = onlyAllowed(d.props)
-    setDataset({ props, brokers: d.brokers?.length ? d.brokers : BROKERS, isReal: true, counts: { ...d.counts, props: props.length } })
+    setDataset({ props, brokers: d.brokers?.length ? d.brokers : BROKERS, isReal: true, counts: { ...d.counts, props: props.length }, meta: { compMax: d.compMax, cityCeil: d.cityCeil, cityLive: d.cityLive } })
     setTotal(props.length)
   }, [realData])
   const propsData = dataset.props
@@ -107,18 +121,37 @@ export default function App() {
   }, [sourcing])
 
   // derived
+  const ql = q.trim().toLowerCase()
   const visibleProps = propsData.filter((p) => {
     if (!(channel === 'both' || p.channel === channel) || !score[p.cat]) return false
+    if (ql) {
+      const hay = `${p.addr} ${p.owner || ''} ${p.broker || ''} ${p.firm || ''} ${p.apn || ''} ${p.mkt || ''} ${p.person || ''} ${(p.phones || []).join(' ')} ${(p.emails || []).join(' ')}`.toLowerCase()
+      if (!hay.includes(ql)) return false
+    }
     if (filters.market !== 'all' && p.mkt !== filters.market) return false
+    if (filters.sfMin && p.sf < +filters.sfMin) return false
+    if (filters.sfMax && p.sf > +filters.sfMax) return false
     // clear height is a MAX (buy-box targets older, lower-clear stock) — null-inclusive
     if (filters.clearMax && p.clear != null && p.clear > +filters.clearMax) return false
     if (filters.yearMin && p.year != null && p.year < +filters.yearMin) return false
+    if (filters.yearMax && p.year != null && p.year > +filters.yearMax) return false
+    if (filters.distMax && p.distMi != null && p.distMi > +filters.distMax) return false
+    if (filters.holdMin && p.holdYears != null && p.holdYears < +filters.holdMin) return false
+    // "held since ≤ Y" = current owner acquired in/before year Y (long-held);
+    // rows with no recorded sale drop out when set — same as the old map
+    if (filters.heldSince && (!p.lastSale || +String(p.lastSale).slice(0, 4) > +filters.heldSince)) return false
     if (filters.ownerType !== 'all' && p.ownerType !== filters.ownerType) return false
+    if (filters.ownerLoc === 'out' && !p.oos) return false
+    if (filters.ownerLoc === 'in' && (p.channel !== 'off' || p.oos)) return false
+    if (filters.bucket === 'universe' && p.bucket && p.bucket !== 'universe') return false
+    if (filters.bucket === 'review' && p.bucket !== 'manual review') return false
     const sg = filters.sig
     if (sg.oos && !p.oos) return false
     if (sg.tax && !(p.comp && p.comp.tax_delinquency > 0)) return false
     if (sg.code && !(p.comp && p.comp.code_violations > 0)) return false
+    if (sg.permit && !(p.nPermit > 0)) return false
     if (sg.vacant && !(p.comp && p.comp.vacancy_evidence > 0)) return false
+    if (sg.distress && !(p.nViol > 0 || p.nPermit > 0 || p.sigs?.length > 0)) return false
     if (sg.contact && (p.contact === 'No contact' || p.contact === 'Listing only')) return false
     return true
   })
@@ -133,12 +166,21 @@ export default function App() {
 
   const disabledScores = SCORE_CATS.filter((c) => !score[c])
   const activeChips = [
+    ...(ql ? [{ label: `“${q.trim()}”`, onClear: () => setQ('') }] : []),
     ...(channel !== 'both' ? [{ label: channel === 'off' ? 'Off-market only' : 'On-market only', onClear: () => setChannel('both') }] : []),
     ...disabledScores.map((c) => ({ label: `− ${c}`, onClear: () => setScore((s) => ({ ...s, [c]: true })) })),
     ...(filters.market !== 'all' ? [{ label: filters.market, onClear: () => setF('market', 'all') }] : []),
+    ...(filters.sfMin ? [{ label: `SF ≥ ${fmtInt(+filters.sfMin)}`, onClear: () => setF('sfMin', '') }] : []),
+    ...(filters.sfMax ? [{ label: `SF ≤ ${fmtInt(+filters.sfMax)}`, onClear: () => setF('sfMax', '') }] : []),
     ...(filters.clearMax ? [{ label: `Clear ≤ ${filters.clearMax} ft`, onClear: () => setF('clearMax', '') }] : []),
     ...(filters.yearMin ? [{ label: `Built ≥ ${filters.yearMin}`, onClear: () => setF('yearMin', '') }] : []),
+    ...(filters.yearMax ? [{ label: `Built ≤ ${filters.yearMax}`, onClear: () => setF('yearMax', '') }] : []),
+    ...(filters.distMax ? [{ label: `≤ ${filters.distMax} mi to core`, onClear: () => setF('distMax', '') }] : []),
+    ...(filters.holdMin ? [{ label: `Held ≥ ${filters.holdMin} yr`, onClear: () => setF('holdMin', '') }] : []),
+    ...(filters.heldSince ? [{ label: `Held since ≤ ${filters.heldSince}`, onClear: () => setF('heldSince', '') }] : []),
     ...(filters.ownerType !== 'all' ? [{ label: filters.ownerType, onClear: () => setF('ownerType', 'all') }] : []),
+    ...(filters.ownerLoc !== 'all' ? [{ label: filters.ownerLoc === 'out' ? 'Out-of-state owner' : 'In-state owner', onClear: () => setF('ownerLoc', 'all') }] : []),
+    ...(filters.bucket !== 'all' ? [{ label: filters.bucket === 'universe' ? 'Scored universe only' : 'Manual review only', onClear: () => setF('bucket', 'all') }] : []),
     ...SIG_DEFS.filter(([k]) => filters.sig[k]).map(([k]) => ({ label: SIG_LABEL[k], onClear: () => toggleSig(k) })),
   ]
   const filterCount = activeChips.length
@@ -152,7 +194,22 @@ export default function App() {
   const clearSel = () => (view === 'brokers' ? setSelBrokers([]) : setSelProps([]))
   const setCh = (c) => setChannel(c)
   const toggleScore = (k) => setScore((s) => ({ ...s, [k]: !s[k] }))
-  const clearAll = () => { setChannel('both'); setScore({ Actionable: true, Tentative: true, Pass: true }); setFilters(EMPTY_FILTERS) }
+  const clearAll = () => { setChannel('both'); setScore({ Actionable: true, Tentative: true, Pass: true }); setFilters(EMPTY_FILTERS); setQ('') }
+
+  // Honest data-coverage note (ported from the off-market map): clear-height /
+  // year-built only exist in some markets — those filters narrow the markets that
+  // HAVE the data and leave the rest unchanged (bounds are null-inclusive).
+  const covNote = (() => {
+    const off = propsData.filter((p) => p.channel === 'off')
+    if (!off.length) return ''
+    const mkts = [...new Set(off.map((p) => p.mkt).filter(Boolean))].sort()
+    const chMkts = mkts.filter((m) => off.some((p) => p.mkt === m && p.clear != null))
+    const yrMiss = mkts.filter((m) => !off.some((p) => p.mkt === m && p.year))
+    const n = []
+    if (chMkts.length < mkts.length) n.push(`Clear-height data: ${chMkts.join(', ') || 'none'} only`)
+    if (yrMiss.length) n.push(`Year built: not yet in ${yrMiss.join(', ')}`)
+    return n.length ? `${n.join(' · ')}. Those filters narrow the markets that have the data and leave the rest unchanged.` : ''
+  })()
   const goModule = (m) => { setModule(m); setRailOpen(false); setSearchOpen(false); setStatusOpen(false); setAcctOpen(false) }
   const startSourcing = () => { setSourcing(true); setNewCount(0); setLastUpdated('just now') }
 
@@ -222,7 +279,8 @@ export default function App() {
 
         <div className="search-box" style={css('display:flex;align-items:center;height:30px;padding:0 10px;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;min-width:230px;')}>
           <Icon name="search" size={13} style={css('color:var(--text2);flex:0 0 auto;')} />
-          <input aria-label="Search address, owner, broker, or APN" placeholder="Search address · owner · broker · APN" style={css('background:transparent;border:none;outline:none;color:var(--text);font-size:12.5px;width:100%;')} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search address, owner, broker, or APN" placeholder="Search address · owner · broker · APN" style={css('background:transparent;border:none;outline:none;color:var(--text);font-size:12.5px;width:100%;')} />
+          {q && <button onClick={() => setQ('')} aria-label="Clear search" style={css('display:flex;align-items:center;background:none;border:none;color:var(--text3);cursor:pointer;padding:0;')}><Icon name="x" size={13} sw={2.2} /></button>}
         </div>
         <button className="hov tap" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} aria-label="Toggle light / dark theme" style={css('display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text2);flex:0 0 auto;')}><Icon name="moon" size={15} sw={1.7} /></button>
         <button onClick={() => setAcctOpen(true)} aria-label="Account menu" style={css('flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--text2);')}>JS</button>
@@ -284,13 +342,28 @@ export default function App() {
 
                 <div style={css(railLabel)}>Filters</div>
                 <div style={css('display:flex;flex-direction:column;gap:11px;')}>
+                  <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Search</label><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Address · owner · APN · contact" aria-label="Search properties" style={css(numInput)} /></div>
                   <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Market / metro</label><select value={filters.market} onChange={(e) => setF('market', e.target.value)} style={css(selectStyle)} aria-label="Market"><option value="all">All markets</option>{MARKETS.filter((m) => ALLOWED_MARKETS.has(m)).map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
                   <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Source</label><select style={css(selectStyle)} aria-label="Source"><option>All sources</option>{SOURCES.map((s) => <option key={s}>{s}</option>)}</select></div>
                   <div style={css('display:flex;gap:8px;')}>
-                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max clear ht (ft)</label><input type="number" value={filters.clearMax} onChange={(e) => setF('clearMax', e.target.value)} placeholder="≤ 24" aria-label="Maximum clear height" style={css('height:32px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;outline:none;')} /></div>
-                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Min year built</label><input type="number" value={filters.yearMin} onChange={(e) => setF('yearMin', e.target.value)} placeholder="≥ 1960" aria-label="Minimum year built" style={css('height:32px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;outline:none;')} /></div>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Min SF</label><input type="number" value={filters.sfMin} onChange={(e) => setF('sfMin', e.target.value)} placeholder="≥ 60,000" aria-label="Minimum building SF" style={css(numInput)} /></div>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max SF</label><input type="number" value={filters.sfMax} onChange={(e) => setF('sfMax', e.target.value)} placeholder="≤ 300,000" aria-label="Maximum building SF" style={css(numInput)} /></div>
+                  </div>
+                  <div style={css('display:flex;gap:8px;')}>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max clear ht (ft)</label><input type="number" value={filters.clearMax} onChange={(e) => setF('clearMax', e.target.value)} placeholder="≤ 24" aria-label="Maximum clear height" style={css(numInput)} /></div>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max mi to core</label><input type="number" value={filters.distMax} onChange={(e) => setF('distMax', e.target.value)} placeholder="≤ 10" aria-label="Maximum miles to core" style={css(numInput)} /></div>
+                  </div>
+                  <div style={css('display:flex;gap:8px;')}>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Min year built</label><input type="number" value={filters.yearMin} onChange={(e) => setF('yearMin', e.target.value)} placeholder="≥ 1960" aria-label="Minimum year built" style={css(numInput)} /></div>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max year built</label><input type="number" value={filters.yearMax} onChange={(e) => setF('yearMax', e.target.value)} placeholder="≤ 1990" aria-label="Maximum year built" style={css(numInput)} /></div>
+                  </div>
+                  <div style={css('display:flex;gap:8px;')}>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Min hold (yr)</label><input type="number" value={filters.holdMin} onChange={(e) => setF('holdMin', e.target.value)} placeholder="≥ 10" aria-label="Minimum hold years" style={css(numInput)} /></div>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Held since ≤</label><input type="number" value={filters.heldSince} onChange={(e) => setF('heldSince', e.target.value)} placeholder="2010" aria-label="Acquired in or before year" style={css(numInput)} /></div>
                   </div>
                   <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Owner type</label><select value={filters.ownerType} onChange={(e) => setF('ownerType', e.target.value)} style={css(selectStyle)} aria-label="Owner type"><option value="all">Any owner type</option><option>LLC</option><option>Trust</option><option>Individual</option><option>Partnership</option><option>Corp</option></select></div>
+                  <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Owner location</label><select value={filters.ownerLoc} onChange={(e) => setF('ownerLoc', e.target.value)} style={css(selectStyle)} aria-label="Owner location"><option value="all">Any owner location</option><option value="in">In-state owner</option><option value="out">Out-of-state owner</option></select></div>
+                  <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Parcels</label><select value={filters.bucket} onChange={(e) => setF('bucket', e.target.value)} style={css(selectStyle)} aria-label="Parcel bucket"><option value="all">All parcels</option><option value="universe">Scored universe only</option><option value="review">60–75k manual review only</option></select></div>
                 </div>
 
                 <div style={css(railLabel + 'margin:20px 0 10px;')}>Signals</div>
@@ -299,6 +372,7 @@ export default function App() {
                     <label key={k} style={css('display:flex;align-items:center;gap:9px;cursor:pointer;')}><input type="checkbox" checked={filters.sig[k]} onChange={() => toggleSig(k)} style={css('accent-color:var(--accent);width:15px;height:15px;')} />{label}</label>
                   ))}
                 </div>
+                {covNote && <div style={css('margin-top:16px;padding-top:10px;border-top:1px solid var(--border);font-size:10.5px;color:var(--text3);line-height:1.55;')}>{covNote}</div>}
               </div>
               <div style={css('flex:0 0 auto;border-top:1px solid var(--border);padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;')}>
                 <span style={css('font-size:12px;')}><span style={css('font-family:var(--mono);font-weight:600;color:var(--text);')}>{fmtInt(matchShown)}</span><span style={css('color:var(--text2);')}> of {fmtInt(propsData.length)} match</span></span>
@@ -347,8 +421,8 @@ export default function App() {
                     <table style={css('width:100%;border-collapse:collapse;font-size:12.5px;')}>
                       <thead><tr style={css('position:sticky;top:0;z-index:2;background:var(--surface);')}>
                         <th style={css('width:34px;padding:9px 0 9px 14px;border-bottom:1px solid var(--border);')}><input type="checkbox" checked={allPropsSel} onChange={selAllProps} aria-label="Select all" style={css('accent-color:var(--accent);')} /></th>
-                        {[th('left'), th('left'), th('left'), th('right'), th('left'), th('left'), th('left'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('left', 'col-secondary')].map((c, i) => (
-                          <th key={i} className={c.cls} style={css(c.s)}>{['CH', 'ADDRESS', 'MARKET', 'SF', 'SCORE', 'KEY SIGNAL', 'OWNER / BROKER', 'ASK $/SF', 'YEAR', 'CONTACT'][i]}</th>
+                        {[th('left'), th('left'), th('left'), th('right'), th('left'), th('left'), th('left'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('left', 'col-secondary')].map((c, i) => (
+                          <th key={i} className={c.cls} style={css(c.s)}>{['CH', 'ADDRESS', 'MARKET', 'SF', 'SCORE', 'KEY SIGNAL', 'OWNER / BROKER', 'ASK $/SF', 'YEAR', 'CLR FT', 'DIST MI', 'HELD YR', 'CONTACT'][i]}</th>
                         ))}
                         <th style={css('width:28px;border-bottom:1px solid var(--border);')} />
                       </tr></thead>
@@ -364,8 +438,11 @@ export default function App() {
                             <td style={css('padding:9px 8px;color:var(--text2);font-size:12px;white-space:nowrap;')}>{p.signal}</td>
                             <td style={css('padding:9px 8px;color:var(--text2);white-space:nowrap;')}>{ownerOrBroker(p)}</td>
                             <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.channel === 'on' ? fmtMoney2(p.ask) : '—'}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.year}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;')}><span style={css(contactStyle(p.contact))}>{p.contact}</span></td>
+                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.year ?? '—'}</td>
+                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.clear ?? '—'}</td>
+                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.distMi ?? '—'}</td>
+                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.holdYears != null ? Math.round(p.holdYears) : '—'}</td>
+                            <td className="col-secondary" style={css('padding:9px 8px;')}><span title={p.person || undefined} style={css(contactStyle(p.contact))}>{p.contact}</span></td>
                             <td style={css('padding:9px 14px 9px 4px;text-align:right;color:var(--text3);')}><Icon name="chevronRight" size={14} /></td>
                           </tr>
                         ))}
@@ -429,7 +506,7 @@ export default function App() {
               {/* MAP */}
               {view === 'map' && !showEmpty && (
                 <div className="map-view" data-map={mapStyle} style={css('flex:1;position:relative;min-height:0;overflow:hidden;background:var(--map-land);')}>
-                  <DealMap props={visibleProps} mapStyle={mapStyle} theme={theme} onOpen={setDrawerId} />
+                  <DealMap props={visibleProps} meta={dataset.meta} mapStyle={mapStyle} theme={theme} onOpen={setDrawerId} />
 
                   <div style={css('position:absolute;top:12px;left:12px;display:flex;gap:2px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:7px;z-index:1100;')}>
                     <button className="tap hov" onClick={() => setMapStyle('clean')} aria-label="Clean basemap" style={css(seg(mapStyle === 'clean') + 'height:26px;')}>Clean</button>
@@ -478,17 +555,22 @@ export default function App() {
                         <button onClick={() => setDrawerId(null)} aria-label="Close detail" className="tap" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;background:none;border:none;color:var(--text3);width:30px;height:30px;')}><Icon name="x" size={17} /></button>
                       </div>
                       <div style={css('font-size:17px;font-weight:600;letter-spacing:-.01em;')}>{drawerProp.addr}</div>
-                      <div style={css('color:var(--text2);font-size:12.5px;margin-top:2px;')}>{drawerProp.mkt}, {drawerProp.st}</div>
+                      <div style={css('color:var(--text2);font-size:12.5px;margin-top:2px;')}>{drawerProp.mkt}, {drawerProp.st}{drawerProp.apn ? ` · APN ${drawerProp.apn}` : ''}</div>
+                      {drawerProp.landUse && <div style={css('color:var(--text3);font-size:11px;margin-top:2px;')}>{drawerProp.landUse}</div>}
                     </div>
                     <div style={css('flex:1;overflow-y:auto;padding:16px 18px;')}>
                       <div style={css('display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:18px;')}>
-                        {[['Building SF', fmtSF(drawerProp.sf)], ['Year built', drawerProp.year], ['Clear ht', `${drawerProp.clear} ft`]].map(([l, v]) => (
+                        {[
+                          ['Building SF', `${fmtSF(drawerProp.sfTotal || drawerProp.sf)}${drawerProp.buildings > 1 ? ` · ${drawerProp.buildings} bldgs` : ''}`],
+                          ['Year built', drawerProp.year ?? '—'],
+                          ['Clear ht', drawerProp.clear != null ? `${drawerProp.clear} ft${drawerProp.clearSrc ? ` · ${drawerProp.clearSrc}` : ''}` : '—'],
+                        ].map(([l, v]) => (
                           <div key={l} style={css('background:var(--surface2);padding:10px 12px;')}><div style={css('font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;')}>{l}</div><div style={css('font-family:var(--mono);font-size:15px;margin-top:3px;')}>{v}</div></div>
                         ))}
                       </div>
                       <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;')}>
                         <div style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;')}>Score breakdown</div>
-                        <span style={css('display:inline-flex;align-items:center;gap:6px;font-size:12px;')}><span style={css(scDot(drawerProp.cat))} /><span style={css(scLabel(drawerProp.cat))}>{drawerProp.cat}</span><span style={css('font-family:var(--mono);')}>{drawerProp.score}/100</span></span>
+                        <span style={css('display:inline-flex;align-items:center;gap:6px;font-size:12px;')}><span style={css(scDot(drawerProp.cat))} /><span style={css(scLabel(drawerProp.cat))}>{drawerProp.cat}</span><span style={css('font-family:var(--mono);')}>{drawerProp.score}/{(drawerProp.channel === 'off' && dataset.meta?.cityCeil?.[drawerProp.mkt]) || 100}</span></span>
                       </div>
                       <div style={css('display:flex;flex-direction:column;gap:8px;margin-bottom:20px;')}>
                         {breakdownFor(drawerProp).map((c) => (
@@ -565,7 +647,7 @@ export default function App() {
       {searchOpen && (
         <div style={css('position:fixed;inset:0;background:var(--bg);z-index:120;display:flex;flex-direction:column;animation:fadein .15s ease;')}>
           <div style={css('display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--border);')}>
-            <div style={css('display:flex;align-items:center;gap:9px;flex:1;height:44px;padding:0 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;')}><Icon name="search" size={16} style={css('color:var(--text2);')} /><input autoFocus aria-label="Search" placeholder="Search address · owner · broker · APN" style={css('flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:15px;')} /></div>
+            <div style={css('display:flex;align-items:center;gap:9px;flex:1;height:44px;padding:0 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;')}><Icon name="search" size={16} style={css('color:var(--text2);')} /><input autoFocus value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search" placeholder="Search address · owner · broker · APN" style={css('flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:15px;')} /></div>
             <button className="tap" onClick={() => setSearchOpen(false)} style={css('height:44px;padding:0 14px;background:transparent;border:none;color:var(--accent);font-size:14px;font-weight:500;')}>Cancel</button>
           </div>
           <div style={css('flex:1;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12.5px;')}>Type to search the sourced universe.</div>

@@ -51,6 +51,15 @@ SOURCE_FIRM = {"colliers": "Colliers", "cushman": "Cushman & Wakefield",
 # midpoint so the score column/badge has a value tied to the real category.
 CAT_NOMINAL = {"Actionable": 78, "Tentative": 58, "Pass": 32}
 
+# Static model weights (0–100 cap) — mirrors offmarket-scraping tools/ranking.py.
+# Used both in the payload (drawer/popup breakdown) and to compute each market's
+# *reachable* ceiling: a component only counts once some scored row in that market
+# actually earns it (dormant ones are pending data, not lost points).
+COMP_MAX = {"vacancy_evidence": 22, "tax_delinquency": 15, "proximity_score": 15,
+            "physical_fit": 12, "code_violations": 12, "hold_period": 8,
+            "owner_profile": 7, "condition_distress": 6, "permit_anomaly": 5,
+            "year_built_band": 5, "truck_access_inverse": 4}
+
 _FIX_CASE = {"Llc": "LLC", "Lp": "LP", "Llp": "LLP", "Lp.": "LP", "Inc": "Inc",
              "Ii": "II", "Iii": "III", "Us": "US", "Nc": "NC", "Tn": "TN",
              "Oh": "OH", "Sc": "SC", "Po": "PO"}
@@ -123,6 +132,10 @@ def load_offmarket() -> list[dict]:
             "mkt": CITY_MARKET.get(city, city),
             "st": CITY_STATE.get(city, ""),
             "sf": int(r.get("sfL") or r.get("sf") or 0),
+            # total across all buildings + largest single building (the popup shows
+            # "X SF total · largest Y SF · N buildings" like the off-market tool's map)
+            "sfTotal": int(r.get("sf") or 0),
+            "sfLargest": int(r.get("sfL") or 0),
             "cat": offmarket_cat(score),
             "score": int(round(score)) if isinstance(score, (int, float)) else 0,
             "signal": offmarket_signal(r),
@@ -131,6 +144,7 @@ def load_offmarket() -> list[dict]:
                                         smart_title(r.get("ot")) or "—"),
             "oos": oos_state(r),
             "clear": int(r["ch"]) if r.get("ch") else None,
+            "clearSrc": r.get("chs") or "",     # e.g. "lidar" — roof estimate source
             "year": int(r["yr"]) if r.get("yr") else None,
             "contact": offmarket_contact(r),
             "mail": r.get("mail") or "—",
@@ -142,23 +156,44 @@ def load_offmarket() -> list[dict]:
             "phones": r.get("phones") or [],
             "emails": r.get("emails") or [],
             "person": r.get("person") or "",
+            "personRole": r.get("prole") or "",
             "contactConf": r.get("cc") or "",
             # real distress evidence (replaces the drawer's old hardcoded text)
-            "sigs": [{"type": s.get("type"), "detail": (s.get("detail") or "")[:90], "date": s.get("date")}
-                     for s in (r.get("sig") or [])[:4]],
+            "sigs": [{"type": s.get("type"), "detail": (s.get("detail") or "")[:220], "date": s.get("date")}
+                     for s in (r.get("sig") or [])[:8]],
             "nViol": r.get("nv") or 0,
             "nPermit": r.get("np") or 0,
             # real property facts / financials
             "lastSale": r.get("sale"),
             "lastPrice": int(r["price"]) if r.get("price") else 0,
+            # parcels sharing the same sale date+price = one bulk deal; the popup
+            # flags it and suppresses the meaningless per-SF figure
+            "parcelsInSale": r.get("pn") or 1,
+            "sfCheck": r.get("sfc") or "",      # "mismatch" → SF-mismatch chip
             "assessed": int(r["av"]) if r.get("av") else 0,
             "holdYears": round(r["hold"], 1) if isinstance(r.get("hold"), (int, float)) else None,
             "distMi": round(r["mi"], 1) if isinstance(r.get("mi"), (int, float)) else None,
             "buildings": r.get("nb"),
             "landUse": r.get("lu") or "",
             "bucket": r.get("bucket"),
+            "gate": r.get("gate") or "",        # why a row isn't scored (manual review)
+            # imagery/VLM site assessment (occupancy, observed use, tenants, physical)
+            "obs": r.get("obs") or None,
         })
     return out
+
+
+def city_ceilings(off: list[dict]) -> tuple[dict, dict]:
+    """Per-market reachable score ceiling: only components some scored row in that
+    market actually earns count (mirrors offmarket-scraping's map/dashboard)."""
+    live: dict[str, set] = {}
+    for p in off:
+        s = live.setdefault(p["mkt"], set())
+        for k, v in (p.get("comp") or {}).items():
+            if v and k in COMP_MAX:
+                s.add(k)
+    ceil = {m: sum(COMP_MAX[k] for k in ks) for m, ks in live.items()}
+    return ({m: sorted(ks) for m, ks in live.items()}, ceil)
 
 
 def parse_city_state(address: str) -> tuple[str, str]:
@@ -250,6 +285,7 @@ def main() -> None:
     from collections import Counter
     by_market = Counter(p["mkt"] for p in props)
     by_cat = Counter(p["cat"] for p in props)
+    city_live, city_ceil = city_ceilings(off)
 
     payload = {
         "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -260,11 +296,11 @@ def main() -> None:
         "markets": sorted(by_market),
         # static model weights (0–100 cap) — lets the drawer render a real
         # per-component score breakdown from each off-market row's `comp`.
-        "compMax": {"vacancy_evidence": 22, "tax_delinquency": 15,
-                    "proximity_score": 15, "physical_fit": 12,
-                    "code_violations": 12, "hold_period": 8, "owner_profile": 7,
-                    "condition_distress": 6, "permit_anomaly": 5,
-                    "year_built_band": 5, "truck_access_inverse": 4},
+        "compMax": COMP_MAX,
+        # per-market reachable ceiling + which components are live there — lets the
+        # popup say "Score 20 / 107 reachable" instead of a notional /100.
+        "cityLive": city_live,
+        "cityCeil": city_ceil,
         "props": props,
         "brokers": brokers,
     }
