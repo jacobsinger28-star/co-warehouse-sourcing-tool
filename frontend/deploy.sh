@@ -50,10 +50,15 @@ git -C .. push origin main \
   || echo "    ⚠ push failed — push manually from the repo root, then re-run"
 
 # ── 2. Railway: CLI + login + project + password ─────────────────────────────
+# The Railway project/service (created 2026-07): gracious-reprieve /
+# co-warehouse-sourcing-tool. Linked EXPLICITLY — `railway init` would create a
+# duplicate project, and the interactive picker dies in scripts.
+RW_PROJECT="gracious-reprieve"
+RW_SERVICE="co-warehouse-sourcing-tool"
 echo "==> [2/4] railway: login + project + auth variables"
 command -v railway >/dev/null 2>&1 || npm i -g @railway/cli
 railway whoami >/dev/null 2>&1 || railway login
-railway status  >/dev/null 2>&1 || railway init      # creates/links a project (interactive)
+railway link --project "$RW_PROJECT" --service "$RW_SERVICE" --environment production
 [ -n "${APP_PASSWORD:-}" ] && railway variables --set "APP_PASSWORD=${APP_PASSWORD}"
 if [ "$SUPA_OK" = 1 ]; then
   railway variables \
@@ -62,27 +67,32 @@ if [ "$SUPA_OK" = 1 ]; then
   # optional — server defaults to '@simicap.com' (whole-domain entry) when unset
   [ -n "${ALLOWED_EMAILS:-}" ] && railway variables --set "ALLOWED_EMAILS=${ALLOWED_EMAILS}"
 fi
+echo "    NOTE: if variables were changed, Railway may hold them as STAGED changes —"
+echo "    check the project dashboard for an 'Apply changes' banner if they don't stick."
 
 # ── 3. deploy WITH the data, but off GitHub (private `railway up`) ────────────
+# The service builds with Root Directory /frontend (the GitHub repo layout), so
+# the staged upload must nest everything under frontend/ too.
 echo "==> [3/4] railway: deploy (data uploaded privately, not via GitHub)"
 if [ ! -f public/data.real.json ]; then
   echo "⛔ public/data.real.json missing — run tools/build_real_data.py + tools/pull_pipedrive_brokers.py first"; exit 1
 fi
-rm -rf "$STAGE"; mkdir -p "$STAGE"
+rm -rf "$STAGE"; mkdir -p "$STAGE/frontend"
 # copy the app + the data into a staging dir that has NO .gitignore, so railway
 # up uploads data.real.json (a .railwayignore keeps only junk out).
 rsync -a --exclude node_modules --exclude dist --exclude .git --exclude .vercel \
-         --exclude .gitignore --exclude deploy.sh ./ "$STAGE"/
-[ -d .railway ] && cp -r .railway "$STAGE"/.railway || true   # carry the project link
+         --exclude .gitignore --exclude deploy.sh ./ "$STAGE"/frontend/
 printf 'node_modules\ndist\n.git\n.vercel\n' > "$STAGE"/.railwayignore
-( cd "$STAGE" && railway up )
+( cd "$STAGE" \
+  && railway link --project "$RW_PROJECT" --service "$RW_SERVICE" --environment production \
+  && railway up --service "$RW_SERVICE" )
 
 # ── 4. URL + verify ──────────────────────────────────────────────────────────
 echo "==> [4/4] done"
 railway domain || true
 echo
 echo "Verify the data loaded server-side:"
-echo "   railway logs | grep 'data loaded'      # want: data loaded (2446 props, 24 brokers)"
+echo "   railway logs | grep 'data loaded'      # want: data loaded (<props> props, <brokers> brokers), NOT (0 props"
 if [ "$SUPA_OK" = 1 ]; then
   echo "Then open the Railway URL above and sign in with a Supabase account (allowed: ${ALLOWED_EMAILS:-@simicap.com})"
 else

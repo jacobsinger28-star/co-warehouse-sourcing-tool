@@ -24,10 +24,12 @@
 // request — so a missing/blank credential can never leak PII. Never hardcode
 // secrets: this file is committed, and a committed password is a public password.
 //
-//   DATA_DIR      — optional dir holding data.real.json (e.g. a mounted volume).
-//                   Defaults to the app dir, where the Dockerfile bakes the file in.
+//   DATA_DIR      — optional mounted-volume dir for data.real.json persistence.
+//                   A non-empty baked dataset refreshes the volume at boot; an
+//                   empty bake (GitHub auto-deploys) falls back to the volume
+//                   copy, so pushes no longer wipe the real data.
 import express from 'express'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { answerDealsQuestion, searchDeals } from './dealsChat.mjs'
@@ -48,17 +50,33 @@ const ALLOWED_DOMAINS = new Set(ALLOWED_ENTRIES.filter((e) => e.startsWith('@'))
 const emailAllowed = (email) =>
   ALLOWED_EXACT.has(email) || ALLOWED_DOMAINS.has(email.slice(email.lastIndexOf('@')))
 const SUPABASE_ENABLED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
-// data.real.json is baked into the image by the Dockerfile (server-side only, NOT
-// under dist/); point DATA_DIR at a mounted volume to refresh it without a rebuild.
-const DATA_PATH = join(process.env.DATA_DIR || __dirname, 'data.real.json')
+// data.real.json is baked into the image by a private `railway up` (server-side
+// only, NOT under dist/). GitHub auto-deploys can't include it (gitignored), so
+// with DATA_DIR set to a mounted volume the server keeps the LAST real dataset
+// across those data-less rebuilds: a baked dataset refreshes the volume; an
+// empty bake ('{}') falls back to the volume copy.
+const DATA_DIR = process.env.DATA_DIR || ''
+const BAKED_PATH = join(__dirname, 'data.real.json')
 const DIST = join(__dirname, 'dist')
 
-// load the data once at boot (it never leaves the server except via the authed route)
-let DATA = null
-if (existsSync(DATA_PATH)) {
-  try { DATA = JSON.parse(readFileSync(DATA_PATH, 'utf8')) } catch (e) { console.error('bad data.real.json', e) }
+const readJson = (p) => {
+  try { return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null }
+  catch (e) { console.error(`bad json at ${p}`, e); return null }
 }
-console.log(`[server] data ${DATA ? `loaded (${DATA.props?.length || 0} props, ${DATA.brokers?.length || 0} brokers)` : 'absent → app falls back to sample'}`)
+const hasData = (d) => Array.isArray(d?.props) && d.props.length > 0
+
+let DATA = readJson(BAKED_PATH)
+if (DATA_DIR) {
+  const volPath = join(DATA_DIR, 'data.real.json')
+  if (hasData(DATA)) {
+    try { writeFileSync(volPath, JSON.stringify(DATA)); console.log('[server] volume refreshed from baked data') }
+    catch (e) { console.error('[server] volume write failed', e) }
+  } else {
+    const vol = readJson(volPath)
+    if (hasData(vol)) { DATA = vol; console.log('[server] baked data empty → using volume copy') }
+  }
+}
+console.log(`[server] data ${hasData(DATA) ? `loaded (${DATA.props.length} props, ${DATA.brokers?.length || 0} brokers)` : 'absent → app falls back to sample'}`)
 if (SUPABASE_ENABLED && ALLOWED_ENTRIES.length === 0)
   console.warn('[server] ⚠ Supabase configured but ALLOWED_EMAILS is empty — every Supabase login will be refused (fail closed). Set ALLOWED_EMAILS in Railway → Variables.')
 if (!SUPABASE_ENABLED && !PASSWORD)
@@ -141,7 +159,7 @@ app.use('/api/deals', rateLimit(60))
 
 // the ONLY way to get the real data: authed (Supabase JWT + allowlist, or password).
 app.post('/api/data', requireAuth, (req, res) => {
-  if (!DATA) return res.status(404).json({ error: 'no real data on this server' })
+  if (!hasData(DATA)) return res.status(404).json({ error: 'no real data on this server' })
   res.json(DATA)
 })
 
