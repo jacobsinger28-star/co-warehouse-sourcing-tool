@@ -84,3 +84,6 @@ No auth configured at all → the server fails closed (every `/api/*` request re
 
 `npm run build` passes clean; a full server-render of `<App/>` mounts with no runtime
 errors and all modules present (build + SSR smoke, 2026-06-25).
+
+> Data persistence: the Railway volume at /data keeps the real dataset across
+> GitHub auto-deploys (see server.mjs DATA_DIR); refresh it with deploy.sh.
