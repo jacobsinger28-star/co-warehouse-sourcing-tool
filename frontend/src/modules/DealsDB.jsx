@@ -52,6 +52,19 @@ async function queryDeals(body) {
   return d
 }
 
+// RAG chat over the deal book (server: /api/deals-chat → Claude with Pipedrive
+// context). history = [{role:'user'|'assistant', content}] for follow-ups.
+async function queryDealsChat(question, history) {
+  const r = await fetch(`${import.meta.env.BASE_URL}api/deals-chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ ...authBody(), question, history }),
+  })
+  const d = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(d.error || `request failed (${r.status})`)
+  return d
+}
+
 export default function DealsDB() {
   const [query, setQuery] = useState('')
   const [result, setResult] = useState(null)        // {mode, label?, results, dealCount}
@@ -59,6 +72,9 @@ export default function DealsDB() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [dedupeQuery, setDedupeQuery] = useState('')
+  const [chat, setChat] = useState(null)            // {question, answer, citations, dealCount}
+  const [chatBusy, setChatBusy] = useState(false)
+  const chatHistory = useRef([])                    // rolling [{role, content}] for follow-ups
   const dedupe = checkDedupe(dedupeQuery, live?.results)
   const busyRef = useRef(false)
 
@@ -87,6 +103,28 @@ export default function DealsDB() {
   }
   const search = () => { if (query.trim()) run({ q: query.trim() }) }
 
+  const ask = async () => {
+    const q = query.trim()
+    if (!q || chatBusy) return
+    setChatBusy(true)
+    setErr('')
+    try {
+      const d = await queryDealsChat(q, chatHistory.current)
+      chatHistory.current = [...chatHistory.current, { role: 'user', content: q }, { role: 'assistant', content: d.answer }].slice(-8)
+      setChat({ question: q, ...d })
+      setQuery('')
+    } catch (e) {
+      setErr(e.message === 'Failed to fetch'
+        ? 'No backend reachable — AI answers need the server (npm run serve locally).'
+        : /ANTHROPIC_API_KEY/.test(e.message)
+          ? 'AI answers are not enabled yet — set ANTHROPIC_API_KEY in Railway → Variables.'
+          : e.message)
+    } finally {
+      setChatBusy(false)
+    }
+  }
+  const clearChat = () => { setChat(null); chatHistory.current = [] }
+
   const tableDeals = live?.results
   return (
     <div className="content-pad" data-screen-label="Deals DB" style={css('flex:1;overflow-y:auto;min-height:0;padding:24px 26px;')}>
@@ -96,12 +134,13 @@ export default function DealsDB() {
           <span style={css('font-size:10.5px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);padding:3px 9px;border-radius:6px;')}>Internal · confidential</span>
           {live && <span style={css('font-size:10.5px;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:6px;')}>Pipedrive · {live.dealCount} deals live</span>}
         </div>
-        <div style={css('font-size:12.5px;color:var(--text3);margin-bottom:16px;')}>Keyword search across deal titles and notes · known questions run live Pipedrive queries</div>
+        <div style={css('font-size:12.5px;color:var(--text3);margin-bottom:16px;')}>Keyword search across deal titles and notes · Ask AI answers plain-English questions from the live deal book</div>
 
         <div style={css('display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border2);border-radius:11px;padding:4px 4px 4px 16px;margin-bottom:8px;')}>
           <Icon name="search" size={15} style={css('color:var(--text2);flex:0 0 auto;')} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && search()} aria-label="Search deal titles and notes" placeholder="Search deals & notes — an address, broker, market, 'small bay', 'seller financing'…" style={css('flex:1;height:40px;background:transparent;border:none;outline:none;color:var(--text);font-size:14px;min-width:0;')} />
-          <button className="tap hov" onClick={search} disabled={busy} style={css(`height:38px;padding:0 18px;background:var(--accent);border:none;border-radius:8px;color:#06120F;font-weight:600;font-size:13px;opacity:${busy ? '.6' : '1'};`)}>{busy ? 'Searching…' : 'Search'}</button>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && search()} aria-label="Search deal titles and notes" placeholder="Search deals & notes, or ask: 'have we ever LOI'd this owner?'…" style={css('flex:1;height:40px;background:transparent;border:none;outline:none;color:var(--text);font-size:14px;min-width:0;')} />
+          <button className="tap hov" onClick={search} disabled={busy || chatBusy} style={css(`height:38px;padding:0 18px;background:var(--accent);border:none;border-radius:8px;color:#06120F;font-weight:600;font-size:13px;opacity:${busy || chatBusy ? '.6' : '1'};`)}>{busy ? 'Searching…' : 'Search'}</button>
+          <button className="tap hov" onClick={ask} disabled={busy || chatBusy} style={css(`height:38px;padding:0 16px;background:var(--surface3);border:1px solid var(--accent-line);border-radius:8px;color:var(--accent);font-weight:600;font-size:13px;opacity:${busy || chatBusy ? '.6' : '1'};`)}>{chatBusy ? 'Thinking…' : 'Ask AI'}</button>
         </div>
         <div style={css('display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap;')}>
           {KNOWN_QUESTIONS.map((k) => (
@@ -111,6 +150,26 @@ export default function DealsDB() {
 
         {err && (
           <div role="alert" style={css('border:1px solid var(--red);background:var(--red-tint);border-radius:9px;padding:10px 13px;margin-bottom:14px;font-size:12px;color:var(--text2);')}>{err}</div>
+        )}
+
+        {chat && (
+          <div style={css('background:var(--surface);border:1px solid var(--accent-line);border-radius:10px;padding:16px 18px;margin-bottom:22px;')}>
+            <div style={css('display:flex;align-items:center;gap:8px;margin-bottom:10px;')}>
+              <span style={css('width:7px;height:7px;border-radius:50%;background:var(--accent);')} />
+              <span style={css('font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;')}>AI answer</span>
+              <span style={css(sampleTag)}>from {chat.dealCount} Pipedrive deals · follow-ups keep context</span>
+              <button className="hov" onClick={clearChat} aria-label="Clear AI answer" style={css('margin-left:auto;height:24px;padding:0 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text3);font-size:11px;')}>Clear</button>
+            </div>
+            <div style={css('font-size:12px;color:var(--text3);margin-bottom:8px;')}>“{chat.question}”</div>
+            <div style={css('font-size:13px;color:var(--text);line-height:1.65;white-space:pre-wrap;')}>{chat.answer}</div>
+            {chat.citations?.length > 0 && (
+              <div style={css('display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;')}>
+                {chat.citations.map((c) => (
+                  <a key={c.id} href={c.url} target="_blank" rel="noreferrer" style={css('font-size:11px;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-line);padding:3px 9px;border-radius:6px;text-decoration:none;')}>{c.title} →</a>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {result && (
