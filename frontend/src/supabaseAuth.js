@@ -20,6 +20,24 @@ async function tokenRequest(cfg, grantType, body) {
 export const signInWithPassword = (cfg, email, password) =>
   tokenRequest(cfg, 'password', { email, password })
 
+/**
+ * Register a new account. With email confirmation on (this project's setting),
+ * returns a user WITHOUT a session — the person must click the emailed link,
+ * then sign in. Registration alone grants nothing: the server's allowlist +
+ * confirmed-email check still decide who reaches the data.
+ */
+export async function signUp(cfg, email, password, fullName, redirectTo) {
+  const q = redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : ''
+  const r = await fetch(`${cfg.url}/auth/v1/signup${q}`, {
+    method: 'POST',
+    headers: { apikey: cfg.anonKey, 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password, ...(fullName ? { data: { full_name: fullName } } : {}) }),
+  })
+  const d = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(d.error_description || d.msg || d.error || `Sign-up failed (${r.status})`)
+  return d // session (autoconfirm on) or bare user (confirmation email sent)
+}
+
 export const refreshSession = (cfg, refreshToken) =>
   tokenRequest(cfg, 'refresh_token', { refresh_token: refreshToken })
 

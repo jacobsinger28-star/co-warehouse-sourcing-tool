@@ -3,7 +3,7 @@ import { css } from './css.js'
 import { loadRealData } from './crypto.js'
 import { RealDataContext } from './RealDataContext.js'
 import { setSessionPassword, setSessionToken } from './session.js'
-import { signInWithPassword, startAutoRefresh } from './supabaseAuth.js'
+import { signInWithPassword, signUp, startAutoRefresh } from './supabaseAuth.js'
 
 // Access gate for this internal, PII-bearing tool. Two modes, picked at load:
 //
@@ -28,25 +28,31 @@ async function sha256Hex(s) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-// Resolve the auth mode: a Supabase {url, anonKey} config, or null → legacy.
+// Resolve the auth mode: a Supabase {url, anonKey, allowedDomains?} config, or
+// null → legacy. VITE env vars (local dev) take precedence for url/key, but we
+// still ask the server for allowedDomains so the signup hint works everywhere.
 async function detectSupabase(baseUrl) {
-  const url = import.meta.env.VITE_SUPABASE_URL
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-  if (url && anonKey) return { url, anonKey }
+  let server = null
   try {
     const r = await fetch(`${baseUrl}api/config`, { cache: 'no-store' })
-    if (r.ok) return (await r.json())?.supabase ?? null
-  } catch { /* static host, no backend → legacy */ }
-  return null
+    if (r.ok) server = (await r.json())?.supabase ?? null
+  } catch { /* static host, no backend */ }
+  const url = import.meta.env.VITE_SUPABASE_URL
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  if (url && anonKey) return { url, anonKey, allowedDomains: server?.allowedDomains }
+  return server
 }
 
 export default function Gate({ children }) {
   const [cfg, setCfg] = useState(undefined) // undefined = detecting, null = legacy, {url,anonKey} = supabase
   const [ok, setOk] = useState(false)
   const [realData, setRealData] = useState(null)
+  const [mode, setMode] = useState('signin') // 'signin' | 'signup' (supabase only)
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState('')
+  const [fullName, setFullName] = useState('')
   const [err, setErr] = useState('')
+  const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const stopRefresh = useRef(null)
 
@@ -65,21 +71,46 @@ export default function Gate({ children }) {
 
   const supa = cfg != null
 
+  // The registering email's domain isn't on the server's allowlist → the account
+  // would sign in but be refused data access. Warn early (soft — exact-email
+  // exceptions may exist that the client can't see).
+  const domainWarning =
+    supa && mode === 'signup' && email.includes('@') && cfg.allowedDomains?.length &&
+    !cfg.allowedDomains.includes(email.toLowerCase().slice(email.lastIndexOf('@')))
+      ? `Heads up: only ${cfg.allowedDomains.join(', ')} accounts get data access.`
+      : ''
+
+  const enterWithSession = async (session) => {
+    setSessionToken(session.access_token)
+    stopRefresh.current = startAutoRefresh(cfg, session, setSessionToken)
+    const data = await loadRealData({ token: session.access_token }, baseUrl)
+    setRealData(data)
+    setOk(true)
+  }
+
   const submit = async (e) => {
     e.preventDefault()
     if (!pw || busy || cfg === undefined) return
     setBusy(true)
     setErr('')
+    setNotice('')
     try {
-      if (supa) {
+      if (supa && mode === 'signup') {
+        // Register. Confirmation email → click link → sign in. If the project
+        // ever auto-confirms, we get a session back and can enter directly.
+        const res = await signUp(cfg, email.trim(), pw, fullName.trim() || undefined, window.location.origin)
+        if (res.access_token) {
+          await enterWithSession(res)
+        } else {
+          setMode('signin')
+          setPw('')
+          setNotice('Account created — click the confirmation link we emailed you, then sign in.')
+        }
+      } else if (supa) {
         // Real login: Supabase email/password → JWT; the server re-verifies the
         // token + allowlist on every /api/* call.
         const session = await signInWithPassword(cfg, email.trim(), pw)
-        setSessionToken(session.access_token)
-        stopRefresh.current = startAutoRefresh(cfg, session, setSessionToken)
-        const data = await loadRealData({ token: session.access_token }, baseUrl)
-        setRealData(data)
-        setOk(true)
+        await enterWithSession(session)
       } else {
         // Legacy shared password.
         const match = (await sha256Hex(pw)) === PW_HASH
@@ -107,8 +138,29 @@ export default function Gate({ children }) {
           <span style={css('color:var(--text2);font-weight:500;font-size:13px;')}>Sourcing</span>
         </div>
         <div style={css('font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5;')}>
-          {cfg === undefined ? 'Checking sign-in method…' : supa ? 'Sign in with your account to continue.' : 'Enter the access password to continue.'}
+          {cfg === undefined ? 'Checking sign-in method…'
+            : !supa ? 'Enter the access password to continue.'
+            : mode === 'signup' ? 'Create your account to continue.'
+            : 'Sign in with your account to continue.'}
         </div>
+
+        {notice && (
+          <div role="status" style={css('margin-bottom:12px;padding:10px 12px;border:1px solid var(--border2);border-radius:9px;font-size:12.5px;line-height:1.5;color:var(--accent);background:var(--accent-dim);')}>
+            {notice}
+          </div>
+        )}
+
+        {supa && mode === 'signup' && (
+          <input
+            type="text"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            aria-label="Full name"
+            autoComplete="name"
+            placeholder="Full name (optional)"
+            style={css('height:42px;margin-bottom:10px;padding:0 13px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:14px;outline:none;')}
+          />
+        )}
 
         {supa && (
           <input
@@ -123,6 +175,9 @@ export default function Gate({ children }) {
             style={css('height:42px;margin-bottom:10px;padding:0 13px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:14px;outline:none;')}
           />
         )}
+        {domainWarning && (
+          <div style={css('margin:-4px 0 10px;font-size:11.5px;line-height:1.45;color:var(--amber,#d9a441);')}>{domainWarning}</div>
+        )}
 
         <input
           type="password"
@@ -131,15 +186,26 @@ export default function Gate({ children }) {
           onChange={(e) => { setPw(e.target.value); setErr('') }}
           aria-label={supa ? 'Password' : 'Access password'}
           aria-invalid={!!err}
-          autoComplete="current-password"
+          autoComplete={supa && mode === 'signup' ? 'new-password' : 'current-password'}
           placeholder="Password"
           style={css(`height:42px;padding:0 13px;background:var(--surface2);border:1px solid ${err ? 'var(--red)' : 'var(--border2)'};border-radius:9px;color:var(--text);font-size:14px;outline:none;`)}
         />
         {err && <div role="alert" style={css('margin-top:9px;font-size:12px;color:var(--red);')}>{err}</div>}
 
         <button type="submit" disabled={busy || !pw || cfg === undefined || (supa && !email)} style={css(`margin-top:16px;height:42px;border:none;border-radius:9px;background:var(--accent);color:#06120F;font-weight:600;font-size:13.5px;cursor:${busy || !pw ? 'default' : 'pointer'};opacity:${busy || !pw ? '.6' : '1'};`)}>
-          {busy ? (supa ? 'Signing in…' : 'Decrypting…') : supa ? 'Sign in' : 'Unlock'}
+          {busy ? (supa ? (mode === 'signup' ? 'Creating account…' : 'Signing in…') : 'Decrypting…')
+            : supa ? (mode === 'signup' ? 'Create account' : 'Sign in') : 'Unlock'}
         </button>
+
+        {supa && (
+          <button
+            type="button"
+            onClick={() => { setMode(mode === 'signup' ? 'signin' : 'signup'); setErr(''); setNotice('') }}
+            style={css('margin-top:13px;border:none;background:transparent;color:var(--accent);font-size:12.5px;cursor:pointer;')}
+          >
+            {mode === 'signup' ? '← Back to sign in' : 'New here? Create an account'}
+          </button>
+        )}
 
         <div style={css('margin-top:18px;display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--text3);')}>
           <span style={css('width:6px;height:6px;border-radius:50%;background:var(--text3);')} />

@@ -116,8 +116,14 @@ app.get('/health', (_req, res) => res.json({ ok: true }))
 // Public client config: which sign-in method to show. The anon key is a public
 // client key by design (it ships in every Supabase app bundle) — authorization
 // is the server-side JWT + allowlist check above, never the key itself.
+// allowedDomains lets the Gate warn someone registering with an email that
+// won't have access. Domains only — never the exact-email entries (team PII).
 app.get('/api/config', (_req, res) =>
-  res.json({ supabase: SUPABASE_ENABLED ? { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY } : null }))
+  res.json({
+    supabase: SUPABASE_ENABLED
+      ? { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY, allowedDomains: [...ALLOWED_DOMAINS] }
+      : null,
+  }))
 
 // naive in-memory rate limit on the auth endpoint (per-IP, per-minute) so the
 // password can't be brute-forced quickly even though it's short.
