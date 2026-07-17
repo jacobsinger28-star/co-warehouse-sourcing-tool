@@ -1,13 +1,29 @@
-// Railway server: serves the built SPA and gates the real data behind a REAL
-// server-side password check. The PII (data.real.json) lives on the server and is
-// returned ONLY by POST /api/data with the correct password — it is never a
-// publicly downloadable static file (the whole point of going to Railway).
+// Railway server: serves the built SPA and gates the real data behind REAL
+// server-side auth. The PII (data.real.json) lives on the server and is returned
+// ONLY by authed POST /api/data — it is never a publicly downloadable static
+// file (the whole point of going to Railway).
 //
-//   APP_PASSWORD  — the access password. REQUIRED: set it in Railway → Variables
-//                   (or export it locally). If unset, the server FAILS CLOSED —
-//                   /api/data refuses every request — so a missing/blank password
-//                   can never leak PII. Never hardcode it: this file is committed,
-//                   and a committed password is a public password.
+// Two auth methods, checked per request (either passes; both fail closed):
+//
+//  1. SUPABASE LOGIN (preferred) — per-person email/password accounts.
+//       SUPABASE_URL       — https://<project-ref>.supabase.co
+//       SUPABASE_ANON_KEY  — the project's anon/public key
+//       ALLOWED_EMAILS     — comma-separated allowlist, e.g. "raz@x.com,andrew@y.com".
+//                            REQUIRED for Supabase mode: a valid JWT whose email is
+//                            not listed is refused (Supabase projects may have open
+//                            signup — a login alone is NOT authorization).
+//     The client gets {url, anonKey} from GET /api/config, signs in against
+//     Supabase, and sends the JWT as an Authorization: Bearer header; this server
+//     re-verifies the token against Supabase on every data route.
+//
+//  2. LEGACY shared password.
+//       APP_PASSWORD  — the access password, checked against req.body.password.
+//     Unset it once Supabase is configured to retire the shared password.
+//
+// If NEITHER method is configured the server FAILS CLOSED — /api/* refuses every
+// request — so a missing/blank credential can never leak PII. Never hardcode
+// secrets: this file is committed, and a committed password is a public password.
+//
 //   DATA_DIR      — optional dir holding data.real.json (e.g. a mounted volume).
 //                   Defaults to the app dir, where the Dockerfile bakes the file in.
 import express from 'express'
@@ -19,6 +35,19 @@ import { answerDealsQuestion, searchDeals } from './dealsChat.mjs'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 8080
 const PASSWORD = process.env.APP_PASSWORD || ''   // no default — unset = fail closed
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '')
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || ''
+// Who may enter, comma-separated. Two kinds of entry:
+//   "@simicap.com"  → any account on that email domain
+//   "raz@x.com"     → that exact address
+// Defaults to the company domain; override with ALLOWED_EMAILS to widen/narrow.
+const ALLOWED_ENTRIES = (process.env.ALLOWED_EMAILS ?? '@simicap.com')
+  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+const ALLOWED_EXACT = new Set(ALLOWED_ENTRIES.filter((e) => !e.startsWith('@')))
+const ALLOWED_DOMAINS = new Set(ALLOWED_ENTRIES.filter((e) => e.startsWith('@')))
+const emailAllowed = (email) =>
+  ALLOWED_EXACT.has(email) || ALLOWED_DOMAINS.has(email.slice(email.lastIndexOf('@')))
+const SUPABASE_ENABLED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
 // data.real.json is baked into the image by the Dockerfile (server-side only, NOT
 // under dist/); point DATA_DIR at a mounted volume to refresh it without a rebuild.
 const DATA_PATH = join(process.env.DATA_DIR || __dirname, 'data.real.json')
@@ -30,12 +59,65 @@ if (existsSync(DATA_PATH)) {
   try { DATA = JSON.parse(readFileSync(DATA_PATH, 'utf8')) } catch (e) { console.error('bad data.real.json', e) }
 }
 console.log(`[server] data ${DATA ? `loaded (${DATA.props?.length || 0} props, ${DATA.brokers?.length || 0} brokers)` : 'absent → app falls back to sample'}`)
-if (!PASSWORD) console.warn('[server] ⚠ APP_PASSWORD unset — /api/data will refuse every request (fail closed). Set it in Railway → Variables.')
+if (SUPABASE_ENABLED && ALLOWED_ENTRIES.length === 0)
+  console.warn('[server] ⚠ Supabase configured but ALLOWED_EMAILS is empty — every Supabase login will be refused (fail closed). Set ALLOWED_EMAILS in Railway → Variables.')
+if (!SUPABASE_ENABLED && !PASSWORD)
+  console.warn('[server] ⚠ no auth configured (SUPABASE_URL+SUPABASE_ANON_KEY or APP_PASSWORD) — /api/* will refuse every request (fail closed). Set them in Railway → Variables.')
+
+// ── auth ─────────────────────────────────────────────────────────────────────
+// Verify a Supabase access token by asking Supabase who it belongs to, then
+// check that email against the allowlist. Verified tokens are cached briefly so
+// each API call doesn't cost a round-trip to Supabase.
+const tokenCache = new Map() // token → { email, exp }
+async function verifySupabaseToken(token) {
+  const hit = tokenCache.get(token)
+  if (hit && hit.exp > Date.now()) return hit.email
+  try {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: SUPABASE_ANON_KEY, authorization: `Bearer ${token}` },
+    })
+    if (!r.ok) return null
+    const u = await r.json()
+    const email = (u?.email || '').toLowerCase()
+    if (!email) return null
+    // Domain-gated entry is only meaningful if the address is PROVEN: refuse
+    // accounts that never confirmed their email (with open signups + confirmation
+    // off, anyone could claim any@simicap.com — this closes that hole).
+    if (!u.email_confirmed_at && !u.confirmed_at) return null
+    if (tokenCache.size > 500) tokenCache.clear() // crude bound; entries are tiny
+    tokenCache.set(token, { email, exp: Date.now() + 5 * 60_000 })
+    return email
+  } catch {
+    return null // Supabase unreachable → treat as unauthenticated (fail closed)
+  }
+}
+
+// Either auth method passes: a Bearer JWT from an allow-listed Supabase account,
+// or the legacy shared password in the body. Routes behind this middleware can
+// assume the caller is authorized.
+async function requireAuth(req, res, next) {
+  if (!SUPABASE_ENABLED && !PASSWORD)
+    return res.status(503).json({ error: 'server not configured (set SUPABASE_URL + SUPABASE_ANON_KEY + ALLOWED_EMAILS, or APP_PASSWORD)' })
+  const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '')?.[1]
+  if (bearer && SUPABASE_ENABLED) {
+    const email = await verifySupabaseToken(bearer)
+    if (email && emailAllowed(email)) return next()
+    return res.status(401).json({ error: email ? 'account not on the allowed list' : 'invalid or expired session — sign in again' })
+  }
+  if (PASSWORD && (req.body?.password || '') === PASSWORD) return next()
+  return res.status(401).json({ error: 'unauthorized' })
+}
 
 const app = express()
 app.use(express.json({ limit: '256kb' }))
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
+
+// Public client config: which sign-in method to show. The anon key is a public
+// client key by design (it ships in every Supabase app bundle) — authorization
+// is the server-side JWT + allowlist check above, never the key itself.
+app.get('/api/config', (_req, res) =>
+  res.json({ supabase: SUPABASE_ENABLED ? { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY } : null }))
 
 // naive in-memory rate limit on the auth endpoint (per-IP, per-minute) so the
 // password can't be brute-forced quickly even though it's short.
@@ -51,11 +133,9 @@ app.use('/api/data', rateLimit(20))
 app.use('/api/deals-chat', rateLimit(20))
 app.use('/api/deals', rateLimit(60))
 
-// the ONLY way to get the real data: correct password, server-checked.
-app.post('/api/data', (req, res) => {
-  if (!PASSWORD) return res.status(503).json({ error: 'server not configured (APP_PASSWORD unset)' })
+// the ONLY way to get the real data: authed (Supabase JWT + allowlist, or password).
+app.post('/api/data', requireAuth, (req, res) => {
   if (!DATA) return res.status(404).json({ error: 'no real data on this server' })
-  if ((req.body?.password || '') !== PASSWORD) return res.status(401).json({ error: 'wrong password' })
   res.json(DATA)
 })
 
@@ -64,9 +144,7 @@ app.post('/api/data', (req, res) => {
 //   {password}                    -> every deal (for the table)
 //   {password, q: "meeting st"}   -> keyword search with matched-note snippets
 //   {password, preset: "tracking"}-> a known question (tracking/open/won/lost/recent/noted)
-app.post('/api/deals', async (req, res) => {
-  if (!PASSWORD) return res.status(503).json({ error: 'server not configured (APP_PASSWORD unset)' })
-  if ((req.body?.password || '') !== PASSWORD) return res.status(401).json({ error: 'wrong password' })
+app.post('/api/deals', requireAuth, async (req, res) => {
   try {
     res.json(await searchDeals({
       q: String(req.body?.q || '').slice(0, 500),
@@ -80,9 +158,7 @@ app.post('/api/deals', async (req, res) => {
 
 // Deals DB RAG chat: plain-English Q&A over the Pipedrive deal book. Same
 // password gate as /api/data — nothing here is reachable without it.
-app.post('/api/deals-chat', async (req, res) => {
-  if (!PASSWORD) return res.status(503).json({ error: 'server not configured (APP_PASSWORD unset)' })
-  if ((req.body?.password || '') !== PASSWORD) return res.status(401).json({ error: 'wrong password' })
+app.post('/api/deals-chat', requireAuth, async (req, res) => {
   const question = String(req.body?.question || '').trim().slice(0, 2000)
   if (!question) return res.status(400).json({ error: 'question required' })
   const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : []
@@ -98,4 +174,8 @@ app.post('/api/deals-chat', async (req, res) => {
 app.use(express.static(DIST))
 app.get('*', (_req, res) => res.sendFile(join(DIST, 'index.html')))
 
-app.listen(PORT, () => console.log(`[server] listening on :${PORT} (auth=${PASSWORD ? 'configured' : 'UNSET → fail-closed'})`))
+const authDesc = [
+  SUPABASE_ENABLED ? `supabase(allowed: ${ALLOWED_ENTRIES.join(' ') || 'NONE'})` : null,
+  PASSWORD ? 'password' : null,
+].filter(Boolean).join('+') || 'NONE → fail-closed'
+app.listen(PORT, () => console.log(`[server] listening on :${PORT} (auth=${authDesc})`))

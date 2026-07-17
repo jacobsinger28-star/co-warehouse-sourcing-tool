@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { css } from '../css.js'
 import Icon from '../Icon.jsx'
 import { DEALS, PROPS } from '../data.js'
-import { getSessionPassword } from '../session.js'
+import { authBody, authHeaders } from '../session.js'
 
 // Known questions — each maps to a deterministic Pipedrive query on the server
 // (see PRESETS in frontend/dealsChat.mjs). No LLM involved.
@@ -44,8 +44,8 @@ function checkDedupe(q, liveDeals) {
 async function queryDeals(body) {
   const r = await fetch(`${import.meta.env.BASE_URL}api/deals`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ password: getSessionPassword(), ...body }),
+    headers: { 'content-type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ ...authBody(), ...body }),
   })
   const d = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(d.error || `request failed (${r.status})`)

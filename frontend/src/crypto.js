@@ -21,24 +21,38 @@ export async function decryptJson(password, enc) {
   return JSON.parse(new TextDecoder().decode(buf))
 }
 
-// Load the real dataset. Order of preference:
+// Load the real dataset. `cred` is {token} (Supabase JWT, verified server-side)
+// or {password} (legacy shared password); a bare string is treated as a password
+// for back-compat. Order of preference:
 //   1. POST /api/data  — Railway server-side auth (data never a public file; the
-//      password is checked on the server). This is the secure production path.
+//      JWT + allowlist or password is checked on the server). Secure production path.
 //   2. data.enc.json   — encrypted static blob (Vercel static deploy), decrypted here.
 //   3. data.real.json  — plaintext (local dev only).
 // Returns the parsed dataset, or null (→ app uses synthetic sample data).
-export async function loadRealData(password, baseUrl = '/') {
+// In token mode a 401/403 THROWS (signed in but not allowed) so the Gate can say so.
+export async function loadRealData(cred, baseUrl = '/') {
+  const { password = '', token = '' } = typeof cred === 'string' ? { password: cred } : cred || {}
   // 1. server-side auth (Railway)
   try {
     const r = await fetch(`${baseUrl}api/data`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password }),
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(password ? { password } : {}),
       cache: 'no-store',
     })
     if (r.ok) return await r.json()
-    if (r.status === 401) return null // server says wrong password — no static fallback
-  } catch { /* no backend (static host) → try static blobs */ }
+    if (r.status === 401 || r.status === 403) {
+      if (token) throw new Error('Signed in, but this account is not on the allowed list for this tool.')
+      return null // server says wrong password — no static fallback
+    }
+  } catch (e) {
+    if (token && /allowed list/.test(e?.message || '')) throw e
+    /* no backend (static host) → try static blobs */
+  }
+  if (!password) return null // token mode has no decryption key — server path only
   // 2. encrypted static blob (Vercel)
   try {
     const r = await fetch(`${baseUrl}data.enc.json`, { cache: 'no-store' })

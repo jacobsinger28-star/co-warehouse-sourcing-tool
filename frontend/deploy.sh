@@ -18,9 +18,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 REPO="git@github.com:jacobsinger28-star/co-warehouse-sourcing-tool.git"
 STAGE="/tmp/cw-deploy"
 
-# APP_PASSWORD must be provided — never hardcode it (this script is committed).
-if [ -z "${APP_PASSWORD:-}" ]; then
-  echo "⛔ APP_PASSWORD is required. Run:  APP_PASSWORD='your-strong-pass' bash deploy.sh"
+# An auth method must be provided — never hardcode secrets (this script is committed).
+# Either Supabase login (SUPABASE_URL + SUPABASE_ANON_KEY + ALLOWED_EMAILS) or the
+# legacy shared APP_PASSWORD (or both, during the transition).
+SUPA_OK=0
+[ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_ANON_KEY:-}" ] && SUPA_OK=1
+if [ "$SUPA_OK" = 0 ] && [ -z "${APP_PASSWORD:-}" ]; then
+  echo "⛔ No auth method. Run one of:"
+  echo "   SUPABASE_URL='https://….supabase.co' SUPABASE_ANON_KEY='…' bash deploy.sh   # allowlist defaults to @simicap.com"
+  echo "   APP_PASSWORD='your-strong-pass' bash deploy.sh"
   exit 1
 fi
 
@@ -41,11 +47,18 @@ git push -u origin main \
   || echo "    ⚠ push rejected (repo has history). To overwrite: git push -u origin main --force-with-lease"
 
 # ── 2. Railway: CLI + login + project + password ─────────────────────────────
-echo "==> [2/4] railway: login + project + password"
+echo "==> [2/4] railway: login + project + auth variables"
 command -v railway >/dev/null 2>&1 || npm i -g @railway/cli
 railway whoami >/dev/null 2>&1 || railway login
 railway status  >/dev/null 2>&1 || railway init      # creates/links a project (interactive)
-railway variables --set "APP_PASSWORD=${APP_PASSWORD}"
+[ -n "${APP_PASSWORD:-}" ] && railway variables --set "APP_PASSWORD=${APP_PASSWORD}"
+if [ "$SUPA_OK" = 1 ]; then
+  railway variables \
+    --set "SUPABASE_URL=${SUPABASE_URL}" \
+    --set "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}"
+  # optional — server defaults to '@simicap.com' (whole-domain entry) when unset
+  [ -n "${ALLOWED_EMAILS:-}" ] && railway variables --set "ALLOWED_EMAILS=${ALLOWED_EMAILS}"
+fi
 
 # ── 3. deploy WITH the data, but off GitHub (private `railway up`) ────────────
 echo "==> [3/4] railway: deploy (data uploaded privately, not via GitHub)"
@@ -67,4 +80,8 @@ railway domain || true
 echo
 echo "Verify the data loaded server-side:"
 echo "   railway logs | grep 'data loaded'      # want: data loaded (2446 props, 24 brokers)"
-echo "Then open the Railway URL above and sign in with: ${APP_PASSWORD}"
+if [ "$SUPA_OK" = 1 ]; then
+  echo "Then open the Railway URL above and sign in with a Supabase account (allowed: ${ALLOWED_EMAILS:-@simicap.com})"
+else
+  echo "Then open the Railway URL above and sign in with: ${APP_PASSWORD}"
+fi

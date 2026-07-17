@@ -1,11 +1,20 @@
 # Railway deploy for the sourcing console (server-side-auth, PII-safe).
 # The data.real.json (owner/broker PII) is baked into the image but served ONLY
-# via POST /api/data with the correct APP_PASSWORD — never a public static file.
+# via authed POST /api/data — never a public static file.
+#
+# Auth (see server.mjs / README "Auth"): Supabase login (preferred) and/or the
+# legacy shared password. Variables:
+#   SUPABASE_URL       = https://<project-ref>.supabase.co
+#   SUPABASE_ANON_KEY  = <anon public key>
+#   ALLOWED_EMAILS     = who may enter: "@simicap.com" allows the whole domain,
+#                        "raz@x.com" an exact address; comma-separate to mix.
+#                        Optional — defaults to "@simicap.com".
+#   APP_PASSWORD       = legacy shared password (unset to retire it)
 #
 # Deploy:
 #   npm i -g @railway/cli
 #   cd frontend && railway login && railway init
-#   railway variables set APP_PASSWORD='<strong-password-not-in-git>'
+#   railway variables --set 'SUPABASE_URL=…' --set 'SUPABASE_ANON_KEY=…' --set 'ALLOWED_EMAILS=…'
 #   railway up
 [build]
 builder = "DOCKERFILE"

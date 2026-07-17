@@ -40,9 +40,45 @@ These are deliberately stubbed (mirrors the design-feedback list):
    merged store, `Keep Sourcing` → the scrape job queue, `Send to Pipedrive` → the API.
    Add a `server.proxy` block in `vite.config.js` for `/api` etc.
 3. **Mark sample data** clearly until real data lands (esp. Deals DB answers).
-4. **Auth** before exposing off-market owner PII (the design has none yet).
+4. ~~**Auth** before exposing off-market owner PII~~ — **done**: Supabase per-person
+   login with a server-side JWT + email-allowlist check (see below), with the legacy
+   shared password as a fallback until the Supabase env vars are set.
 5. **a11y polish** — the unicode glyph icons (⌕ ◐ ⊘ ›) and placeholder-only inputs should
    move to a real icon set + labels; add focus states.
+
+## Auth (Supabase login)
+
+The Gate (`src/Gate.jsx`) picks its mode from `GET /api/config` at load:
+
+- **Supabase mode** (real login, preferred): each person signs in with their own
+  email + password against a Supabase project. The server (`server.mjs`) re-verifies
+  the JWT with Supabase **and** checks the email against `ALLOWED_EMAILS` on every
+  data route (`/api/data`, `/api/deals`, `/api/deals-chat`) — a login alone is not
+  authorization, so open Supabase signups can't reach the PII. Allowlist entries:
+  `@simicap.com` admits the whole domain, `raz@x.com` an exact address (mix with
+  commas). **Default when unset: `@simicap.com`.** Unconfirmed-email accounts are
+  refused, so a domain entry can't be spoofed by signing up with a claimed address.
+- **Legacy mode** (fallback): the old shared `APP_PASSWORD`, shown only when no
+  Supabase project is configured. Unset `APP_PASSWORD` once Supabase is live to
+  retire the shared password.
+
+To turn on Supabase mode, set in Railway → Variables (service restarts pick them up;
+no rebuild needed — config reaches the client at runtime):
+
+```bash
+railway variables \
+  --set 'SUPABASE_URL=https://<project-ref>.supabase.co' \
+  --set 'SUPABASE_ANON_KEY=<anon public key>' \
+  --set 'ALLOWED_EMAILS=raz@…,andrew@…,nate@…'
+```
+
+Supabase setup (dashboard): create a project (or reuse an existing one — the
+allowlist keeps other apps' users out) → Authentication → disable public signups →
+Users → **Add user** for each teammate (email + password, "auto-confirm"). Local dev
+without the node server: put `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` in
+`frontend/.env.local`.
+
+No auth configured at all → the server fails closed (every `/api/*` request refused).
 
 ## Verified
 
