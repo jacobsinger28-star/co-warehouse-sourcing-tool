@@ -31,20 +31,23 @@ if [ "$SUPA_OK" = 0 ] && [ -z "${APP_PASSWORD:-}" ]; then
 fi
 
 # ── 1. push CLEAN code to GitHub (owner PII excluded) ────────────────────────
-echo "==> [1/4] git: push code (PII excluded)"
-[ -d .git ] || git init -q
-git add -A
-if git status --porcelain | grep -qiE 'data\.(real|enc)\.json|(^|/)\.env$'; then
+# The MONOREPO (parent of frontend/) is the git repo — never git-init here.
+# A past run did exactly that: it created frontend/.git, committed, then pulled
+# the monorepo with --allow-unrelated-histories, dumping a full copy of the repo
+# inside frontend/ with conflict markers. Operate on the parent repo only.
+echo "==> [1/4] git: push monorepo code (PII excluded)"
+if ! git -C .. rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "⛔ ABORT: parent dir is not the monorepo git checkout — refusing to git init"; exit 1
+fi
+git -C .. add -A
+if git -C .. status --porcelain | grep -qiE 'data\.(real|enc)\.json|(^|/)\.env$'; then
   echo "⛔ ABORT: a PII/secret file is staged for git — check .gitignore"; exit 1
 fi
 echo "    ✓ safety check passed — no data.real.json / secrets staged"
-git commit -q -m "Co-warehouse sourcing console — server-side-auth, Railway-ready" \
+git -C .. commit -q -m "Deploy: sourcing console update" \
   || echo "    (no code changes to commit)"
-git branch -M main
-git remote get-url origin >/dev/null 2>&1 || git remote add origin "$REPO"
-git pull --rebase --allow-unrelated-histories origin main 2>/dev/null || true
-git push -u origin main \
-  || echo "    ⚠ push rejected (repo has history). To overwrite: git push -u origin main --force-with-lease"
+git -C .. push origin main \
+  || echo "    ⚠ push failed — push manually from the repo root, then re-run"
 
 # ── 2. Railway: CLI + login + project + password ─────────────────────────────
 echo "==> [2/4] railway: login + project + auth variables"
