@@ -26,9 +26,9 @@ from scorer import score_listing
 from database import (
     init_db, start_job, finish_job, get_job_status, get_listings,
     upsert_listing, prune_stale_listings, get_source_counts,
-    get_cached_source_counts, _conn,
+    get_cached_source_counts, set_coords, _conn,
 )
-from geocoder import geocode_sync
+from geocoder import geocode_cached, geocode_batch
 from scrapers.markets import market_for_coords, market_for_address
 
 logging.basicConfig(level=logging.INFO)
@@ -67,6 +67,7 @@ def _run_scrape(
         max_age_hours = 0.0 if force_refresh else 336.0  # 14 days
         run_started_at = datetime.utcnow().isoformat()
         stopped_early = False
+        pending_geo: list[tuple[str, str]] = []  # (listing_url, address) to batch-geocode
         # markets=[] means nationwide for the crawl-based sites (the console
         # applies its own metro filter); Crexi always scopes to the target
         # metros (all of them when the list is empty), scanning them in
@@ -89,17 +90,17 @@ def _run_scrape(
                     listing["score_category"] = "Unscored"
                     listing["scoring_reason"] = ""
                 address = listing.get("address") or ""
-                # geocode_sync BLOCKS (Nominatim 1 req/sec + sync HTTP). Running
-                # it inline froze the event loop, stalling every parallel site
-                # task during each wait. Off-loading it to a thread lets the sites
-                # keep scraping while a listing geocodes — the actual overlap that
-                # makes the parallelism pay off. Still serial per listing (the
-                # consumer awaits each one), so the 1 req/sec limit holds.
-                lat, lng = await loop.run_in_executor(None, geocode_sync, address)
+                # Coords from the cache ONLY here (instant) so storing a listing
+                # never blocks the scrape. Uncached addresses are resolved in one
+                # Census batch after the scrape (phase 2) — vastly faster than the
+                # old inline 1 req/sec geocode that stalled the parallel sites.
+                lat, lng = geocode_cached(address)
                 listing["lat"] = lat
                 listing["lng"] = lng
                 upsert_listing(listing)
                 count += 1
+                if lat is None and address and listing.get("listing_url"):
+                    pending_geo.append((listing["listing_url"], address))
                 logger.info("[scrape] stored listing #%d: %s", count, address)
         except Exception as exc:
             logger.error("[scrape] fatal error: %s", exc)
@@ -120,6 +121,24 @@ def _run_scrape(
         if stopped_early or _stop_event.is_set():
             finish_job(job_id, count, status="stopped")
             return
+
+        # Phase 2 — batch-geocode every new (uncached) address in ONE Census
+        # request (+ bounded Nominatim fallback), then backfill coords. Runs off
+        # the event loop; completes before finish_job so /live/rows has coords by
+        # the time the console pulls fresh rows.
+        if pending_geo:
+            addrs = [a for _, a in pending_geo]
+            resolved = await loop.run_in_executor(
+                None, lambda: geocode_batch(addrs, stop_check=_stop_event.is_set)
+            )
+            filled = 0
+            for url, addr in pending_geo:
+                coords = resolved.get(addr)
+                if coords:
+                    set_coords(url, coords[0], coords[1])
+                    filled += 1
+            logger.info("[scrape] batch-geocoded %d/%d new listings", filled, len(pending_geo))
+
         if force_refresh:
             # Prune ONLY sources whose site completed the refresh — a site that
             # errored (bot wall, selector rot) keeps its existing inventory.

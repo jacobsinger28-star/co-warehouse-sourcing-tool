@@ -215,6 +215,16 @@ def set_broker_cell(listing_url: str, cell: str):
         )
 
 
+def set_coords(listing_url: str, lat: float, lng: float):
+    """Backfill lat/lng after a listing is stored — the scrape stores rows
+    immediately (cache-only coords) and a later batch geocode fills the rest."""
+    with _conn() as c:
+        c.execute(
+            "UPDATE listings SET lat = ?, lng = ? WHERE listing_url = ?",
+            (lat, lng, listing_url),
+        )
+
+
 def get_source_counts() -> dict[str, int]:
     """Return {source: count} for all listings in the DB."""
     with _conn() as c:
