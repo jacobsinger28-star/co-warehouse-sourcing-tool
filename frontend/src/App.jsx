@@ -76,7 +76,25 @@ const EMPTY_FILTERS = {
 const OWNER_TYPES = ['LLC', 'Trust', 'Individual', 'Partnership', 'Corp']
 const numInput = 'height:32px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;outline:none;width:100%;'
 
+// true at/below the mobile breakpoint (matches index.css @media max-width:767px).
+// Lets the table view mount only the visible renderer — the desktop <PropTable>
+// OR the mobile card list — instead of both; the hidden one still pays a full
+// mount of every row otherwise.
+function useIsNarrow(bp = 767) {
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(`(max-width:${bp}px)`).matches,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width:${bp}px)`)
+    const on = () => setNarrow(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [bp])
+  return narrow
+}
+
 export default function App() {
+  const isNarrow = useIsNarrow()
   const [theme, setTheme] = useState('dark')
   const [module, setModule] = useState('properties')
   const [view, setView] = useState('map')          // ← default view = Map
@@ -600,22 +618,21 @@ export default function App() {
                 </div>
               )}
 
-              {/* TABLE / CARD-LIST */}
-              {view === 'table' && !showEmpty && (
-                <>
-                  <PropTable rows={visibleProps} selProps={selProps} toggleProp={toggleProp} allSel={allPropsSel} onToggleAll={selAllProps} onOpen={setDrawerId} />
-                  <div className="card-list" style={css('flex-direction:column;flex:1;overflow-y:auto;min-height:0;')}>
-                    {visibleProps.map((p) => (
-                      <div key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(cardStyle(p.cat))}>
-                        <div style={css('display:flex;align-items:center;gap:9px;')}><span style={css(scDot(p.cat))} /><span style={css('font-weight:600;font-size:14.5px;flex:1;')}>{p.addr}</span><Icon name="chevronRight" size={16} stroke="var(--text3)" /></div>
-                        <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}><span style={css(chTag(p.channel))}>{chLabel(p.channel)}</span><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span>{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={css('font-size:11px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 8px;border-radius:5px;text-decoration:none;')}>For Lease</a>}</div>
-                        <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{p.mkt}</span><span style={css('font-family:var(--mono);')}>{fmtSF(p.sf)} SF</span><span>{cardSub(p)}</span></div>
-                        <div style={css('font-size:11.5px;color:var(--text3);')}>{p.signal}</div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
+              {/* TABLE (desktop) / CARD-LIST (mobile) — mount only the active one */}
+              {view === 'table' && !showEmpty && (isNarrow ? (
+                <div className="card-list" style={css('flex-direction:column;flex:1;overflow-y:auto;min-height:0;')}>
+                  {visibleProps.map((p) => (
+                    <div key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(cardStyle(p.cat))}>
+                      <div style={css('display:flex;align-items:center;gap:9px;')}><span style={css(scDot(p.cat))} /><span style={css('font-weight:600;font-size:14.5px;flex:1;')}>{p.addr}</span><Icon name="chevronRight" size={16} stroke="var(--text3)" /></div>
+                      <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}><span style={css(chTag(p.channel))}>{chLabel(p.channel)}</span><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span>{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={css('font-size:11px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 8px;border-radius:5px;text-decoration:none;')}>For Lease</a>}</div>
+                      <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{p.mkt}</span><span style={css('font-family:var(--mono);')}>{fmtSF(p.sf)} SF</span><span>{cardSub(p)}</span></div>
+                      <div style={css('font-size:11.5px;color:var(--text3);')}>{p.signal}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <PropTable rows={visibleProps} selProps={selProps} toggleProp={toggleProp} allSel={allPropsSel} onToggleAll={selAllProps} onOpen={setDrawerId} />
+              ))}
 
               {/* BROKERS */}
               {view === 'brokers' && (

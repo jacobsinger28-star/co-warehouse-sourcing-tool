@@ -134,6 +134,60 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
     }).map(([p]) => p)
   }, [rows, sort])
 
+  // ── row virtualization ─────────────────────────────────────────────────────
+  // Mount only the rows in (and just around) the viewport, so the table loads
+  // fast whether it shows 50 rows or 5,000. Rows are a fixed height, so exact
+  // scrollbar geometry comes from spacer rows above and below the window.
+  const scrollRef = useRef(null)
+  const firstRowRef = useRef(null)
+  const rafRef = useRef(0)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportH, setViewportH] = useState(720)
+  const [rowH, setRowH] = useState(36)   // refined from a real row after mount
+  const OVERSCAN = 10                     // rows rendered beyond the viewport each side
+
+  // keep the window height in sync with the scroll container
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const measure = () => setViewportH(el.clientHeight || 720)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // measure the true row height once rows are on screen (zoom/theme can shift
+  // it); update only on a real change so this self-stabilizes (no render loop)
+  useEffect(() => {
+    const h = firstRowRef.current?.offsetHeight
+    if (h && Math.abs(h - rowH) > 0.5) setRowH(h)
+  })
+
+  // a new row set (filter/search) → jump back to the top
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
+    setScrollTop(0)
+  }, [rows])
+
+  // cancel any pending scroll rAF on unmount
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
+
+  const onScroll = () => {
+    if (rafRef.current) return  // coalesce a burst of scroll events into one update
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0
+      if (scrollRef.current) setScrollTop(scrollRef.current.scrollTop)
+    })
+  }
+
+  const total = sortedRows.length
+  const first = Math.max(0, Math.floor(scrollTop / rowH) - OVERSCAN)
+  const last = Math.min(total, Math.ceil((scrollTop + viewportH) / rowH) + OVERSCAN)
+  const windowRows = sortedRows.slice(first, last)
+  const padTop = first * rowH
+  const padBottom = Math.max(0, (total - last) * rowH)
+
   const CHECK_W = 34
   const CHEV_W = 28
   const minTableW = CHECK_W + CHEV_W + visibleCols.reduce((a, c) => a + (c.key === greedyKey ? c.min : widthOf(c.key)), 0)
@@ -198,7 +252,7 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
       </div>
 
       {/* scroll area */}
-      <div style={css('flex:1;overflow:auto;min-height:0;')}>
+      <div ref={scrollRef} onScroll={onScroll} style={css('flex:1;overflow:auto;min-height:0;')}>
         <table style={css(`table-layout:fixed;width:100%;min-width:${minTableW}px;border-collapse:collapse;font-size:12.5px;`)}>
           <colgroup>
             <col style={{ width: `${CHECK_W}px` }} />
@@ -227,8 +281,11 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
             </tr>
           </thead>
           <tbody>
-            {sortedRows.map((p) => (
-              <tr key={p.id} className="hov" tabIndex={0} role="button" onClick={() => onOpen(p.id)} style={css(rowStyle(p.cat))}>
+            {padTop > 0 && (
+              <tr aria-hidden="true"><td colSpan={visibleCols.length + 2} style={{ height: padTop, padding: 0, border: 'none' }} /></tr>
+            )}
+            {windowRows.map((p, i) => (
+              <tr ref={i === 0 ? firstRowRef : undefined} key={p.id} className="hov" tabIndex={0} role="button" onClick={() => onOpen(p.id)} style={css(rowStyle(p.cat))}>
                 <td style={css('padding:0 0 0 14px;')} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selProps.includes(p.id)} onChange={() => toggleProp(p.id)} aria-label="Select property" style={css('accent-color:var(--accent);')} /></td>
                 {visibleCols.map((c) => (
                   <td key={c.key} style={css(cellBase + `text-align:${c.align};color:${c.key === 'addr' ? 'var(--text)' : 'var(--text2)'};${c.key === 'addr' ? 'font-weight:500;' : ''}${c.mono ? 'font-family:var(--mono);font-variant-numeric:tabular-nums;' : ''}`)}>{c.cell(p)}</td>
@@ -236,6 +293,9 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
                 <td style={css('padding:9px 14px 9px 4px;text-align:right;color:var(--text3);')}><Icon name="chevronRight" size={14} /></td>
               </tr>
             ))}
+            {padBottom > 0 && (
+              <tr aria-hidden="true"><td colSpan={visibleCols.length + 2} style={{ height: padBottom, padding: 0, border: 'none' }} /></tr>
+            )}
           </tbody>
         </table>
       </div>
