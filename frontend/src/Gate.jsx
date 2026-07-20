@@ -21,7 +21,7 @@ import { signInWithPassword, signUp, startAutoRefresh } from './supabaseAuth.js'
 //     `DASHBOARD_PASSWORD=… node tools/encrypt_data.mjs`.
 //
 // Credentials are never stored (no sessionStorage): a reload re-prompts.
-const PW_HASH = 'c3fb89296ec6c7f2c9ce96f9494ae5ec97b4b76c15b1e531aea70bd27b774587'
+const PW_HASH = 'be55c493fa78734fbcd06ec54d500cf21f6ef25edfca096f00776b45265513f5'
 
 async function sha256Hex(s) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
