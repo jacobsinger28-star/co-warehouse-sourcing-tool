@@ -96,10 +96,15 @@ export default function Gate({ children }) {
             return
           }
         }
-      } catch {
-        clearSaved() // stale/revoked credential — fall through to the form
+      } catch { /* stale/revoked credential — fall through to the form */ }
+      if (on) {
+        // Any credential still saved here failed to restore (revoked token,
+        // changed password, wrong mode) — drop it so the next load goes
+        // straight to the form instead of replaying the splash.
+        clearSaved()
+        setCfg(c)
+        setRestoring(false)
       }
-      if (on) { setCfg(c); setRestoring(false) }
     })()
     return () => {
       on = false
