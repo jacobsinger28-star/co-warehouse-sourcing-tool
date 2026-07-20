@@ -103,7 +103,7 @@ export default function ReuseFinder() {
       </div>
       <div style={css(sectionIntro)}>
         Deals the agent <strong style={css('color:var(--text2);')}>found online</strong> (LoopNet sourcing pass) by applying the seed
-        buy-box (below) — on / near-market for-sale, older mid-large industrial, ranked by size. Each is flagged
+        buy-box (below) — on / near-market for-sale plus Orlando for-lease availability (LoopNet pull 2026-07-20), older mid-large industrial, ranked by size. Each is flagged
         <strong style={css('color:var(--green);')}> Found</strong>. Explicitly excludes the {SEED_LISTINGS.length} seed examples.
         <strong style={css('color:var(--accent);')}> ★ in-band</strong> = SF ≥ {fmtSF(BUYBOX_TARGET.sfMin)}; yard/IOS not yet confirmed per-property. SF/year from LoopNet cards — verify.
       </div>

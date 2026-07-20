@@ -205,4 +205,14 @@ export const BUYBOX_CANDIDATES = [
   { id: 'bb-nsh-08', metro: 'Nashville', addr: '1922 Elm Tree Dr', sf: 13250, year: 1976, status: 'Sale · $3.195M', url: 'https://www.loopnet.com/Listing/1922-Elm-Tree-Dr-Nashville-TN/36811956/', source: 'found' },
   { id: 'bb-nsh-09', metro: 'Nashville', addr: '1715 Pecan St', sf: 12000, year: 1930, status: 'Sale · $993k', url: 'https://www.loopnet.com/Listing/1715-Pecan-St-Nashville-TN/38170105/', source: 'found' },
   { id: 'bb-nsh-10', metro: 'Nashville', addr: '2606 Westwood Dr', sf: 12962, year: 2018, status: 'Sale · $4.99M', url: 'https://www.loopnet.com/Listing/2606-Westwood-Dr-Nashville-TN/34671236/', source: 'found' },
+  // ORLANDO — FOR LEASE (LoopNet pull, 2026-07-20). Industrial / flex / warehouse
+  // availability — lease comps + market read, not acquisition targets. SF = max
+  // contiguous available per the LoopNet card; rates as quoted — verify.
+  { id: 'bb-orl-l01', metro: 'Orlando', addr: '3443-3479 Parkway Center Ct', note: 'Lake Orlando Industrial Park', sf: 76386, year: 1981, status: 'Lease · $14.75–18/SF/YR', url: 'https://www.loopnet.com/Listing/3443-3479-Parkway-Center-Ct-Orlando-FL/26564512/', source: 'found' },
+  { id: 'bb-orl-l02', metro: 'Orlando', addr: '7600 Southland Blvd', note: 'BaySpace Gateway & Commerce', sf: 58216, year: 1983, status: 'Lease · $16.50–25/SF/YR', url: 'https://www.loopnet.com/Listing/7600-Southland-Blvd-Orlando-FL/39462069/', source: 'found' },
+  { id: 'bb-orl-l03', metro: 'Orlando', addr: '5501 Lee Vista Blvd', note: 'Mahogany Pointe Logistics Park', sf: 228460, year: 2025, status: 'Lease', url: 'https://www.loopnet.com/Listing/5501-Lee-Vista-Blvd-Orlando-FL/25662228/', source: 'found' },
+  { id: 'bb-orl-l04', metro: 'Orlando', addr: '4121 34th St', note: 'Portal Warehousing', sf: 25334, year: 1983, status: 'Lease', url: 'https://www.loopnet.com/Listing/4121-34th-St-Orlando-FL/33193549/', source: 'found' },
+  { id: 'bb-orl-l05', metro: 'Orlando', addr: '6925 Lake Ellenor Dr', note: 'Heaven III', sf: 19736, year: 1975, status: 'Lease · $12–20/SF/YR', url: 'https://www.loopnet.com/Listing/6925-Lake-Ellenor-Dr-Orlando-FL/33259913/', source: 'found' },
+  { id: 'bb-orl-l06', metro: 'Orlando', addr: '6220 Hazeltine National Dr', note: 'BaySpace Lake Point', sf: 13199, year: 1985, status: 'Lease', url: 'https://www.loopnet.com/Listing/6220-Hazeltine-National-Dr-Orlando-FL/37561822/', source: 'found' },
+  { id: 'bb-orl-l07', metro: 'Orlando', addr: '1271 La Quinta Dr', note: 'La Quinta Business Center', sf: 13100, year: 1972, status: 'Lease · $15.50–17.75/SF/YR', url: 'https://www.loopnet.com/Listing/1271-La-Quinta-Dr-Orlando-FL/25150919/', source: 'found' },
 ]
