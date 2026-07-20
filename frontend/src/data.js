@@ -3,7 +3,7 @@
 // Ported from the Claude Design handoff; replace with live backend data on wire-up.
 // ───────────────────────────────────────────────────────────────────────────
 
-export const MARKETS = ['Nashville', 'Charlotte', 'Columbus', 'Cleveland', 'Cincinnati', 'Charleston', 'Raleigh', 'Miami', 'Boca Raton', 'West Palm Beach']
+export const MARKETS = ['Nashville', 'Charlotte', 'Columbus', 'Cleveland', 'Cincinnati', 'Charleston', 'Raleigh', 'Orlando', 'Miami', 'Boca Raton', 'West Palm Beach']
 export const SOURCES = ['County GIS', 'Crexi', 'Colliers', 'CBRE', 'JLL', 'Cushman', 'Newmark', 'NAI']
 
 // live "Keep Sourcing" per-source progress strip — the real brokerage scrapers.

@@ -77,3 +77,6 @@ build/
 # spreadsheets may carry PII — never commit
 *.xlsx
 *.xls
+
+# Stage 1 FIND geocode cache (parcel addresses + coords)
+tools/.stage1_geocache.json

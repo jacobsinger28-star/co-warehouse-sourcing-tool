@@ -42,7 +42,7 @@ const SCORE_CATS = ['Actionable', 'Tentative', 'Pass']
 
 // Markets shown for now — everything else (Cleveland + the national on-market
 // scrape noise) is hidden from the view. Widen this set to re-show a metro.
-const ALLOWED_MARKETS = new Set(['Charlotte', 'Raleigh', 'Charleston', 'Columbus', 'Cleveland', 'Miami', 'Boca Raton', 'West Palm Beach', 'Nashville'])
+const ALLOWED_MARKETS = new Set(['Charlotte', 'Raleigh', 'Charleston', 'Columbus', 'Cleveland', 'Miami', 'Boca Raton', 'West Palm Beach', 'Nashville', 'Orlando'])
 const onlyAllowed = (props) => props.filter((p) => ALLOWED_MARKETS.has(p.mkt))
 
 // Distress signals (off-market) — each maps to a real field/component on a prop.

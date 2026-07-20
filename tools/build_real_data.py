@@ -32,7 +32,8 @@ OUT = REPO / "frontend" / "public" / "data.real.json"
 # County → metro display name + state (Cuyahoga County = Cleveland metro).
 CITY_MARKET = {"Cuyahoga": "Cleveland"}
 CITY_STATE = {"Nashville": "TN", "Charlotte": "NC", "Columbus": "OH",
-              "Cuyahoga": "OH", "Cleveland": "OH", "Charleston": "SC"}
+              "Cuyahoga": "OH", "Cleveland": "OH", "Charleston": "SC",
+              "Orlando": "FL", "Raleigh": "NC"}
 
 # Off-market scoring is a 0–100-capped model; this batch tops out at 61 and is
 # heavily right-skewed (median ~14). We bucket by *relative rank* so the
@@ -277,7 +278,10 @@ def build_brokers(onmarket: list[dict], raw_db: Path) -> list[dict]:
 
 def main() -> None:
     print("Building real data file for sourcing-platform…")
+    from stage1_offmarket import load_stage1
     off = load_offmarket()
+    stage1 = load_stage1(WORKSPACE, cat=offmarket_cat, title=smart_title)
+    off += stage1
     on = load_onmarket()
     brokers = build_brokers(on, ONMARKET_DB)
     props = off + on
@@ -290,7 +294,8 @@ def main() -> None:
     payload = {
         "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": {"offMarket": str(OFFMARKET_JSON.relative_to(WORKSPACE)),
-                   "onMarket": str(ONMARKET_DB.relative_to(WORKSPACE))},
+                   "onMarket": str(ONMARKET_DB.relative_to(WORKSPACE)),
+                   "stage1": "off-market-operating-system/runs (Orlando, Raleigh)"},
         "counts": {"props": len(props), "off": len(off), "on": len(on),
                    "brokers": len(brokers)},
         "markets": sorted(by_market),
@@ -308,7 +313,7 @@ def main() -> None:
     OUT.write_text(json.dumps(payload, separators=(",", ":")))
 
     size_kb = OUT.stat().st_size / 1024
-    print(f"  off-market : {len(off):>5} props")
+    print(f"  off-market : {len(off):>5} props ({len(stage1)} from Stage 1 FIND)")
     print(f"  on-market  : {len(on):>5} props")
     print(f"  brokers    : {len(brokers):>5}")
     print(f"  by category: {dict(by_cat)}")
