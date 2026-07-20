@@ -15,6 +15,7 @@ import AICaller from './modules/AICaller.jsx'
 import DealsDB from './modules/DealsDB.jsx'
 import ReuseFinder from './modules/ReuseFinder.jsx'
 import DealMap from './components/DealMap.jsx'
+import PropTable from './components/PropTable.jsx'
 
 const TOTAL_UNIVERSE = 1847
 
@@ -65,12 +66,14 @@ const SIG_LABEL = Object.fromEntries(SIG_DEFS)
 // passes through, so setting e.g. clear-height only narrows the markets that
 // carry that data (same semantics as the old map).
 const EMPTY_FILTERS = {
-  market: 'all', ownerType: 'all', ownerLoc: 'all', bucket: 'all',
+  markets: [], ownerTypes: [], ownerLoc: 'all', bucket: 'all',
   clearMax: '', yearMin: '', yearMax: '', sfMin: '', sfMax: '',
   distMax: '', holdMin: '', heldSince: '',
   saleYearMin: '', salePriceMin: '', salePriceMax: '', salePsfMax: '',
+  askMax: '', domMin: '',
   sig: { oos: false, tax: false, code: false, permit: false, vacant: false, distress: false, contact: false, lease: false },
 }
+const OWNER_TYPES = ['LLC', 'Trust', 'Individual', 'Partnership', 'Corp']
 const numInput = 'height:32px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;outline:none;width:100%;'
 
 export default function App() {
@@ -83,12 +86,15 @@ export default function App() {
   const [q, setQ] = useState('')                 // search: address · owner · broker · APN · contact
   const setF = (k, v) => setFilters((f) => ({ ...f, [k]: v }))
   const toggleSig = (k) => setFilters((f) => ({ ...f, sig: { ...f.sig, [k]: !f.sig[k] } }))
+  // toggle one value in a multi-select array filter (markets, ownerTypes)
+  const toggleInArr = (k, v) => setFilters((f) => ({ ...f, [k]: f[k].includes(v) ? f[k].filter((x) => x !== v) : [...f[k], v] }))
   const [selProps, setSelProps] = useState([])
   const [selBrokers, setSelBrokers] = useState([])
   const [drawerId, setDrawerId] = useState(null)
   const [mapStyle, setMapStyle] = useState('sat')   // ← default basemap = Satellite
 
   const [sourcing, setSourcing] = useState(false)
+  const [stopping, setStopping] = useState(false)  // stop requested, waiting for the backend job to actually halt
   const [total, setTotal] = useState(TOTAL_UNIVERSE)
   const [newCount, setNewCount] = useState(0)
   const [lastUpdated, setLastUpdated] = useState('2m ago')
@@ -132,6 +138,7 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
   const [acctOpen, setAcctOpen] = useState(false)
+  const [marketsMenu, setMarketsMenu] = useState(false)
 
   // ── live scrape status (real /live/status — no simulation) ────────────────
   const wasRunning = useRef(false)
@@ -149,9 +156,18 @@ export default function App() {
     if (running && runBase.current == null) runBase.current = totalListings
     if (!running) runBase.current = null
     setSourcing(running)
+    // The backend job has actually halted (stopped/idle/completed) — clear the
+    // "stopping…" latch so the button returns to Keep Sourcing. Until then we
+    // keep showing the widget so a stop-in-progress doesn't look like nothing
+    // happened, and the poller can't flip us back to a live "Sourcing" label.
+    if (!running) setStopping(false)
     setNewCount(running ? Math.max(0, totalListings - runBase.current) : (s.listings_found || 0))
     const max = Math.max(1, ...Object.values(counts))
-    setSources((prev) => prev.map((x) => ({ ...x, p: (counts[x.key] || 0) / max, c: counts[x.key] || 0 })))
+    // s.sites = per-site progress of the current/last run (status/found/error)
+    setSources((prev) => prev.map((x) => ({
+      ...x, p: (counts[x.key] || 0) / max, c: counts[x.key] || 0,
+      st: s.sites?.[x.key]?.status, found: s.sites?.[x.key]?.found,
+    })))
     setLastUpdated(agoLabel(s.finished_at || s.started_at))
     if (wasRunning.current && !running) refreshLiveRows() // run just ended → pull fresh rows
     wasRunning.current = running
@@ -165,9 +181,11 @@ export default function App() {
       } catch { /* sidecar absent or not authed yet — leave UI idle */ }
     }
     tick()
-    const t = setInterval(tick, sourcing ? 3000 : 60000)
+    // Poll fast while a run is live OR a stop is pending, so the transition to
+    // stopped is caught within one tick instead of the 60s idle cadence.
+    const t = setInterval(tick, sourcing || stopping ? 3000 : 60000)
     return () => { alive = false; clearInterval(t) }
-  }, [sourcing])
+  }, [sourcing, stopping])
 
   // derived
   const ql = q.trim().toLowerCase()
@@ -180,7 +198,7 @@ export default function App() {
       const hay = `${p.addr} ${p.owner || ''} ${p.broker || ''} ${p.firm || ''} ${p.apn || ''} ${p.mkt || ''} ${p.person || ''} ${(p.phones || []).join(' ')} ${(p.emails || []).join(' ')}`.toLowerCase()
       if (!hay.includes(ql)) return false
     }
-    if (filters.market !== 'all' && p.mkt !== filters.market) return false
+    if (filters.markets.length && !filters.markets.includes(p.mkt)) return false
     if (filters.sfMin && p.sf < +filters.sfMin) return false
     if (filters.sfMax && p.sf > +filters.sfMax) return false
     // clear height is a MAX (buy-box targets older, lower-clear stock) — null-inclusive
@@ -198,7 +216,10 @@ export default function App() {
     if (filters.salePriceMax && p.lastPrice != null && p.lastPrice > +filters.salePriceMax) return false
     // $/SF only on clean single-parcel trades — bulk/portfolio sales skew per-SF
     if (filters.salePsfMax && p.lastPrice != null && p.sf > 0 && (p.parcelsInSale ?? 1) === 1 && p.lastPrice / p.sf > +filters.salePsfMax) return false
-    if (filters.ownerType !== 'all' && p.ownerType !== filters.ownerType) return false
+    // LoopNet / on-market price + aged-listing screens — null-inclusive
+    if (filters.askMax && p.ask != null && p.ask > +filters.askMax) return false
+    if (filters.domMin && p.daysOn != null && p.daysOn < +filters.domMin) return false
+    if (filters.ownerTypes.length && !filters.ownerTypes.includes(p.ownerType)) return false
     if (filters.ownerLoc === 'out' && !p.oos) return false
     if (filters.ownerLoc === 'in' && (p.channel !== 'off' || p.oos)) return false
     if (filters.bucket === 'universe' && p.bucket && p.bucket !== 'universe') return false
@@ -228,7 +249,7 @@ export default function App() {
     ...(ql ? [{ label: `“${q.trim()}”`, onClear: () => setQ('') }] : []),
     ...(channel !== 'both' ? [{ label: channel === 'off' ? 'Off-market only' : 'On-market only', onClear: () => setChannel('both') }] : []),
     ...disabledScores.map((c) => ({ label: `− ${c}`, onClear: () => setScore((s) => ({ ...s, [c]: true })) })),
-    ...(filters.market !== 'all' ? [{ label: filters.market, onClear: () => setF('market', 'all') }] : []),
+    ...filters.markets.map((m) => ({ label: m, onClear: () => setF('markets', filters.markets.filter((x) => x !== m)) })),
     ...(filters.sfMin ? [{ label: `SF ≥ ${fmtInt(+filters.sfMin)}`, onClear: () => setF('sfMin', '') }] : []),
     ...(filters.sfMax ? [{ label: `SF ≤ ${fmtInt(+filters.sfMax)}`, onClear: () => setF('sfMax', '') }] : []),
     ...(filters.clearMax ? [{ label: `Clear ≤ ${filters.clearMax} ft`, onClear: () => setF('clearMax', '') }] : []),
@@ -241,7 +262,9 @@ export default function App() {
     ...(filters.salePriceMin ? [{ label: `Sale ≥ $${fmtInt(+filters.salePriceMin)}`, onClear: () => setF('salePriceMin', '') }] : []),
     ...(filters.salePriceMax ? [{ label: `Sale ≤ $${fmtInt(+filters.salePriceMax)}`, onClear: () => setF('salePriceMax', '') }] : []),
     ...(filters.salePsfMax ? [{ label: `Sale ≤ $${filters.salePsfMax}/SF`, onClear: () => setF('salePsfMax', '') }] : []),
-    ...(filters.ownerType !== 'all' ? [{ label: filters.ownerType, onClear: () => setF('ownerType', 'all') }] : []),
+    ...(filters.askMax ? [{ label: `Asking ≤ $${filters.askMax}/SF`, onClear: () => setF('askMax', '') }] : []),
+    ...(filters.domMin ? [{ label: `On market ≥ ${filters.domMin} days`, onClear: () => setF('domMin', '') }] : []),
+    ...filters.ownerTypes.map((o) => ({ label: `${o} owner`, onClear: () => setF('ownerTypes', filters.ownerTypes.filter((x) => x !== o)) })),
     ...(filters.ownerLoc !== 'all' ? [{ label: filters.ownerLoc === 'out' ? 'Out-of-state owner' : 'In-state owner', onClear: () => setF('ownerLoc', 'all') }] : []),
     ...(filters.bucket !== 'all' ? [{ label: filters.bucket === 'universe' ? 'Scored universe only' : 'Manual review only', onClear: () => setF('bucket', 'all') }] : []),
     ...SIG_DEFS.filter(([k]) => filters.sig[k]).map(([k]) => ({ label: SIG_LABEL[k], onClear: () => toggleSig(k) })),
@@ -275,7 +298,7 @@ export default function App() {
   })()
   const goModule = (m) => { setModule(m); setRailOpen(false); setSearchOpen(false); setStatusOpen(false); setAcctOpen(false) }
   // Apply a validated patch from the filter chat (server whitelists every value).
-  const FILTER_KEYS = ['market', 'ownerType', 'ownerLoc', 'bucket', 'clearMax', 'yearMin', 'yearMax', 'sfMin', 'sfMax', 'distMax', 'holdMin', 'heldSince', 'saleYearMin', 'salePriceMin', 'salePriceMax', 'salePsfMax']
+  const FILTER_KEYS = ['ownerLoc', 'bucket', 'clearMax', 'yearMin', 'yearMax', 'sfMin', 'sfMax', 'distMax', 'holdMin', 'heldSince', 'saleYearMin', 'salePriceMin', 'salePriceMax', 'salePsfMax', 'askMax', 'domMin']
   const applyChatPatch = (p) => {
     if (p.reset) {
       setScore({ Actionable: true, Tentative: true, Pass: true })
@@ -288,6 +311,18 @@ export default function App() {
       const base = p.reset ? EMPTY_FILTERS : f
       const next = { ...base, sig: { ...base.sig, ...(p.sig || {}) } }
       for (const k of FILTER_KEYS) if (p[k] !== undefined) next[k] = p[k]
+      // MULTI markets: union to add, subtract to remove, *All to clear (= all)
+      let markets = base.markets
+      if (p.marketsAll) markets = []
+      if (p.markets) markets = [...new Set([...markets, ...p.markets])]
+      if (p.marketsRemove) markets = markets.filter((m) => !p.marketsRemove.includes(m))
+      next.markets = markets
+      // MULTI owner types: same three ops
+      let ots = base.ownerTypes
+      if (p.ownerTypesAll) ots = []
+      if (p.ownerTypes) ots = [...new Set([...ots, ...p.ownerTypes])]
+      if (p.ownerTypesRemove) ots = ots.filter((o) => !p.ownerTypesRemove.includes(o))
+      next.ownerTypes = ots
       return next
     })
     if (p.q !== undefined) setQ(p.q)
@@ -296,15 +331,21 @@ export default function App() {
 
   // Start/stop the REAL scrape job on the server. Optimistic flip; the status
   // poller is the source of truth and corrects state within one tick.
-  const startSourcing = async () => {
+  // opts: {} = incremental (14-day cache, only new listings); {force_refresh:true}
+  // = re-scan everything. Called via arrow fns so click events never leak in.
+  const startSourcing = async (opts = {}) => {
     setNewCount(0)
     setLastUpdated('just now')
     setSourcing(true)
-    try { await liveScrape({}) } catch (e) { console.error('[sourcing] start failed', e); setSourcing(false) }
+    try { await liveScrape(opts) } catch (e) { console.error('[sourcing] start failed', e); setSourcing(false) }
   }
   const stopSourcing = async () => {
-    try { await liveStop() } catch (e) { console.error('[sourcing] stop failed', e) }
-    setSourcing(false)
+    // Latch "stopping" and let the poller confirm the halt. We must NOT flip
+    // sourcing→false here: the backend job stays "running" for a beat while it
+    // tears down, and the next poll would flip it straight back to "Sourcing"
+    // (the old bug where Stop looked like it did nothing).
+    setStopping(true)
+    try { await liveStop() } catch (e) { console.error('[sourcing] stop failed', e); setStopping(false) }
   }
 
   const TABS = [
@@ -327,31 +368,52 @@ export default function App() {
           <span className="brand-suffix" style={css('color:var(--text2);font-weight:500;')}>Sourcing</span>
         </div>
         <div className="sample-pill" title={dataset.isReal ? `Live sourced data — ${fmtInt(dataset.counts?.props ?? propsData.length)} records (owner/broker PII · not committed)` : 'All records shown are sample data'} style={css(`display:flex;align-items:center;gap:6px;height:22px;padding:0 9px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text2);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;`)}><span style={css(`width:5px;height:5px;border-radius:50%;background:${dataset.isReal ? 'var(--accent)' : 'var(--text3)'};`)} />{dataset.isReal ? `Live data · ${fmtInt(dataset.counts?.props ?? propsData.length)}` : 'Sample data'}</div>
-        <button className="markets-btn hov" aria-label="Select markets" style={css('display:flex;align-items:center;gap:8px;height:30px;padding:0 11px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:12.5px;')}>
-          <span style={css('width:6px;height:6px;border-radius:50%;background:var(--accent);')} />All markets<Icon name="chevronDown" size={11} sw={2} style={css('color:var(--text3);')} />
-        </button>
+        <div className="markets-btn" style={css('position:relative;')}>
+          <button className="hov" aria-label="Select markets" aria-expanded={marketsMenu} onClick={() => setMarketsMenu((v) => !v)} style={css('display:flex;align-items:center;gap:8px;height:30px;padding:0 11px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:12.5px;')}>
+            <span style={css('width:6px;height:6px;border-radius:50%;background:var(--accent);')} />{filters.markets.length === 0 ? 'All markets' : filters.markets.length === 1 ? filters.markets[0] : `${filters.markets.length} markets`}<Icon name="chevronDown" size={11} sw={2} style={css('color:var(--text3);')} />
+          </button>
+          {marketsMenu && (
+            <>
+              <div onClick={() => setMarketsMenu(false)} style={css('position:fixed;inset:0;z-index:70;')} />
+              <div style={css('position:absolute;top:36px;left:0;z-index:71;width:220px;max-height:340px;overflow-y:auto;background:var(--surface);border:1px solid var(--border2);border-radius:10px;box-shadow:0 18px 44px rgba(0,0,0,.5);padding:6px;animation:fadein .12s ease;')}>
+                <button className="hov" onClick={() => setF('markets', [])} style={css(`display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;background:${filters.markets.length === 0 ? 'var(--accent-dim)' : 'transparent'};border:none;border-radius:7px;color:var(--text);font-size:12.5px;`)}><span style={css(`width:14px;height:14px;border-radius:4px;border:1px solid ${filters.markets.length === 0 ? 'var(--accent)' : 'var(--border2)'};background:${filters.markets.length === 0 ? 'var(--accent)' : 'transparent'};flex:0 0 auto;`)} />All markets</button>
+                {MARKETS.filter((m) => ALLOWED_MARKETS.has(m)).map((m) => {
+                  const on = filters.markets.includes(m)
+                  return (
+                    <button key={m} className="hov" onClick={() => toggleInArr('markets', m)} style={css(`display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;background:${on ? 'var(--accent-dim)' : 'transparent'};border:none;border-radius:7px;color:var(--text);font-size:12.5px;`)}><span style={css(`display:flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:4px;border:1px solid ${on ? 'var(--accent)' : 'var(--border2)'};background:${on ? 'var(--accent)' : 'transparent'};flex:0 0 auto;color:#06120F;`)}>{on && <Icon name="check" size={10} sw={3} />}</span>{m}</button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
 
         <div style={css('flex:1;')} />
 
         {!sourcing ? (
-          <button className="sourcing-full hov tap" onClick={startSourcing} style={css('display:flex;align-items:center;gap:8px;height:32px;padding:0 16px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;box-shadow:0 0 0 1px var(--accent-line);')}>
-            <span style={css('width:7px;height:7px;border-radius:50%;background:#06120F;')} />Keep Sourcing
-          </button>
+          <>
+            <button className="sourcing-full hov tap" onClick={() => startSourcing()} style={css('display:flex;align-items:center;gap:8px;height:32px;padding:0 16px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;box-shadow:0 0 0 1px var(--accent-line);')}>
+              <span style={css('width:7px;height:7px;border-radius:50%;background:#06120F;')} />Keep Sourcing
+            </button>
+            <button className="sourcing-full hov tap" onClick={() => startSourcing({ force_refresh: true })} title="Re-scan every listing, ignoring the 14-day cache — slower, but re-verifies the whole inventory and prunes sold/removed deals" style={css('display:flex;align-items:center;gap:6px;height:32px;padding:0 11px;margin-left:-8px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:11.5px;')}>
+              <Icon name="recycle" size={13} sw={1.8} />Full refresh
+            </button>
+          </>
         ) : (
-          <div className="sourcing-full" style={css('display:flex;align-items:center;gap:11px;height:42px;padding:0 7px 0 13px;background:var(--surface2);border:1px solid var(--accent-line);border-radius:9px;box-shadow:0 0 0 3px var(--accent-dim);')}>
-            <span style={css('flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1.1s infinite;')} />
+          <div className="sourcing-full" style={css(`display:flex;align-items:center;gap:11px;height:42px;padding:0 7px 0 13px;background:var(--surface2);border:1px solid ${stopping ? 'var(--border2)' : 'var(--accent-line)'};border-radius:9px;box-shadow:0 0 0 3px ${stopping ? 'transparent' : 'var(--accent-dim)'};`)}>
+            <span style={css(`flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:${stopping ? 'var(--text3)' : 'var(--accent)'};${stopping ? '' : 'animation:pulse 1.1s infinite;'}`)} />
             <div style={css('display:flex;flex-direction:column;gap:5px;width:248px;')}>
               <div style={css('display:flex;align-items:center;gap:7px;white-space:nowrap;')}>
-                <span style={css('font-weight:600;font-size:12px;')}>Sourcing</span>
+                <span style={css('font-weight:600;font-size:12px;')}>{stopping ? 'Stopping…' : 'Sourcing'}</span>
                 <span style={css('font-family:var(--mono);font-size:12px;color:var(--text);')}>{fmtInt(total)}</span>
                 <span style={css('color:var(--text3);font-size:11px;')}>·</span>
                 <span style={css('font-family:var(--mono);font-size:12px;color:var(--accent);')}>+{newCount} new</span>
               </div>
               <div className="src-strip" style={css('display:flex;gap:6px;')}>
                 {sources.map((s) => (
-                  <div key={s.n} title={s.n} style={css('flex:1;display:flex;flex-direction:column;gap:3px;min-width:0;')}>
-                    <div style={css('height:3px;border-radius:2px;background:var(--border2);overflow:hidden;')}><div style={css(`height:100%;width:${Math.round(s.p * 100)}%;background:var(--accent);border-radius:2px;transition:width .25s;`)} /></div>
-                    <span style={css('font-size:8px;letter-spacing:.02em;color:var(--text3);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{s.short}</span>
+                  <div key={s.n} title={`${s.n}${s.st === 'error' ? ' — failed this run' : s.st === 'done' ? ' — done' : s.st === 'running' ? ' — searching…' : ''}${s.found != null ? ` · ${s.found} new` : ''}`} style={css('flex:1;display:flex;flex-direction:column;gap:3px;min-width:0;')}>
+                    <div style={css('height:3px;border-radius:2px;background:var(--border2);overflow:hidden;')}><div style={css(`height:100%;width:${s.st === 'error' ? 100 : Math.round(s.p * 100)}%;background:${s.st === 'error' ? 'var(--red)' : 'var(--accent)'};border-radius:2px;transition:width .25s;`)} /></div>
+                    <span style={css(`font-size:8px;letter-spacing:.02em;color:${s.st === 'error' ? 'var(--red)' : s.st === 'running' ? 'var(--accent)' : 'var(--text3)'};text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`)}>{s.short}</span>
                   </div>
                 ))}
               </div>
@@ -364,7 +426,7 @@ export default function App() {
               <span style={css('font-size:8.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;')}>Updated</span>
               <span style={css('font-size:10.5px;color:var(--text2);white-space:nowrap;')}>{lastUpdated}</span>
             </div>
-            <button className="hov" onClick={stopSourcing} style={css('flex:0 0 auto;height:28px;padding:0 12px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;font-weight:500;')}>Stop</button>
+            <button className="hov" onClick={stopSourcing} disabled={stopping} style={css(`flex:0 0 auto;height:28px;padding:0 12px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;font-weight:500;${stopping ? 'opacity:.55;cursor:default;' : ''}`)}>{stopping ? 'Stopping…' : 'Stop'}</button>
           </div>
         )}
 
@@ -439,7 +501,15 @@ export default function App() {
                 <div style={css(railLabel)}>Filters</div>
                 <div style={css('display:flex;flex-direction:column;gap:11px;')}>
                   <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Search</label><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Address · owner · APN · contact" aria-label="Search properties" style={css(numInput)} /></div>
-                  <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Market / metro</label><select value={filters.market} onChange={(e) => setF('market', e.target.value)} style={css(selectStyle)} aria-label="Market"><option value="all">All markets</option>{MARKETS.filter((m) => ALLOWED_MARKETS.has(m)).map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
+                  <div style={css('display:flex;flex-direction:column;gap:6px;')}>
+                    <div style={css('display:flex;align-items:center;justify-content:space-between;')}><label style={css(fieldLabel)}>Markets{filters.markets.length ? ` · ${filters.markets.length}` : ''}</label>{filters.markets.length > 0 && <button className="hov" onClick={() => setF('markets', [])} style={css('background:none;border:none;color:var(--accent);font-size:10.5px;font-weight:500;')}>All markets</button>}</div>
+                    <div style={css('display:flex;flex-wrap:wrap;gap:5px;')}>
+                      {MARKETS.filter((m) => ALLOWED_MARKETS.has(m)).map((m) => {
+                        const on = filters.markets.includes(m)
+                        return <button key={m} className={on ? 'ms-chip on' : 'ms-chip'} aria-pressed={on} onClick={() => toggleInArr('markets', m)} style={css('height:24px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text2);font-size:11px;')}>{m}</button>
+                      })}
+                    </div>
+                  </div>
                   <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Source</label><select style={css(selectStyle)} aria-label="Source"><option>All sources</option>{SOURCES.map((s) => <option key={s}>{s}</option>)}</select></div>
                   <div style={css('display:flex;gap:8px;')}>
                     <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Min SF</label><input type="number" value={filters.sfMin} onChange={(e) => setF('sfMin', e.target.value)} placeholder="≥ 60,000" aria-label="Minimum building SF" style={css(numInput)} /></div>
@@ -465,7 +535,19 @@ export default function App() {
                     <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Sold since ≥</label><input type="number" value={filters.saleYearMin} onChange={(e) => setF('saleYearMin', e.target.value)} placeholder="2018" aria-label="Last sale in or after year" style={css(numInput)} /></div>
                     <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max sale $/SF</label><input type="number" value={filters.salePsfMax} onChange={(e) => setF('salePsfMax', e.target.value)} placeholder="≤ 80" aria-label="Maximum last sale price per SF" style={css(numInput)} /></div>
                   </div>
-                  <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Owner type</label><select value={filters.ownerType} onChange={(e) => setF('ownerType', e.target.value)} style={css(selectStyle)} aria-label="Owner type"><option value="all">Any owner type</option><option>LLC</option><option>Trust</option><option>Individual</option><option>Partnership</option><option>Corp</option></select></div>
+                  <div style={css('display:flex;gap:8px;')}>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max asking $/SF</label><input type="number" value={filters.askMax} onChange={(e) => setF('askMax', e.target.value)} placeholder="≤ 8 (on-market)" aria-label="Maximum asking price per SF" style={css(numInput)} /></div>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Min days on market</label><input type="number" value={filters.domMin} onChange={(e) => setF('domMin', e.target.value)} placeholder="≥ 90 (aged)" aria-label="Minimum days on market" style={css(numInput)} /></div>
+                  </div>
+                  <div style={css('display:flex;flex-direction:column;gap:6px;')}>
+                    <div style={css('display:flex;align-items:center;justify-content:space-between;')}><label style={css(fieldLabel)}>Owner type{filters.ownerTypes.length ? ` · ${filters.ownerTypes.length}` : ''}</label>{filters.ownerTypes.length > 0 && <button className="hov" onClick={() => setF('ownerTypes', [])} style={css('background:none;border:none;color:var(--accent);font-size:10.5px;font-weight:500;')}>Any type</button>}</div>
+                    <div style={css('display:flex;flex-wrap:wrap;gap:5px;')}>
+                      {OWNER_TYPES.map((o) => {
+                        const on = filters.ownerTypes.includes(o)
+                        return <button key={o} className={on ? 'ms-chip on' : 'ms-chip'} aria-pressed={on} onClick={() => toggleInArr('ownerTypes', o)} style={css('height:24px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text2);font-size:11px;')}>{o}</button>
+                      })}
+                    </div>
+                  </div>
                   <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Owner location</label><select value={filters.ownerLoc} onChange={(e) => setF('ownerLoc', e.target.value)} style={css(selectStyle)} aria-label="Owner location"><option value="all">Any owner location</option><option value="in">In-state owner</option><option value="out">Out-of-state owner</option></select></div>
                   <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Parcels</label><select value={filters.bucket} onChange={(e) => setF('bucket', e.target.value)} style={css(selectStyle)} aria-label="Parcel bucket"><option value="all">All parcels</option><option value="universe">Scored universe only</option><option value="review">60–75k manual review only</option></select></div>
                 </div>
@@ -521,38 +603,7 @@ export default function App() {
               {/* TABLE / CARD-LIST */}
               {view === 'table' && !showEmpty && (
                 <>
-                  <div className="data-table-wrap" style={css('flex:1;overflow:auto;min-height:0;')}>
-                    <table style={css('width:100%;border-collapse:collapse;font-size:12.5px;')}>
-                      <thead><tr style={css('position:sticky;top:0;z-index:2;background:var(--surface);')}>
-                        <th style={css('width:34px;padding:9px 0 9px 14px;border-bottom:1px solid var(--border);')}><input type="checkbox" checked={allPropsSel} onChange={selAllProps} aria-label="Select all" style={css('accent-color:var(--accent);')} /></th>
-                        {[th('left'), th('left'), th('left'), th('right'), th('left'), th('left'), th('left'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('left', 'col-secondary')].map((c, i) => (
-                          <th key={i} className={c.cls} style={css(c.s)}>{['CH', 'ADDRESS', 'MARKET', 'SF', 'SCORE', 'KEY SIGNAL', 'OWNER / BROKER', 'ASK $/SF', 'YEAR', 'CLR FT', 'DIST MI', 'HELD YR', 'CONTACT'][i]}</th>
-                        ))}
-                        <th style={css('width:28px;border-bottom:1px solid var(--border);')} />
-                      </tr></thead>
-                      <tbody>
-                        {visibleProps.map((p) => (
-                          <tr key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(rowStyle(p.cat))}>
-                            <td style={css('padding:0 0 0 14px;')} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selProps.includes(p.id)} onChange={() => toggleProp(p.id)} aria-label="Select property" style={css('accent-color:var(--accent);')} /></td>
-                            <td style={css('padding:9px 8px;')}><span style={css(chDot(p.channel))} /></td>
-                            <td style={css('padding:9px 8px;font-weight:500;white-space:nowrap;')}>{p.addr}{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title={`${p.lease.note} — open on LoopNet`} style={css('display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:10px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 7px;border-radius:5px;text-decoration:none;vertical-align:middle;')}>For Lease<Icon name="chevronRight" size={9} sw={2.4} /></a>}</td>
-                            <td style={css('padding:9px 8px;color:var(--text2);')}>{p.mkt}</td>
-                            <td style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;')}>{fmtSF(p.sf)}</td>
-                            <td style={css('padding:9px 8px;')}><span style={css('display:inline-flex;align-items:center;gap:6px;')}><span style={css(scDot(p.cat))} /><span style={css(scLabel(p.cat))}>{p.cat}</span><span style={css('font-family:var(--mono);font-size:11.5px;color:var(--text3);')}>{p.score}</span></span></td>
-                            <td style={css('padding:9px 8px;color:var(--text2);font-size:12px;white-space:nowrap;')}>{p.signal}</td>
-                            <td style={css('padding:9px 8px;color:var(--text2);white-space:nowrap;')}>{ownerOrBroker(p)}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.channel === 'on' ? fmtMoney2(p.ask) : '—'}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.year ?? '—'}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.clear ?? '—'}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.distMi ?? '—'}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.holdYears != null ? Math.round(p.holdYears) : '—'}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;')}><span title={p.person || undefined} style={css(contactStyle(p.contact))}>{p.contact}</span></td>
-                            <td style={css('padding:9px 14px 9px 4px;text-align:right;color:var(--text3);')}><Icon name="chevronRight" size={14} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <PropTable rows={visibleProps} selProps={selProps} toggleProp={toggleProp} allSel={allPropsSel} onToggleAll={selAllProps} onOpen={setDrawerId} />
                   <div className="card-list" style={css('flex-direction:column;flex:1;overflow-y:auto;min-height:0;')}>
                     {visibleProps.map((p) => (
                       <div key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(cardStyle(p.cat))}>
@@ -777,7 +828,7 @@ export default function App() {
           <div onClick={() => setStatusOpen(false)} style={css('position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:120;animation:fadein .15s ease;')} />
           <div style={css('position:fixed;left:0;right:0;bottom:0;z-index:121;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--border2);padding:18px;animation:sheetup .24s ease;')}>
             <div style={css('width:38px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 14px;')} />
-            <div style={css('display:flex;align-items:center;gap:9px;margin-bottom:14px;')}><span style={css(`width:9px;height:9px;border-radius:50%;background:${sourcing ? 'var(--accent)' : 'var(--text3)'};${sourcing ? 'animation:pulse 1.1s infinite;' : ''}`)} /><span style={css('font-size:15px;font-weight:600;')}>{sourcing ? 'Sourcing live' : 'Sourcing paused'}</span><button className="tap" onClick={() => setStatusOpen(false)} aria-label="Close" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button></div>
+            <div style={css('display:flex;align-items:center;gap:9px;margin-bottom:14px;')}><span style={css(`width:9px;height:9px;border-radius:50%;background:${sourcing && !stopping ? 'var(--accent)' : 'var(--text3)'};${sourcing && !stopping ? 'animation:pulse 1.1s infinite;' : ''}`)} /><span style={css('font-size:15px;font-weight:600;')}>{stopping ? 'Stopping…' : sourcing ? 'Sourcing live' : 'Sourcing paused'}</span><button className="tap" onClick={() => setStatusOpen(false)} aria-label="Close" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button></div>
             <div style={css('display:flex;gap:18px;margin-bottom:16px;')}>
               <div><div style={css('font-family:var(--mono);font-size:22px;font-weight:500;')}>{fmtInt(total)}</div><div style={css('font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;')}>scanned</div></div>
               <div><div style={css('font-family:var(--mono);font-size:22px;font-weight:500;color:var(--accent);')}>+{newCount}</div><div style={css('font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;')}>new</div></div>
@@ -786,10 +837,20 @@ export default function App() {
             <div style={css('font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:10px;')}>Per-source</div>
             <div style={css('display:flex;flex-direction:column;gap:10px;margin-bottom:18px;')}>
               {sources.map((s) => (
-                <div key={s.n}><div style={css('display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px;')}><span style={css('color:var(--text2);')}>{s.n}</span><span style={css('font-family:var(--mono);color:var(--text3);')}>{fmtInt(s.c || 0)} listings</span></div><div style={css('height:5px;border-radius:3px;background:var(--surface3);overflow:hidden;')}><div style={css(`height:100%;width:${Math.round(s.p * 100)}%;background:var(--accent);border-radius:3px;`)} /></div></div>
+                <div key={s.n}><div style={css('display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px;')}><span style={css('color:var(--text2);')}>{s.n}{s.st === 'error' ? <span style={css('color:var(--red);')}> · failed</span> : s.st === 'running' ? <span style={css('color:var(--accent);')}> · searching…</span> : null}</span><span style={css('font-family:var(--mono);color:var(--text3);')}>{fmtInt(s.c || 0)} listings{s.found != null ? ` · +${s.found}` : ''}</span></div><div style={css('height:5px;border-radius:3px;background:var(--surface3);overflow:hidden;')}><div style={css(`height:100%;width:${s.st === 'error' ? 100 : Math.round(s.p * 100)}%;background:${s.st === 'error' ? 'var(--red)' : 'var(--accent)'};border-radius:3px;`)} /></div></div>
               ))}
             </div>
-            <button className="tap" onClick={() => (sourcing ? stopSourcing() : startSourcing())} style={css(`width:100%;height:48px;border-radius:9px;font-size:13.5px;font-weight:600;${sourcing ? 'background:var(--surface2);border:1px solid var(--border2);color:var(--text);' : 'background:var(--accent);border:none;color:#06120F;'}`)}>{sourcing ? 'Stop sourcing' : 'Keep Sourcing'}</button>
+            {!sourcing && newCount === 0 && lastUpdated !== '—' && (
+              <div style={css('font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:12px;')}>
+                0 new usually means every current listing was already found within the last 14 days (the incremental cache). A full refresh re-scans everything and prunes sold/removed deals.
+              </div>
+            )}
+            <div style={css('display:flex;gap:8px;')}>
+              <button className="tap" disabled={stopping} onClick={() => (sourcing ? stopSourcing() : startSourcing())} style={css(`flex:1;height:48px;border-radius:9px;font-size:13.5px;font-weight:600;${stopping ? 'opacity:.55;' : ''}${sourcing ? 'background:var(--surface2);border:1px solid var(--border2);color:var(--text);' : 'background:var(--accent);border:none;color:#06120F;'}`)}>{stopping ? 'Stopping…' : sourcing ? 'Stop sourcing' : 'Keep Sourcing'}</button>
+              {!sourcing && (
+                <button className="tap" onClick={() => { setStatusOpen(false); startSourcing({ force_refresh: true }) }} style={css('flex:0 0 auto;height:48px;padding:0 16px;border-radius:9px;font-size:13px;font-weight:500;background:var(--surface2);border:1px solid var(--border2);color:var(--text);')}>Full refresh</button>
+              )}
+            </div>
           </div>
         </>
       )}

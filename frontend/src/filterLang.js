@@ -72,6 +72,17 @@ export function parseQuery(text) {
   eat(/\b(permit anomal\w*|permit gap|no permits?|permit issues?|permits?)\b/, () => { sig.permit = true; applied.push('Permit anomaly') })
   eat(/\b(vacant|vacancy|vacancies|empty|abandoned|unoccupied)\b/, () => { sig.vacant = true; applied.push('Inferred vacant') })
   eat(/\b(distress\w*|any signal)\b/, () => { sig.distress = true; applied.push('Any distress signal') })
+  // LoopNet lease listing attached to the parcel (run before channel so
+  // "listed for lease" → lease + on-market, not just on-market)
+  eat(/\b(for[- ]lease|lease listing\w*|loopnet lease|listed for lease|available for lease|leas(?:e|ed|ing))\b/, () => { sig.lease = true; applied.push('LoopNet lease listing') })
+
+  // ── days on market (aged / stale listings) — BEFORE channel, which would
+  // otherwise eat "on market" / "listings" ───────────────────────────────────
+  eat(/\b(?:stale|aged)\b[^.]{0,10}?listings?\b|\blong days?[- ]on[- ]market\b/, () => { patch.domMin = '90'; applied.push('On market 90+ days') })
+  eat(/\bon[- ]market\s+(\d{1,4})\s*\+?\s*days?\b|\b(\d{1,4})\s*\+?\s*days?\s+(?:on[- ]market|on the market|dom)\b|\bdom\s*(?:over|above|≥|>=?)?\s*(\d{1,4})\b/, (m) => {
+    const v = +(m[1] || m[2] || m[3]); if (!v || v > 3650) return false
+    patch.domMin = String(v); applied.push(`On market ${v}+ days`)
+  })
 
   // ── channel ────────────────────────────────────────────────────────────────
   eat(/\b(both channels?|all channels?|on and off|off and on)\b/, () => { patch.channel = 'both'; applied.push('Both channels') })
@@ -104,27 +115,26 @@ export function parseQuery(text) {
     }
   })
 
-  // ── markets (one active at a time — the rail is a single select) ──────────
-  eat(/\b(all markets|anywhere|nationwide|every market|all metros)\b/, () => { patch.market = 'all'; applied.push('All markets') })
+  // ── markets (MULTI — pick several; each query unions onto the current set) ──
+  eat(/\b(all markets|anywhere|nationwide|every market|all metros)\b/, () => { patch.marketsAll = true; applied.push('All markets') })
+  const mkts = []
   for (const [name, aliases] of Object.entries(MARKET_ALIASES)) {
     for (const a of aliases) {
       const re = rx(String.raw`\b${a.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\b`)
-      if (re.test(t)) {
-        if (patch.market && patch.market !== name) notes.push(`one market at a time — kept ${patch.market}`)
-        else { patch.market = name; applied.push(name) }
-        t = t.replace(re, ' ')
-        break
-      }
+      if (re.test(t)) { mkts.push(name); t = t.replace(new RegExp(re, 'gi'), ' '); break }
     }
   }
+  if (mkts.length) { patch.markets = mkts; applied.push(mkts.join(' + ')) }
 
-  // ── owner ──────────────────────────────────────────────────────────────────
-  eat(/\bany owner( type)?s?\b/, () => { patch.ownerType = 'all'; applied.push('Any owner type') })
-  eat(/\bllcs?\b/, () => { patch.ownerType = 'LLC'; applied.push('LLC owners') })
-  eat(/\btrusts?\b/, () => { patch.ownerType = 'Trust'; applied.push('Trust owners') })
-  eat(/\b(individuals?|private owners?|mom[- ]and[- ]pop)\b/, () => { patch.ownerType = 'Individual'; applied.push('Individual owners') })
-  eat(/\b(partnerships?|lps?)\b/, () => { patch.ownerType = 'Partnership'; applied.push('Partnership owners') })
-  eat(/\b(corporations?|corp|corporate owners?|inc)\b/, () => { patch.ownerType = 'Corp'; applied.push('Corp owners') })
+  // ── owner (type is MULTI — pick several; location stays single) ────────────
+  eat(/\bany owner( type)?s?\b/, () => { patch.ownerTypesAll = true; applied.push('Any owner type') })
+  const ots = []
+  eat(/\bllcs?\b/, () => { ots.push('LLC') })
+  eat(/\btrusts?\b/, () => { ots.push('Trust') })
+  eat(/\b(individuals?|private owners?|mom[- ]and[- ]pop)\b/, () => { ots.push('Individual') })
+  eat(/\b(partnerships?|lps?)\b/, () => { ots.push('Partnership') })
+  eat(/\b(corporations?|corp|corporate owners?|inc)\b/, () => { ots.push('Corp') })
+  if (ots.length) { patch.ownerTypes = ots; applied.push(ots.map((o) => `${o} owners`).join(' + ')) }
   eat(/\b(out[- ]of[- ]state|oos|absentee|out of town|remote owners?|non[- ]local)\b/, () => { patch.ownerLoc = 'out'; applied.push('Out-of-state owner') })
   eat(/\b(in[- ]state|instate|local owners?|in town)\b/, () => { patch.ownerLoc = 'in'; applied.push('In-state owner') })
 
@@ -132,6 +142,13 @@ export function parseQuery(text) {
   eat(/\b(manual[- ]review( bucket| parcels)?|review bucket|60[- ]?(?:to[- ])?75k?)\b/, () => { patch.bucket = 'review'; applied.push('Manual-review parcels') })
   eat(/\b(scored universe|universe only|universe)\b/, () => { patch.bucket = 'universe'; applied.push('Scored universe') })
   eat(/\ball parcels\b/, () => { patch.bucket = 'all'; applied.push('All parcels') })
+
+  // ── asking price $/SF (on-market / LoopNet list price) — needs an ask/list
+  // keyword so it doesn't collide with the last-sale $/SF rule below ──────────
+  eat(rx(String.raw`\b(?:asking|ask|list(?:ed| price)?|priced|rent)\b[^.]{0,16}?${MAXW}\s*\$?\s*(\d[\d,.]*)\s*(?:\/|per)?\s*(?:sf|sq ?ft|foot|ft)?\b`), (m) => {
+    const v = toNum(m[1]); if (v == null || v > 1000) return false   // $/SF, not a total
+    patch.askMax = String(v); applied.push(`Asking ≤ $${v}/SF`)
+  })
 
   // ── previous sale (before generic $ rules) ────────────────────────────────
   eat(rx(String.raw`${MAXW}\s*\$?\s*(\d[\d,.]*)\s*(?:\/|per)\s*(?:sf|sq ?ft|foot|ft)\b`), (m) => {
@@ -275,9 +292,14 @@ export const VOCAB = [
     ['Hide a bucket', ['hide pass', 'no pass', 'without tentative', 'exclude red']],
     ['Everything', ['all scores', 'any score', 'show everything']],
   ] },
-  { title: 'Markets (one at a time)', rows: [
+  { title: 'Markets (pick several — click to add/remove)', rows: [
     ...Object.entries(MARKET_ALIASES).map(([name, a]) => [name, [...a]]),
     ['All markets', ['all markets', 'anywhere', 'nationwide']],
+  ] },
+  { title: 'Listing type & price', rows: [
+    ['For lease (LoopNet)', ['for lease', 'lease listing', 'loopnet lease']],
+    ['Max asking $/SF', ['asking under $8/sf', 'list price under $10/sf', 'ask below $6/sf']],
+    ['Aged listings (days on market)', ['on market 90+ days', 'over 120 days on market', 'stale listings']],
   ] },
   { title: 'Size (building SF)', rows: [
     ['Minimum', ['over 100k sf', 'at least 80,000 sf', '100k+ sf', 'more than 120k']],
@@ -349,6 +371,14 @@ export function patchSatisfied(patch, state) {
     else if (k === 'sig') { for (const [sk, on] of Object.entries(v)) if (Boolean(f.sig?.[sk]) !== on) return false }
     else if (k === 'q') { if ((state.q || '') !== v) return false }
     else if (k === 'view') { if (state.view !== v) return false }
+    // MULTI markets / owner types: an add-patch is "on" iff every value is set;
+    // an *-All patch is "on" iff the set is empty (default = all). Remove-patches
+    // never come from a term chip, so they're not tested here.
+    else if (k === 'markets') { if (!v.every((m) => (f.markets || []).includes(m))) return false }
+    else if (k === 'ownerTypes') { if (!v.every((o) => (f.ownerTypes || []).includes(o))) return false }
+    else if (k === 'marketsAll') { if ((f.markets || []).length) return false }
+    else if (k === 'ownerTypesAll') { if ((f.ownerTypes || []).length) return false }
+    else if (k === 'marketsRemove' || k === 'ownerTypesRemove') { return false }
     else if (String(f[k] ?? '') !== String(v)) return false
   }
   return true
@@ -359,11 +389,14 @@ export function inversePatch(patch) {
   const inv = {}
   for (const [k, v] of Object.entries(patch)) {
     if (k === 'reply' || k === 'reset' || k === 'view') continue // view has no "off"
+    if (k === 'marketsAll' || k === 'ownerTypesAll') continue    // default terms — no toggle-off
     if (k === 'channel') inv.channel = 'both'
     else if (k === 'score') { inv.score = Object.fromEntries(Object.keys(v).map((b) => [b, true])) }
     else if (k === 'sig') { inv.sig = Object.fromEntries(Object.keys(v).map((s) => [s, false])) }
     else if (k === 'q') inv.q = ''
-    else if (['market', 'ownerType', 'ownerLoc', 'bucket'].includes(k)) inv[k] = 'all'
+    else if (k === 'markets') inv.marketsRemove = v        // un-apply = drop just these markets
+    else if (k === 'ownerTypes') inv.ownerTypesRemove = v
+    else if (['ownerLoc', 'bucket'].includes(k)) inv[k] = 'all'
     else inv[k] = ''
   }
   return inv
@@ -377,10 +410,10 @@ export const DEFAULT_STATE = {
   score: { Actionable: true, Tentative: true, Pass: true },
   q: '',
   view: 'map',
-  filters: { market: 'all', ownerType: 'all', ownerLoc: 'all', bucket: 'all',
+  filters: { markets: [], ownerTypes: [], ownerLoc: 'all', bucket: 'all',
     clearMax: '', yearMin: '', yearMax: '', sfMin: '', sfMax: '', distMax: '',
     holdMin: '', heldSince: '', saleYearMin: '', salePriceMin: '', salePriceMax: '',
-    salePsfMax: '',
-    sig: { oos: false, tax: false, code: false, permit: false, vacant: false, distress: false, contact: false } },
+    salePsfMax: '', askMax: '', domMin: '',
+    sig: { oos: false, tax: false, code: false, permit: false, vacant: false, distress: false, contact: false, lease: false } },
 }
 export const isDefaultTerm = (term) => patchSatisfied(patchForTerm(term), DEFAULT_STATE)
