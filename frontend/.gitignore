@@ -27,3 +27,7 @@ dist
 .DS_Store
 *.log
 npm-debug.log*
+
+# python sidecar
+__pycache__/
+backend/.venv/

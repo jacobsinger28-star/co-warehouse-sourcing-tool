@@ -6,14 +6,17 @@
 export const MARKETS = ['Nashville', 'Charlotte', 'Columbus', 'Cleveland', 'Cincinnati', 'Charleston', 'Raleigh', 'Miami', 'Boca Raton', 'West Palm Beach']
 export const SOURCES = ['County GIS', 'Crexi', 'Colliers', 'CBRE', 'JLL', 'Cushman', 'Newmark', 'NAI']
 
-// live "Keep Sourcing" per-source progress strip
+// live "Keep Sourcing" per-source progress strip — the real brokerage scrapers.
+// `key` matches the scrape backend's source names (/live/status source_counts);
+// p (relative bar fill) and c (listing count) are filled in from live status.
 export const SCRAPE_SOURCES = [
-  { n: 'County GIS', short: 'GIS', p: 0.62 },
-  { n: 'Crexi', short: 'Crexi', p: 0.41 },
-  { n: 'Colliers', short: 'Coll', p: 0.78 },
-  { n: 'CBRE', short: 'CBRE', p: 0.55 },
-  { n: 'JLL', short: 'JLL', p: 0.33 },
-  { n: 'Cushman', short: 'Cush', p: 0.69 },
+  { n: 'CBRE', short: 'CBRE', key: 'cbre', p: 0, c: 0 },
+  { n: 'JLL', short: 'JLL', key: 'jll', p: 0, c: 0 },
+  { n: 'Cushman & Wakefield', short: 'Cush', key: 'cushman', p: 0, c: 0 },
+  { n: 'Colliers', short: 'Coll', key: 'colliers', p: 0, c: 0 },
+  { n: 'Newmark', short: 'Nmrk', key: 'newmark', p: 0, c: 0 },
+  { n: 'NAI Global', short: 'NAI', key: 'nai', p: 0, c: 0 },
+  { n: 'Crexi', short: 'Crexi', key: 'crexi', p: 0, c: 0 },
 ]
 
 export const PROPS = [

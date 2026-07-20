@@ -194,6 +194,38 @@ app.post('/api/deals-chat', requireAuth, async (req, res) => {
   }
 })
 
+// ── live-scrape service (FastAPI/Playwright sidecar, localhost-only) ────────
+// The Python sidecar owns the brokerage scrapers + listings DB; this proxy is
+// the ONLY way to reach it, so every /live call passes the same auth as
+// /api/data. The client always POSTs (legacy password rides the body); the
+// sidecar method/path comes from this fixed table — nothing forwards blindly.
+const LIVE_API = process.env.LIVE_API_URL || 'http://127.0.0.1:8000'
+const LIVE_ROUTES = {
+  scrape: ['POST', '/live/scrape'],
+  stop: ['POST', '/live/stop'],
+  status: ['GET', '/live/status'],
+  rows: ['GET', '/live/rows'],
+}
+app.use('/api/live', rateLimit(60))
+app.post('/api/live/:action', requireAuth, async (req, res) => {
+  const route = LIVE_ROUTES[req.params.action]
+  if (!route) return res.status(404).json({ error: 'unknown live action' })
+  const [method, path] = route
+  try {
+    const { password: _pw, ...body } = req.body || {}
+    const r = await fetch(`${LIVE_API}${path}`, {
+      method,
+      ...(method === 'POST'
+        ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+        : {}),
+    })
+    res.status(r.status).json(await r.json())
+  } catch (e) {
+    console.error('[live]', e?.message || e)
+    res.status(502).json({ error: 'live scrape service unavailable' })
+  }
+})
+
 // static SPA + client-side routing fallback
 app.use(express.static(DIST))
 app.get('*', (_req, res) => res.sendFile(join(DIST, 'index.html')))

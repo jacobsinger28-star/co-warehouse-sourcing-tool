@@ -1,8 +1,9 @@
-import { useContext, useEffect, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { css } from './css.js'
 import { RealDataContext } from './RealDataContext.js'
 import Icon from './Icon.jsx'
 import { PROPS, BROKERS, SCRAPE_SOURCES, MARKETS, SOURCES } from './data.js'
+import { liveScrape, liveStop, liveStatus, liveRows } from './liveApi.js'
 import {
   fmtInt, fmtSF, fmtMoney2, scDot, scLabel, chDot, chTag, chLabel, scChip,
   rowStyle, cardStyle, breakdownFor, catVar, fmtPhone, humanizeSig,
@@ -63,6 +64,7 @@ const EMPTY_FILTERS = {
   market: 'all', ownerType: 'all', ownerLoc: 'all', bucket: 'all',
   clearMax: '', yearMin: '', yearMax: '', sfMin: '', sfMax: '',
   distMax: '', holdMin: '', heldSince: '',
+  saleYearMin: '', salePriceMin: '', salePriceMax: '', salePsfMax: '',
   sig: { oos: false, tax: false, code: false, permit: false, vacant: false, distress: false, contact: false },
 }
 const numInput = 'height:32px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;outline:none;width:100%;'
@@ -90,16 +92,34 @@ export default function App() {
 
   // live data — decrypted by the Gate from the AES-256-GCM export and handed down
   // via context, with the committed synthetic sample as the fallback (fresh clone /
-  // locked / public deploy without the password).
+  // locked / public deploy without the password). On-market rows are superseded by
+  // the live scrape DB (/api/live/rows) whenever it has listings.
   const realData = useContext(RealDataContext)
+  const [liveOn, setLiveOn] = useState(null)
   const [dataset, setDataset] = useState({ props: onlyAllowed(PROPS), brokers: BROKERS, isReal: false, counts: null })
+  const refreshLiveRows = async () => {
+    try {
+      const d = await liveRows()
+      if (d?.props?.length) setLiveOn(d)
+    } catch { /* sidecar absent (local dev without backend) — keep current rows */ }
+  }
+  useEffect(() => { refreshLiveRows() }, [])
   useEffect(() => {
     const d = realData
-    if (!d || !Array.isArray(d.props) || !d.props.length) return
-    const props = onlyAllowed(d.props)
-    setDataset({ props, brokers: d.brokers?.length ? d.brokers : BROKERS, isReal: true, counts: { ...d.counts, props: props.length }, meta: { compMax: d.compMax, cityCeil: d.cityCeil, cityLive: d.cityLive } })
+    const hasReal = Boolean(d && Array.isArray(d.props) && d.props.length)
+    const liveProps = liveOn?.props?.length ? liveOn.props : null
+    if (!hasReal && !liveProps) return
+    const base = hasReal ? d.props : PROPS
+    const merged = liveProps ? [...base.filter((p) => p.channel !== 'on'), ...liveProps] : base
+    const props = onlyAllowed(merged)
+    const brokers = liveOn?.brokers?.length ? liveOn.brokers : (d?.brokers?.length ? d.brokers : BROKERS)
+    setDataset({
+      props, brokers, isReal: hasReal || Boolean(liveProps),
+      counts: { ...(hasReal ? d.counts : null), props: props.length },
+      meta: hasReal ? { compMax: d.compMax, cityCeil: d.cityCeil, cityLive: d.cityLive } : undefined,
+    })
     setTotal(props.length)
-  }, [realData])
+  }, [realData, liveOn])
   const propsData = dataset.props
   const brokersData = dataset.brokers
 
@@ -109,15 +129,40 @@ export default function App() {
   const [statusOpen, setStatusOpen] = useState(false)
   const [acctOpen, setAcctOpen] = useState(false)
 
+  // ── live scrape status (real /live/status — no simulation) ────────────────
+  const wasRunning = useRef(false)
+  const runBase = useRef(null) // listings in DB when the run started → "+N new"
+  const agoLabel = (iso) => {
+    if (!iso) return '—'
+    const t = new Date(iso.endsWith('Z') ? iso : iso + 'Z').getTime()
+    const mins = Math.max(0, Math.round((Date.now() - t) / 60000))
+    return mins < 1 ? 'just now' : mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`
+  }
+  const applyStatus = (s) => {
+    const running = s.status === 'running'
+    const counts = s.source_counts || {}
+    const totalListings = Object.values(counts).reduce((a, b) => a + b, 0)
+    if (running && runBase.current == null) runBase.current = totalListings
+    if (!running) runBase.current = null
+    setSourcing(running)
+    setNewCount(running ? Math.max(0, totalListings - runBase.current) : (s.listings_found || 0))
+    const max = Math.max(1, ...Object.values(counts))
+    setSources((prev) => prev.map((x) => ({ ...x, p: (counts[x.key] || 0) / max, c: counts[x.key] || 0 })))
+    setLastUpdated(agoLabel(s.finished_at || s.started_at))
+    if (wasRunning.current && !running) refreshLiveRows() // run just ended → pull fresh rows
+    wasRunning.current = running
+  }
   useEffect(() => {
-    if (!sourcing) return
-    const t = setInterval(() => {
-      setTotal((v) => v + (2 + Math.floor(Math.random() * 5)))
-      setNewCount((v) => v + (1 + Math.floor(Math.random() * 3)))
-      setLastUpdated('just now')
-      setSources((prev) => prev.map((x) => ({ ...x, p: x.p >= 0.97 ? 0.06 : Math.min(1, x.p + Math.random() * 0.09) })))
-    }, 1100)
-    return () => clearInterval(t)
+    let alive = true
+    const tick = async () => {
+      try {
+        const s = await liveStatus()
+        if (alive) applyStatus(s)
+      } catch { /* sidecar absent or not authed yet — leave UI idle */ }
+    }
+    tick()
+    const t = setInterval(tick, sourcing ? 3000 : 60000)
+    return () => { alive = false; clearInterval(t) }
   }, [sourcing])
 
   // derived
@@ -211,7 +256,18 @@ export default function App() {
     return n.length ? `${n.join(' · ')}. Those filters narrow the markets that have the data and leave the rest unchanged.` : ''
   })()
   const goModule = (m) => { setModule(m); setRailOpen(false); setSearchOpen(false); setStatusOpen(false); setAcctOpen(false) }
-  const startSourcing = () => { setSourcing(true); setNewCount(0); setLastUpdated('just now') }
+  // Start/stop the REAL scrape job on the server. Optimistic flip; the status
+  // poller is the source of truth and corrects state within one tick.
+  const startSourcing = async () => {
+    setNewCount(0)
+    setLastUpdated('just now')
+    setSourcing(true)
+    try { await liveScrape({}) } catch (e) { console.error('[sourcing] start failed', e); setSourcing(false) }
+  }
+  const stopSourcing = async () => {
+    try { await liveStop() } catch (e) { console.error('[sourcing] stop failed', e) }
+    setSourcing(false)
+  }
 
   const TABS = [
     { k: 'map', label: 'Map', icon: 'map' },
@@ -262,14 +318,14 @@ export default function App() {
               </div>
               <div className="src-aggregate" style={css('align-items:center;gap:8px;')}>
                 <div style={css('flex:1;height:4px;border-radius:2px;background:var(--border2);overflow:hidden;')}><div style={css(`height:100%;width:${Math.round(aggP * 100)}%;background:var(--accent);border-radius:2px;`)} /></div>
-                <span style={css('font-size:9.5px;color:var(--text3);white-space:nowrap;')}>6 sources</span>
+                <span style={css('font-size:9.5px;color:var(--text3);white-space:nowrap;')}>{sources.length} sources</span>
               </div>
             </div>
             <div style={css('flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;line-height:1.25;')}>
               <span style={css('font-size:8.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;')}>Updated</span>
               <span style={css('font-size:10.5px;color:var(--text2);white-space:nowrap;')}>{lastUpdated}</span>
             </div>
-            <button className="hov" onClick={() => setSourcing(false)} style={css('flex:0 0 auto;height:28px;padding:0 12px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;font-weight:500;')}>Stop</button>
+            <button className="hov" onClick={stopSourcing} style={css('flex:0 0 auto;height:28px;padding:0 12px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;font-weight:500;')}>Stop</button>
           </div>
         )}
 
@@ -668,10 +724,10 @@ export default function App() {
             <div style={css('font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:10px;')}>Per-source</div>
             <div style={css('display:flex;flex-direction:column;gap:10px;margin-bottom:18px;')}>
               {sources.map((s) => (
-                <div key={s.n}><div style={css('display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px;')}><span style={css('color:var(--text2);')}>{s.n}</span><span style={css('font-family:var(--mono);color:var(--text3);')}>{Math.round(s.p * 100)}%</span></div><div style={css('height:5px;border-radius:3px;background:var(--surface3);overflow:hidden;')}><div style={css(`height:100%;width:${Math.round(s.p * 100)}%;background:var(--accent);border-radius:3px;`)} /></div></div>
+                <div key={s.n}><div style={css('display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px;')}><span style={css('color:var(--text2);')}>{s.n}</span><span style={css('font-family:var(--mono);color:var(--text3);')}>{fmtInt(s.c || 0)} listings</span></div><div style={css('height:5px;border-radius:3px;background:var(--surface3);overflow:hidden;')}><div style={css(`height:100%;width:${Math.round(s.p * 100)}%;background:var(--accent);border-radius:3px;`)} /></div></div>
               ))}
             </div>
-            <button className="tap" onClick={() => (sourcing ? setSourcing(false) : startSourcing())} style={css(`width:100%;height:48px;border-radius:9px;font-size:13.5px;font-weight:600;${sourcing ? 'background:var(--surface2);border:1px solid var(--border2);color:var(--text);' : 'background:var(--accent);border:none;color:#06120F;'}`)}>{sourcing ? 'Stop sourcing' : 'Keep Sourcing'}</button>
+            <button className="tap" onClick={() => (sourcing ? stopSourcing() : startSourcing())} style={css(`width:100%;height:48px;border-radius:9px;font-size:13.5px;font-weight:600;${sourcing ? 'background:var(--surface2);border:1px solid var(--border2);color:var(--text);' : 'background:var(--accent);border:none;color:#06120F;'}`)}>{sourcing ? 'Stop sourcing' : 'Keep Sourcing'}</button>
           </div>
         </>
       )}

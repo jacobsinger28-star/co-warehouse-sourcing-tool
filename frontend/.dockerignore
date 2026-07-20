@@ -7,3 +7,16 @@ dist
 npm-debug.log*
 # NOTE: public/data.real.json is intentionally NOT ignored — it must reach the
 # image so the server can gate it. It is moved out of public/ during the build.
+
+# never bake local scrape DBs / caches / venvs into the image
+*.db
+*.db-shm
+*.db-wal
+*.db.backup-*
+backend/__pycache__
+backend/**/__pycache__
+backend/.venv
+
+# never bake local env into the image (server env comes from Railway)
+.env
+.env.*
