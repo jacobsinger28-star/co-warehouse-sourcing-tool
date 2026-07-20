@@ -28,6 +28,7 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.mjs ./server.mjs
 COPY --from=build /app/dealsChat.mjs ./dealsChat.mjs
+COPY --from=build /app/phoneburner.mjs ./phoneburner.mjs
 COPY --from=build /app/data.real.json ./data.real.json
 COPY --from=build /app/lease-overlay.json ./lease-overlay.json
 COPY start.sh ./start.sh
