@@ -1,6 +1,8 @@
 // Ask-style filter control — pure client-side keyword language (src/filterLang.js),
-// no LLM, no API key, no network. Each query MERGES onto the current filters
-// (stacking); "reset" starts over. The ? button opens the full known-terms list.
+// no LLM, no API key, no network. The rail bar is just a TRIGGER: clicking it
+// opens the modal, which holds a big type-to-search input (Enter applies) plus
+// every known term as a clickable chip (click = instant apply; the modal stays
+// open so clicks and queries stack). "reset" starts over.
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { css } from './css.js'
@@ -8,53 +10,59 @@ import Icon from './Icon.jsx'
 import { parseQuery, VOCAB, EXAMPLES } from './filterLang.js'
 
 export default function FilterChat({ onPatch }) {
+  const [open, setOpen] = useState(false)
   const [msg, setMsg] = useState('')
-  const [reply, setReply] = useState('')
-  const [helpOpen, setHelpOpen] = useState(false)
+  const [reply, setReply] = useState('')       // last result, shown under the rail trigger
+  const [popReply, setPopReply] = useState('') // same result, pinned inside the modal
 
-  const [popReply, setPopReply] = useState('')
-  const applyTerm = (term) => {
-    const res = parseQuery(term)
+  const apply = (text) => {
+    const res = parseQuery(text)
     if (Object.keys(res.patch).length) onPatch(res.patch)
     setPopReply(res.reply)
     setReply(res.reply)
   }
-
-  const send = (e) => {
+  const submit = (e) => {
     e?.preventDefault()
     const m = msg.trim()
     if (!m) return
-    const res = parseQuery(m)
-    if (Object.keys(res.patch).length) onPatch(res.patch)
-    setReply(res.reply)
+    apply(m)
     setMsg('')
   }
 
   return (
     <div style={css('margin-bottom:18px;')}>
-      <form onSubmit={send} style={css('display:flex;align-items:center;gap:6px;height:34px;padding:0 6px 0 10px;background:var(--surface2);border:1px solid var(--accent-line);border-radius:8px;')}>
+      <button
+        type="button"
+        onClick={() => { setOpen(true); setPopReply('') }}
+        aria-label="Open filter search"
+        className="hov"
+        style={css('display:flex;align-items:center;gap:8px;width:100%;height:34px;padding:0 10px;background:var(--surface2);border:1px solid var(--accent-line);border-radius:8px;cursor:text;')}
+      >
         <span aria-hidden="true" style={css('flex:0 0 auto;font-size:9px;font-weight:700;letter-spacing:.05em;color:var(--accent);')}>ASK</span>
-        <input
-          value={msg}
-          onChange={(e) => setMsg(e.target.value)}
-          aria-label="Describe filters in plain English"
-          placeholder="vacant nashville · over 100k sf…"
-          style={css('flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--text);font-size:12px;')}
-        />
-        <button type="button" onClick={() => setHelpOpen(true)} aria-label="Show all known search terms" className="tap" style={css('flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:12px;font-weight:600;')}>?</button>
-        <button type="submit" disabled={!msg.trim()} aria-label="Apply" className="tap" style={css(`flex:0 0 auto;height:24px;padding:0 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;${!msg.trim() ? 'background:var(--surface3);color:var(--text3);' : 'background:var(--accent);color:#06120F;'}`)}>Go</button>
-      </form>
+        <span style={css('flex:1;min-width:0;text-align:left;color:var(--text3);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>vacant nashville · over 100k sf…</span>
+      </button>
       {reply && <div role="status" style={css('margin-top:7px;font-size:11px;line-height:1.5;color:var(--text2);')}>{reply}</div>}
 
-      {helpOpen && createPortal(
+      {open && createPortal(
         <>
-          <div onClick={() => setHelpOpen(false)} style={css('position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:140;animation:fadein .15s ease;')} />
-          <div role="dialog" aria-label="Known search terms" style={css('position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:141;width:min(680px,94vw);max-height:86vh;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border2);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.5);animation:fadein .15s ease;')}>
-            <div style={css('flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--border);')}>
-              <span style={css('font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--accent);')}>ASK</span>
-              <span style={css('font-size:14.5px;font-weight:600;')}>Everything the filter search understands</span>
-              <button className="tap" onClick={() => setHelpOpen(false)} aria-label="Close" style={css('margin-left:auto;display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button>
-            </div>
+          <div onClick={() => setOpen(false)} style={css('position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:140;animation:fadein .15s ease;')} />
+          <div role="dialog" aria-label="Filter search" style={css('position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:141;width:min(680px,94vw);max-height:86vh;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border2);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.5);animation:fadein .15s ease;')}>
+            <form onSubmit={submit} style={css('flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);')}>
+              <span aria-hidden="true" style={css('flex:0 0 auto;font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--accent);')}>ASK</span>
+              <input
+                autoFocus
+                value={msg}
+                onChange={(e) => setMsg(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setOpen(false)
+                  if (e.key === 'Enter') { e.preventDefault(); submit() }
+                }}
+                aria-label="Describe filters in plain English — Enter applies"
+                placeholder="Type filters… e.g. vacant nashville over 100k sf — Enter applies"
+                style={css('flex:1;min-width:0;height:40px;padding:0 12px;background:var(--surface2);border:1px solid var(--accent-line);border-radius:9px;color:var(--text);font-size:14px;outline:none;')}
+              />
+              <button type="button" className="tap" onClick={() => setOpen(false)} aria-label="Close" style={css('flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:36px;height:36px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button>
+            </form>
             {popReply && (
               <div role="status" style={css('flex:0 0 auto;padding:8px 18px;border-bottom:1px solid var(--border);background:var(--accent-dim);font-size:11.5px;color:var(--text);line-height:1.5;')}>
                 {popReply}
@@ -62,8 +70,8 @@ export default function FilterChat({ onPatch }) {
             )}
             <div style={css('flex:1;overflow-y:auto;padding:14px 18px 18px;')}>
               <div style={css('font-size:11.5px;color:var(--text2);line-height:1.55;margin-bottom:14px;')}>
-                Combine as many terms as you want in one query — or just <b>click any term below</b> to
-                apply it. Every query <b>adds to</b> the current filters; say <b>reset</b> to start over.
+                Type any mix of terms and hit <b>Enter</b> — or <b>click any term below</b> to apply it
+                instantly. Every query <b>adds to</b> the current filters; say <b>reset</b> to start over.
               </div>
               {VOCAB.map((sec) => (
                 <div key={sec.title} style={css('margin-bottom:16px;')}>
@@ -75,7 +83,7 @@ export default function FilterChat({ onPatch }) {
                         {Array.isArray(terms) ? (
                           <span style={css('flex:1;display:flex;flex-wrap:wrap;gap:5px;')}>
                             {terms.map((term) => (
-                              <button key={term} type="button" className="term-chip" onClick={() => applyTerm(term)} title={`Apply: ${term}`} style={css('height:22px;padding:0 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:11px;color:var(--text3);font-family:var(--mono);font-size:10.5px;')}>{term}</button>
+                              <button key={term} type="button" className="term-chip" onClick={() => apply(term)} title={`Apply: ${term}`} style={css('height:22px;padding:0 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:11px;color:var(--text3);font-family:var(--mono);font-size:10.5px;')}>{term}</button>
                             ))}
                           </span>
                         ) : (
@@ -90,7 +98,7 @@ export default function FilterChat({ onPatch }) {
                 <div style={css('font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:7px;')}>Try one</div>
                 <div style={css('display:flex;flex-wrap:wrap;gap:6px;')}>
                   {EXAMPLES.map((ex) => (
-                    <button key={ex} className="tap hov" onClick={() => { setMsg(ex); setHelpOpen(false) }} style={css('height:26px;padding:0 10px;background:var(--surface2);border:1px solid var(--border2);border-radius:13px;color:var(--text);font-size:11px;')}>{ex}</button>
+                    <button key={ex} type="button" className="term-chip" onClick={() => apply(ex)} style={css('height:26px;padding:0 10px;background:var(--surface2);border:1px solid var(--border2);border-radius:13px;color:var(--text);font-size:11px;')}>{ex}</button>
                   ))}
                 </div>
               </div>
