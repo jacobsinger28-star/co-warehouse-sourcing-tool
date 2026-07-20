@@ -269,7 +269,7 @@ export default function App() {
   })()
   const goModule = (m) => { setModule(m); setRailOpen(false); setSearchOpen(false); setStatusOpen(false); setAcctOpen(false) }
   // Apply a validated patch from the filter chat (server whitelists every value).
-  const FILTER_KEYS = ['market', 'ownerType', 'ownerLoc', 'bucket', 'clearMax', 'yearMin', 'yearMax', 'sfMin', 'sfMax', 'distMax', 'holdMin', 'heldSince']
+  const FILTER_KEYS = ['market', 'ownerType', 'ownerLoc', 'bucket', 'clearMax', 'yearMin', 'yearMax', 'sfMin', 'sfMax', 'distMax', 'holdMin', 'heldSince', 'saleYearMin', 'salePriceMin', 'salePriceMax', 'salePsfMax']
   const applyChatPatch = (p) => {
     if (p.reset) {
       setScore({ Actionable: true, Tentative: true, Pass: true })

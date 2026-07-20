@@ -25,7 +25,7 @@ const apiKey = () =>
 const MARKETS = ['Nashville', 'Charlotte', 'Columbus', 'Cleveland', 'Cincinnati', 'Charleston', 'Raleigh', 'Miami', 'Boca Raton', 'West Palm Beach']
 const OWNER_TYPES = ['all', 'LLC', 'Trust', 'Individual', 'Partnership', 'Corp']
 const SIG_KEYS = ['oos', 'tax', 'code', 'permit', 'vacant', 'distress', 'contact']
-const NUM_KEYS = ['clearMax', 'yearMin', 'yearMax', 'sfMin', 'sfMax', 'distMax', 'holdMin', 'heldSince']
+const NUM_KEYS = ['clearMax', 'yearMin', 'yearMax', 'sfMin', 'sfMax', 'distMax', 'holdMin', 'heldSince', 'saleYearMin', 'salePriceMin', 'salePriceMax', 'salePsfMax']
 
 const TOOL = {
   name: 'set_filters',
@@ -53,6 +53,10 @@ const TOOL = {
       distMax: { type: ['number', 'null'], description: 'max miles to market core' },
       holdMin: { type: ['number', 'null'], description: 'min years owner has held' },
       heldSince: { type: ['number', 'null'], description: 'owned since this year or earlier' },
+      saleYearMin: { type: ['number', 'null'], description: 'last sold in this year or later' },
+      salePriceMin: { type: ['number', 'null'], description: 'min last-sale price $' },
+      salePriceMax: { type: ['number', 'null'], description: 'max last-sale price $' },
+      salePsfMax: { type: ['number', 'null'], description: 'max last-sale $/SF' },
       sig: {
         type: 'object',
         description: 'Signal checkboxes (true = require the signal)',
