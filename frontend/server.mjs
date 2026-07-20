@@ -33,6 +33,11 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { answerDealsQuestion, searchDeals } from './dealsChat.mjs'
+import {
+  pbConfigured, pbMode, pbStatus, pushContacts, createDialSession,
+  oauthAuthorizeUrl, oauthExchange, recordCallEvent, recentCalls,
+  isWarm, pushWarmDisposition,
+} from './phoneburner.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 8080
@@ -240,6 +245,70 @@ app.post('/api/live/:action', requireAuth, async (req, res) => {
     console.error('[live]', e?.message || e)
     res.status(502).json({ error: 'live scrape service unavailable' })
   }
+})
+
+// ── PhoneBurner: single-line power dialer + live human handoff ─────────────
+// Client-facing routes are POST (so both auth modes work, same as /api/data);
+// webhooks are POST but gated by a path secret (PhoneBurner can't send our JWT).
+//   PHONEBURNER_ACCESS_TOKEN  (personal token)  OR  PHONEBURNER_CLIENT_ID/_SECRET/_REDIRECT_URI
+//   PHONEBURNER_WEBHOOK_SECRET — random string; gates webhooks + oauth start
+//   PUBLIC_BASE_URL — https base of this app, used to build webhook callback URLs
+const PB_WEBHOOK_SECRET = process.env.PHONEBURNER_WEBHOOK_SECRET || ''
+const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '')
+app.use('/api/phoneburner', rateLimit(60))
+
+app.post('/api/phoneburner/status', requireAuth, async (_req, res) => {
+  try { res.json(await pbStatus()) }
+  catch (e) { console.error('[pb status]', e); res.status(502).json({ error: e.message }) }
+})
+
+// Push already-DNC-scrubbed contacts into PhoneBurner. Body: { contacts:[...] }.
+app.post('/api/phoneburner/push', requireAuth, async (req, res) => {
+  if (!pbConfigured()) return res.status(503).json({ error: 'PhoneBurner not configured (set PHONEBURNER_ACCESS_TOKEN or the OAuth vars)' })
+  const contacts = Array.isArray(req.body?.contacts) ? req.body.contacts.slice(0, 500) : []
+  if (!contacts.length) return res.status(400).json({ error: 'contacts[] required' })
+  try { res.json({ pushed: await pushContacts(contacts) }) }
+  catch (e) { console.error('[pb push]', e); res.status(502).json({ error: e.message }) }
+})
+
+// Mint a dial session; returns { redirect_url } to launch (iframe or new tab).
+app.post('/api/phoneburner/dial', requireAuth, async (req, res) => {
+  if (!pbConfigured()) return res.status(503).json({ error: 'PhoneBurner not configured' })
+  const contactIds = Array.isArray(req.body?.contactIds) ? req.body.contactIds : []
+  const callbackBase = PB_WEBHOOK_SECRET && PUBLIC_BASE ? `${PUBLIC_BASE}/api/phoneburner/hook/${PB_WEBHOOK_SECRET}` : ''
+  try { res.json(await createDialSession({ contactIds, callbackBase })) }
+  catch (e) { console.error('[pb dial]', e); res.status(502).json({ error: e.message }) }
+})
+
+app.post('/api/phoneburner/recent', requireAuth, (_req, res) => res.json({ calls: recentCalls() }))
+
+// OAuth connect — one-time admin setup (browser GET redirects). The start route
+// is gated by the webhook secret (?k=) so it isn't publicly triggerable.
+// Set PHONEBURNER_REDIRECT_URI = {PUBLIC_BASE_URL}/api/phoneburner/oauth/callback.
+app.get('/api/phoneburner/oauth/start', (req, res) => {
+  if (!PB_WEBHOOK_SECRET || req.query.k !== PB_WEBHOOK_SECRET) return res.status(403).send('forbidden')
+  if (pbMode() !== 'oauth') return res.status(400).send('personal-token mode — no OAuth needed')
+  res.redirect(oauthAuthorizeUrl('connect'))
+})
+app.get('/api/phoneburner/oauth/callback', async (req, res) => {
+  try { await oauthExchange(String(req.query.code || '')); res.send('PhoneBurner connected — you can close this tab.') }
+  catch (e) { res.status(502).send(`connect failed: ${e.message}`) }
+})
+
+// Webhooks — PhoneBurner calls these (no user auth); the path secret is the gate.
+// Body is untrusted: log the outcome + do your own lookups, never act on it blindly.
+app.post('/api/phoneburner/hook/:secret/:event', (req, res) => {
+  if (!PB_WEBHOOK_SECRET || req.params.secret !== PB_WEBHOOK_SECRET) return res.status(403).json({ error: 'forbidden' })
+  if (!['callbegin', 'calldone', 'contact-displayed'].includes(req.params.event)) return res.status(404).json({ error: 'unknown event' })
+  try {
+    const rec = recordCallEvent(req.params.event, req.body || {})
+    // On a warm/qualified live-call outcome, create a Pipedrive activity so the
+    // lead surfaces in the deal book (fire-and-forget — never fail the webhook).
+    if (req.params.event === 'calldone' && isWarm(rec?.disposition)) {
+      pushWarmDisposition(rec).catch((e) => console.error('[pb→pipedrive]', e.message))
+    }
+  } catch (e) { console.error('[pb hook]', e) }
+  res.json({ ok: true })
 })
 
 // static SPA + client-side routing fallback
