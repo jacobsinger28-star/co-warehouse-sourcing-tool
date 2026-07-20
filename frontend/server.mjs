@@ -33,6 +33,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { answerDealsQuestion, searchDeals } from './dealsChat.mjs'
+import { filterChat } from './filterChat.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 8080
@@ -156,6 +157,7 @@ const rateLimit = (max) => (req, res, next) => {
 app.use('/api/data', rateLimit(20))
 app.use('/api/deals-chat', rateLimit(20))
 app.use('/api/deals', rateLimit(60))
+app.use('/api/filter-chat', rateLimit(30))
 
 // the ONLY way to get the real data: authed (Supabase JWT + allowlist, or password).
 app.post('/api/data', requireAuth, (req, res) => {
@@ -194,6 +196,18 @@ app.post('/api/deals-chat', requireAuth, async (req, res) => {
   }
 })
 
+// Natural-language filter control: one Claude call → validated filter patch.
+app.post('/api/filter-chat', requireAuth, async (req, res) => {
+  const message = String(req.body?.message || '').trim().slice(0, 500)
+  if (!message) return res.status(400).json({ error: 'message required' })
+  try {
+    res.json(await filterChat(message, req.body?.state))
+  } catch (e) {
+    console.error('[filter-chat]', e)
+    res.status(502).json({ error: e?.message || 'filter chat failed' })
+  }
+})
+
 // ── live-scrape service (FastAPI/Playwright sidecar, localhost-only) ────────
 // The Python sidecar owns the brokerage scrapers + listings DB; this proxy is
 // the ONLY way to reach it, so every /live call passes the same auth as
@@ -205,6 +219,7 @@ const LIVE_ROUTES = {
   stop: ['POST', '/live/stop'],
   status: ['GET', '/live/status'],
   rows: ['GET', '/live/rows'],
+  import: ['POST', '/live/import'],
 }
 app.use('/api/live', rateLimit(60))
 app.post('/api/live/:action', requireAuth, async (req, res) => {

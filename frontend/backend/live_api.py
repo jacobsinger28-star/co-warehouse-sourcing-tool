@@ -26,7 +26,7 @@ from scorer import score_listing
 from database import (
     init_db, start_job, finish_job, get_job_status, get_listings,
     upsert_listing, prune_stale_listings, get_source_counts,
-    get_cached_source_counts,
+    get_cached_source_counts, _conn,
 )
 from geocoder import geocode_sync
 
@@ -122,6 +122,26 @@ async def start_scrape(payload: dict = None):
 def stop_scrape():
     _stop_event.set()
     return {"status": "stopping"}
+
+
+@app.post("/live/import")
+def live_import(payload: dict):
+    """Bulk-load listings (e.g. recovered pre-override EasyBay records). Rows are
+    upserted by listing_url; mark_cached=true flags them restored-from-backup so
+    the UI can badge them and a future force-refresh prunes any that died."""
+    rows = payload.get("listings") or []
+    mark_cached = bool(payload.get("mark_cached"))
+    urls, n = [], 0
+    for r in rows[:1000]:
+        if not isinstance(r, dict) or not r.get("listing_url") or not r.get("address"):
+            continue
+        upsert_listing(r)
+        urls.append(r["listing_url"])
+        n += 1
+    if mark_cached and urls:
+        with _conn() as c:
+            c.executemany("UPDATE listings SET cached=1 WHERE listing_url=?", [(u,) for u in urls])
+    return {"imported": n, "marked_cached": mark_cached}
 
 
 @app.get("/live/status")

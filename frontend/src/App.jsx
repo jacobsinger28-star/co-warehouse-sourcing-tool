@@ -4,6 +4,7 @@ import { RealDataContext } from './RealDataContext.js'
 import Icon from './Icon.jsx'
 import { PROPS, BROKERS, SCRAPE_SOURCES, MARKETS, SOURCES } from './data.js'
 import { liveScrape, liveStop, liveStatus, liveRows } from './liveApi.js'
+import FilterChat from './FilterChat.jsx'
 import {
   fmtInt, fmtSF, fmtMoney2, scDot, scLabel, chDot, chTag, chLabel, scChip,
   rowStyle, cardStyle, breakdownFor, catVar, fmtPhone, humanizeSig,
@@ -56,8 +57,9 @@ const SIG_DEFS = [
 ]
 const SIG_LABEL = Object.fromEntries(SIG_DEFS)
 // Full filter set — parity with the off-market tool's map/dashboard (search, SF
-// band, distance-to-core, hold, year range, held-since, owner location, manual-
-// review bucket). Numeric bounds are null-inclusive: a row with the field absent
+// band, distance-to-core, hold, year range, held-since, previous-sale price/year/
+// $-per-SF, owner location, manual-review bucket). Numeric bounds are null-
+// inclusive: a row with the field absent
 // passes through, so setting e.g. clear-height only narrows the markets that
 // carry that data (same semantics as the old map).
 const EMPTY_FILTERS = {
@@ -185,6 +187,12 @@ export default function App() {
     // "held since ≤ Y" = current owner acquired in/before year Y (long-held);
     // rows with no recorded sale drop out when set — same as the old map
     if (filters.heldSince && (!p.lastSale || +String(p.lastSale).slice(0, 4) > +filters.heldSince)) return false
+    // previous-sale screens — null-inclusive: rows with no recorded sale pass through
+    if (filters.saleYearMin && p.lastSale && +String(p.lastSale).slice(0, 4) < +filters.saleYearMin) return false
+    if (filters.salePriceMin && p.lastPrice != null && p.lastPrice < +filters.salePriceMin) return false
+    if (filters.salePriceMax && p.lastPrice != null && p.lastPrice > +filters.salePriceMax) return false
+    // $/SF only on clean single-parcel trades — bulk/portfolio sales skew per-SF
+    if (filters.salePsfMax && p.lastPrice != null && p.sf > 0 && (p.parcelsInSale ?? 1) === 1 && p.lastPrice / p.sf > +filters.salePsfMax) return false
     if (filters.ownerType !== 'all' && p.ownerType !== filters.ownerType) return false
     if (filters.ownerLoc === 'out' && !p.oos) return false
     if (filters.ownerLoc === 'in' && (p.channel !== 'off' || p.oos)) return false
@@ -223,6 +231,10 @@ export default function App() {
     ...(filters.distMax ? [{ label: `≤ ${filters.distMax} mi to core`, onClear: () => setF('distMax', '') }] : []),
     ...(filters.holdMin ? [{ label: `Held ≥ ${filters.holdMin} yr`, onClear: () => setF('holdMin', '') }] : []),
     ...(filters.heldSince ? [{ label: `Held since ≤ ${filters.heldSince}`, onClear: () => setF('heldSince', '') }] : []),
+    ...(filters.saleYearMin ? [{ label: `Sold ≥ ${filters.saleYearMin}`, onClear: () => setF('saleYearMin', '') }] : []),
+    ...(filters.salePriceMin ? [{ label: `Sale ≥ $${fmtInt(+filters.salePriceMin)}`, onClear: () => setF('salePriceMin', '') }] : []),
+    ...(filters.salePriceMax ? [{ label: `Sale ≤ $${fmtInt(+filters.salePriceMax)}`, onClear: () => setF('salePriceMax', '') }] : []),
+    ...(filters.salePsfMax ? [{ label: `Sale ≤ $${filters.salePsfMax}/SF`, onClear: () => setF('salePsfMax', '') }] : []),
     ...(filters.ownerType !== 'all' ? [{ label: filters.ownerType, onClear: () => setF('ownerType', 'all') }] : []),
     ...(filters.ownerLoc !== 'all' ? [{ label: filters.ownerLoc === 'out' ? 'Out-of-state owner' : 'In-state owner', onClear: () => setF('ownerLoc', 'all') }] : []),
     ...(filters.bucket !== 'all' ? [{ label: filters.bucket === 'universe' ? 'Scored universe only' : 'Manual review only', onClear: () => setF('bucket', 'all') }] : []),
@@ -256,6 +268,26 @@ export default function App() {
     return n.length ? `${n.join(' · ')}. Those filters narrow the markets that have the data and leave the rest unchanged.` : ''
   })()
   const goModule = (m) => { setModule(m); setRailOpen(false); setSearchOpen(false); setStatusOpen(false); setAcctOpen(false) }
+  // Apply a validated patch from the filter chat (server whitelists every value).
+  const FILTER_KEYS = ['market', 'ownerType', 'ownerLoc', 'bucket', 'clearMax', 'yearMin', 'yearMax', 'sfMin', 'sfMax', 'distMax', 'holdMin', 'heldSince']
+  const applyChatPatch = (p) => {
+    if (p.reset) {
+      setScore({ Actionable: true, Tentative: true, Pass: true })
+      setChannel('both')
+      setQ('')
+    }
+    if (p.channel) setChannel(p.channel)
+    if (p.score) setScore((s) => ({ ...s, ...p.score }))
+    setFilters((f) => {
+      const base = p.reset ? EMPTY_FILTERS : f
+      const next = { ...base, sig: { ...base.sig, ...(p.sig || {}) } }
+      for (const k of FILTER_KEYS) if (p[k] !== undefined) next[k] = p[k]
+      return next
+    })
+    if (p.q !== undefined) setQ(p.q)
+    if (p.view) setView(p.view)
+  }
+
   // Start/stop the REAL scrape job on the server. Optimistic flip; the status
   // poller is the source of truth and corrects state within one tick.
   const startSourcing = async () => {
@@ -366,7 +398,7 @@ export default function App() {
       {/* ===================== BODY ===================== */}
       <div style={css('flex:1;min-height:0;display:flex;position:relative;overflow:hidden;')}>
         {module === 'properties' && (
-          <div style={css('flex:1;display:flex;min-height:0;')}>
+          <div style={css('flex:1;display:flex;min-height:0;min-width:0;')}>
             {/* FILTER RAIL */}
             <div className="props-rail" data-open={railOpen ? '1' : '0'} style={css('flex:0 0 256px;border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0;')}>
               <div className="rail-close" style={css('align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--border);')}>
@@ -374,6 +406,7 @@ export default function App() {
                 <button onClick={() => setRailOpen(false)} aria-label="Close filters" className="tap" style={css('display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text2);')}><Icon name="x" size={15} /></button>
               </div>
               <div style={css('flex:1;overflow-y:auto;padding:14px 14px 8px;')}>
+                <FilterChat state={{ channel, score, filters, q, view }} onPatch={applyChatPatch} />
                 <div style={css(railLabel)}>Channel</div>
                 <div style={css('display:flex;gap:4px;padding:3px;background:var(--surface2);border-radius:7px;margin-bottom:20px;')}>
                   <button className="hov" onClick={() => setCh('off')} style={css(chSeg(channel === 'off'))}><span style={css('width:7px;height:7px;border-radius:2px;background:var(--off);flex:0 0 auto;')} />Off-market</button>
@@ -416,6 +449,14 @@ export default function App() {
                   <div style={css('display:flex;gap:8px;')}>
                     <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Min hold (yr)</label><input type="number" value={filters.holdMin} onChange={(e) => setF('holdMin', e.target.value)} placeholder="≥ 10" aria-label="Minimum hold years" style={css(numInput)} /></div>
                     <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Held since ≤</label><input type="number" value={filters.heldSince} onChange={(e) => setF('heldSince', e.target.value)} placeholder="2010" aria-label="Acquired in or before year" style={css(numInput)} /></div>
+                  </div>
+                  <div style={css('display:flex;gap:8px;')}>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Min sale price ($)</label><input type="number" value={filters.salePriceMin} onChange={(e) => setF('salePriceMin', e.target.value)} placeholder="≥ 1,000,000" aria-label="Minimum last sale price" style={css(numInput)} /></div>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max sale price ($)</label><input type="number" value={filters.salePriceMax} onChange={(e) => setF('salePriceMax', e.target.value)} placeholder="≤ 10,000,000" aria-label="Maximum last sale price" style={css(numInput)} /></div>
+                  </div>
+                  <div style={css('display:flex;gap:8px;')}>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Sold since ≥</label><input type="number" value={filters.saleYearMin} onChange={(e) => setF('saleYearMin', e.target.value)} placeholder="2018" aria-label="Last sale in or after year" style={css(numInput)} /></div>
+                    <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max sale $/SF</label><input type="number" value={filters.salePsfMax} onChange={(e) => setF('salePsfMax', e.target.value)} placeholder="≤ 80" aria-label="Maximum last sale price per SF" style={css(numInput)} /></div>
                   </div>
                   <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Owner type</label><select value={filters.ownerType} onChange={(e) => setF('ownerType', e.target.value)} style={css(selectStyle)} aria-label="Owner type"><option value="all">Any owner type</option><option>LLC</option><option>Trust</option><option>Individual</option><option>Partnership</option><option>Corp</option></select></div>
                   <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Owner location</label><select value={filters.ownerLoc} onChange={(e) => setF('ownerLoc', e.target.value)} style={css(selectStyle)} aria-label="Owner location"><option value="all">Any owner location</option><option value="in">In-state owner</option><option value="out">Out-of-state owner</option></select></div>
