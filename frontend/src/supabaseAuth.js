@@ -1,7 +1,12 @@
 // Minimal Supabase (GoTrue) email/password auth over REST — no SDK dependency,
 // matching this codebase's lean style (crypto.js hand-rolls WebCrypto the same
 // way). Only what the Gate needs: sign in, and keep the token fresh.
-import { clearSaved, loadRefreshToken } from './session.js'
+import { clearSaved, loadRefreshToken, storageWorks } from './session.js'
+
+/** True only for a definitive auth rejection (bad/revoked/expired token).
+ * 429 rate limits, 408s, 5xx and network errors are all transient — treating
+ * them as definitive would wipe a perfectly valid saved credential. */
+export const isAuthRejection = (e) => e?.status === 400 || e?.status === 401 || e?.status === 403
 //
 // cfg = { url, anonKey } — served by GET /api/config (Railway) or via
 // VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (local dev). The anon key is a
@@ -64,14 +69,19 @@ export function startAutoRefresh(cfg, session, onToken, onRefreshToken) {
   let refreshToken = session.refresh_token
   const arm = (expiresIn) => { timer = setTimeout(run, Math.max(30, (expiresIn || 3600) - 60) * 1000) }
   const run = async () => {
+    // Storage works but holds no token → the user signed out in some tab.
+    // Stop dead: falling back to our in-memory token here would keep the
+    // session alive and re-persist it, silently undoing the sign-out.
+    const stored = loadRefreshToken()
+    if (!stored && storageWorks()) return
     try {
-      const s = await refreshSession(cfg, loadRefreshToken() || refreshToken)
+      const s = await refreshSession(cfg, stored || refreshToken)
       refreshToken = s.refresh_token || refreshToken
       onToken(s.access_token)
       if (s.refresh_token) onRefreshToken?.(s.refresh_token)
       arm(s.expires_in)
     } catch (e) {
-      if (e?.status >= 400 && e.status < 500) {
+      if (isAuthRejection(e)) {
         // Token family revoked — this page keeps working until its JWT
         // expires, but a reload should go straight to the sign-in form.
         clearSaved()

@@ -4,9 +4,9 @@ import { loadRealData } from './crypto.js'
 import { RealDataContext } from './RealDataContext.js'
 import {
   clearSaved, loadRefreshToken, loadSavedPassword, savePassword, saveRefreshToken,
-  setSessionPassword, setSessionToken,
+  setAuthCfg, setCurrentUser, setSessionPassword, setSessionToken,
 } from './session.js'
-import { refreshSession, signInWithPassword, signUp, startAutoRefresh } from './supabaseAuth.js'
+import { isAuthRejection, refreshSession, signInWithPassword, signUp, startAutoRefresh } from './supabaseAuth.js'
 
 // Access gate for this internal, PII-bearing tool. Two modes, picked at load:
 //
@@ -69,6 +69,7 @@ export default function Gate({ children }) {
   // A saved credential exists → we're attempting a silent restore; show the
   // splash (not the sign-in form) until it succeeds or falls through.
   const [restoring, setRestoring] = useState(() => !!(loadRefreshToken() || loadSavedPassword()))
+  const [serverDown, setServerDown] = useState(false)
   const stopRefresh = useRef(null)
 
   const baseUrl = import.meta.env.BASE_URL
@@ -79,15 +80,26 @@ export default function Gate({ children }) {
   // down there would still be in its temporal dead zone — calling it threw a
   // ReferenceError that silently killed every silent sign-in).
   const enterWithSession = async (session, c = cfg) => {
+    stopRefresh.current?.() // never leave a previous refresher running
     setSessionToken(session.access_token)
-    if (session.refresh_token) saveRefreshToken(session.refresh_token)
+    setAuthCfg(c) // lets signOut revoke the token family server-side
+    if (session.user) setCurrentUser(session.user) // real name/email for the account menu
     // Supabase rotates refresh tokens — persist each new one or the stored copy
     // goes stale within the hour.
-    stopRefresh.current?.()
-    stopRefresh.current = startAutoRefresh(c, session, setSessionToken, saveRefreshToken)
-    const data = await loadRealData({ token: session.access_token }, baseUrl)
-    setRealData(data)
-    setOk(true)
+    if (session.refresh_token) saveRefreshToken(session.refresh_token)
+    try {
+      // This is also the server's allowlist gate (throws for accounts refused
+      // data access) — nothing gets armed until the account is accepted.
+      const data = await loadRealData({ token: session.access_token }, baseUrl)
+      stopRefresh.current = startAutoRefresh(c, session, setSessionToken, saveRefreshToken)
+      setRealData(data)
+      setOk(true)
+    } catch (ex) {
+      // Refused account: drop the credential now, in the same tick — with no
+      // refresher armed there is nothing left to resurrect it later.
+      clearSaved()
+      throw ex
+    }
   }
 
   useEffect(() => {
@@ -125,16 +137,23 @@ export default function Gate({ children }) {
       } catch (ex) {
         if (!on) return
         console.error('[gate] silent sign-in restore failed', ex)
-        if (ex?.status >= 400 && ex.status < 500) {
+        if (isAuthRejection(ex)) {
           clearSaved() // the auth server rejected the token outright — it's dead
         } else if (/allowed list/.test(ex?.message || '')) {
-          clearSaved() // valid account, but the server refuses it data access
-          setErr(ex.message)
+          setErr(ex.message) // enterWithSession already dropped the credential
         }
-        // anything else (network hiccup, 5xx, mid-deploy restart) keeps the
-        // credential — the next load retries, and manual sign-in still works
+        // anything else (network hiccup, 5xx, 429, mid-deploy restart) keeps
+        // the credential — the next load retries, and manual sign-in works
       }
-      if (on) { setCfg(c); setRestoring(false) }
+      if (on) {
+        // Supabase session saved but the server can't even tell us its auth
+        // mode (mid-deploy restart): showing the legacy password form would be
+        // wrong and confusing — show a retry screen instead; the credential is
+        // intact and the next load signs in silently.
+        if (!c && !det.reachable && rt) setServerDown(true)
+        setCfg(c)
+        setRestoring(false)
+      }
     })()
     return () => {
       on = false
@@ -160,6 +179,29 @@ export default function Gate({ children }) {
             <span style={css('width:14px;height:14px;border-radius:50%;border:2px solid var(--border2);border-top-color:var(--accent);animation:spin .7s linear infinite;')} />
             Signing you in…
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Signed in previously, but the server didn't answer (likely mid-deploy):
+  // the saved session is intact — offer a retry instead of the wrong form.
+  if (serverDown) {
+    return (
+      <div data-theme="dark" style={css('min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--text);padding:24px;')}>
+        <div style={css('display:flex;flex-direction:column;align-items:center;gap:16px;animation:fadein .25s ease;text-align:center;')}>
+          <div style={css('display:flex;align-items:center;gap:10px;')}>
+            <div style={css('width:22px;height:22px;border-radius:5px;background:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);')} />
+            <span style={css('font-weight:600;font-size:15px;letter-spacing:-.01em;')}>SimiCapital</span>
+            <span style={css('color:var(--text3);')}>·</span>
+            <span style={css('color:var(--text2);font-weight:500;font-size:13px;')}>Sourcing</span>
+          </div>
+          <div style={css('max-width:340px;font-size:13px;color:var(--text2);line-height:1.55;')}>
+            Can’t reach the server right now — it may be restarting after an update. Your sign-in is saved; try again in a moment.
+          </div>
+          <button onClick={() => window.location.reload()} style={css('height:38px;padding:0 22px;border:none;border-radius:9px;background:var(--accent);color:#06120F;font-weight:600;font-size:13px;cursor:pointer;')}>
+            Retry
+          </button>
         </div>
       </div>
     )

@@ -4,7 +4,7 @@ import { RealDataContext } from './RealDataContext.js'
 import Icon from './Icon.jsx'
 import { PROPS, BROKERS, SCRAPE_SOURCES, MARKETS, SOURCES } from './data.js'
 import { liveScrape, liveStop, liveStatus, liveRows } from './liveApi.js'
-import { signOut } from './session.js'
+import { identity, signOut } from './session.js'
 import FilterChat from './FilterChat.jsx'
 import {
   fmtInt, fmtSF, fmtMoney2, scDot, scLabel, chDot, chTag, chLabel, scChip,
@@ -313,6 +313,7 @@ export default function App() {
     { k: 'brokers', label: 'Brokers', icon: 'users' },
   ]
   const headerTitle = view === 'brokers' ? 'Brokers' : 'All properties'
+  const me = identity() // signed-in account for the avatar + menu (was hard-coded "J. Simi")
 
   return (
     <div data-theme={theme} style={css('display:flex;flex-direction:column;height:100vh;background:var(--bg);color:var(--text);font-size:13px;line-height:1.45;overflow:hidden;')}>
@@ -377,7 +378,7 @@ export default function App() {
           {q && <button onClick={() => setQ('')} aria-label="Clear search" style={css('display:flex;align-items:center;background:none;border:none;color:var(--text3);cursor:pointer;padding:0;')}><Icon name="x" size={13} sw={2.2} /></button>}
         </div>
         <button className="hov tap" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} aria-label="Toggle light / dark theme" style={css('display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text2);flex:0 0 auto;')}><Icon name="moon" size={15} sw={1.7} /></button>
-        <button onClick={() => setAcctOpen(true)} aria-label="Account menu" style={css('flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--text2);')}>JS</button>
+        <button onClick={() => setAcctOpen(true)} aria-label="Account menu" title={me.sub} style={css('flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--text2);')}>{me.initials}</button>
       </div>
 
       {/* ===================== MODULE SWITCHER (desktop/tablet) ===================== */}
@@ -798,9 +799,8 @@ export default function App() {
           <div onClick={() => setAcctOpen(false)} style={css('position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:120;animation:fadein .15s ease;')} />
           <div style={css('position:fixed;left:0;right:0;bottom:0;z-index:121;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--border2);padding:18px;animation:sheetup .24s ease;')}>
             <div style={css('width:38px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 14px;')} />
-            <div style={css('display:flex;align-items:center;gap:11px;margin-bottom:18px;')}><div style={css('width:42px;height:42px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--text2);')}>JS</div><div style={css('flex:1;')}><div style={css('font-size:14px;font-weight:600;')}>J. Simi</div><div style={css('font-size:11.5px;color:var(--text3);')}>Acquisitions analyst</div></div><button className="tap" onClick={() => setAcctOpen(false)} aria-label="Close" style={css('display:flex;align-items:center;justify-content:center;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button></div>
+            <div style={css('display:flex;align-items:center;gap:11px;margin-bottom:18px;')}><div style={css('width:42px;height:42px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--text2);')}>{me.initials}</div><div style={css('flex:1;min-width:0;')}><div style={css('font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{me.name}</div><div style={css('font-size:11.5px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{me.sub}</div></div><button className="tap" onClick={() => setAcctOpen(false)} aria-label="Close" style={css('display:flex;align-items:center;justify-content:center;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button></div>
             <button className="tap" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} style={css('display:flex;align-items:center;gap:10px;width:100%;height:48px;padding:0 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:13.5px;margin-bottom:10px;')}><Icon name="moon" size={17} sw={1.7} />Toggle light / dark theme</button>
-            <div style={css('display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:10px 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:13.5px;margin-bottom:10px;')}><span style={css('width:8px;height:8px;border-radius:50%;background:var(--accent);flex:0 0 auto;')} /><div style={css('flex:1;')}>Markets</div><span style={css('font-size:12px;color:var(--text3);')}>All 10 metros</span></div>
             <button className="tap" onClick={signOut} style={css('display:flex;align-items:center;gap:10px;width:100%;height:48px;padding:0 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--red);font-size:13.5px;')}><Icon name="slashCircle" size={17} sw={1.7} />Sign out</button>
           </div>
         </>
