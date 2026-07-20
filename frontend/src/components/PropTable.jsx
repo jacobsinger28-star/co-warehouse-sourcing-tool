@@ -44,6 +44,24 @@ const ORDER = COLUMNS.map((c) => c.key)
 // greedy priority: whichever of these is visible absorbs slack (no fixed width,
 // no resize handle) so the table always fills 100% with no dead gap.
 const GREEDY_PRIORITY = ['owner', 'addr', 'signal', 'score', 'contact']
+// per-column sort key (the raw comparable value behind each cell)
+const SORT_VAL = {
+  ch: (p) => p.channel, addr: (p) => p.addr, mkt: (p) => p.mkt, sf: (p) => p.sf,
+  score: (p) => p.score, signal: (p) => p.signal, owner: (p) => ownerOrBroker(p),
+  ask: (p) => (p.channel === 'on' ? p.ask : null), year: (p) => p.year,
+  clear: (p) => p.clear, dist: (p) => p.distMi, held: (p) => p.holdYears, contact: (p) => p.contact,
+}
+// comparator: nulls/undefined always sort last; numbers numerically, else localeCompare
+const cmp = (a, b, dir) => {
+  const an = a == null || a === '', bn = b == null || b === ''
+  if (an && bn) return 0
+  if (an) return 1
+  if (bn) return -1
+  let r
+  if (typeof a === 'number' && typeof b === 'number') r = a - b
+  else r = String(a).localeCompare(String(b), undefined, { numeric: true })
+  return dir === 'desc' ? -r : r
+}
 const STORE_KEY = 'simicap.propcols.v1'
 
 const loadPrefs = () => {
@@ -56,6 +74,11 @@ const loadPrefs = () => {
 export default function PropTable({ rows, selProps, toggleProp, allSel, onToggleAll, onOpen }) {
   const [prefs, setPrefs] = useState(loadPrefs) // { vis:{key:bool}, w:{key:px} }
   const [menuOpen, setMenuOpen] = useState(false)
+  const [sort, setSort] = useState({ key: null, dir: 'asc' }) // click header to order by
+  // click a header: none → asc → desc → none (cycle), one sort column at a time
+  const toggleSort = (key) => setSort((s) => (
+    s.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : { key: null, dir: 'asc' }
+  ))
   const menuRef = useRef(null)
   const prefsRef = useRef(prefs)
   useEffect(() => { prefsRef.current = prefs }, [prefs])
@@ -83,12 +106,22 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
     return GREEDY_PRIORITY.find((k) => vis.has(k)) || (visibleCols[0]?.key ?? null)
   }, [visibleCols])
 
+  // rows sorted by the active column (stable; sorts a copy, never the prop)
+  const sortedRows = useMemo(() => {
+    if (!sort.key || !SORT_VAL[sort.key]) return rows
+    const val = SORT_VAL[sort.key]
+    return rows.map((p, i) => [p, i]).sort((A, B) => {
+      const r = cmp(val(A[0]), val(B[0]), sort.dir)
+      return r !== 0 ? r : A[1] - B[1]
+    }).map(([p]) => p)
+  }, [rows, sort])
+
   const CHECK_W = 34
   const CHEV_W = 28
   const minTableW = CHECK_W + CHEV_W + visibleCols.reduce((a, c) => a + (c.key === greedyKey ? c.min : widthOf(c.key)), 0)
 
   const setVis = (k, on) => setPrefs((p) => ({ ...p, vis: { ...p.vis, [k]: on } }))
-  const resetCols = () => setPrefs({ vis: {}, w: {} })
+  const resetCols = () => { setPrefs({ vis: {}, w: {} }); setSort({ key: null, dir: 'asc' }) }
 
   // drag-to-resize a fixed (non-greedy) column
   const startResize = (e, key) => {
@@ -161,11 +194,13 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
               <th style={css('padding:9px 0 9px 14px;border-bottom:1px solid var(--border);')}><input type="checkbox" checked={allSel} onChange={onToggleAll} aria-label="Select all" style={css('accent-color:var(--accent);')} /></th>
               {visibleCols.map((c) => {
                 const resizable = c.key !== greedyKey
+                const active = sort.key === c.key
+                const arrow = active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''
                 return (
-                  <th key={c.key} title={c.label} style={css(thBase + `text-align:${c.align};`)}>
-                    {c.label}
+                  <th key={c.key} title={`${c.label} — click to sort`} onClick={() => toggleSort(c.key)} style={css(thBase + `text-align:${c.align};cursor:pointer;user-select:none;${active ? 'color:var(--text);' : ''}`)}>
+                    {c.label}<span style={css('font-size:9px;color:var(--accent);')}>{arrow}</span>
                     {resizable && (
-                      <span onPointerDown={(e) => startResize(e, c.key)} className="col-rsz" style={css('position:absolute;top:0;right:0;width:9px;height:100%;cursor:col-resize;touch-action:none;')} />
+                      <span onPointerDown={(e) => startResize(e, c.key)} onClick={(e) => e.stopPropagation()} className="col-rsz" style={css('position:absolute;top:0;right:0;width:9px;height:100%;cursor:col-resize;touch-action:none;')} />
                     )}
                   </th>
                 )
@@ -174,7 +209,7 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
             </tr>
           </thead>
           <tbody>
-            {rows.map((p) => (
+            {sortedRows.map((p) => (
               <tr key={p.id} className="hov" tabIndex={0} role="button" onClick={() => onOpen(p.id)} style={css(rowStyle(p.cat))}>
                 <td style={css('padding:0 0 0 14px;')} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selProps.includes(p.id)} onChange={() => toggleProp(p.id)} aria-label="Select property" style={css('accent-color:var(--accent);')} /></td>
                 {visibleCols.map((c) => (
