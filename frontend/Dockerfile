@@ -27,6 +27,7 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.mjs ./server.mjs
 COPY --from=build /app/dealsChat.mjs ./dealsChat.mjs
+COPY --from=build /app/filterChat.mjs ./filterChat.mjs
 COPY --from=build /app/data.real.json ./data.real.json
 COPY start.sh ./start.sh
 RUN chmod +x start.sh
