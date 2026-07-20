@@ -796,12 +796,15 @@ export default function App() {
 
       {acctOpen && (
         <>
-          <div onClick={() => setAcctOpen(false)} style={css('position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:120;animation:fadein .15s ease;')} />
-          <div style={css('position:fixed;left:0;right:0;bottom:0;z-index:121;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--border2);padding:18px;animation:sheetup .24s ease;')}>
-            <div style={css('width:38px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 14px;')} />
-            <div style={css('display:flex;align-items:center;gap:11px;margin-bottom:18px;')}><div style={css('width:42px;height:42px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--text2);')}>{me.initials}</div><div style={css('flex:1;min-width:0;')}><div style={css('font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{me.name}</div><div style={css('font-size:11.5px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{me.sub}</div></div><button className="tap" onClick={() => setAcctOpen(false)} aria-label="Close" style={css('display:flex;align-items:center;justify-content:center;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button></div>
-            <button className="tap" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} style={css('display:flex;align-items:center;gap:10px;width:100%;height:48px;padding:0 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:13.5px;margin-bottom:10px;')}><Icon name="moon" size={17} sw={1.7} />Toggle light / dark theme</button>
-            <button className="tap" onClick={signOut} style={css('display:flex;align-items:center;gap:10px;width:100%;height:48px;padding:0 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--red);font-size:13.5px;')}><Icon name="slashCircle" size={17} sw={1.7} />Sign out</button>
+          {/* transparent click-catcher — a dropdown shouldn't dim the page */}
+          <div onClick={() => setAcctOpen(false)} style={css('position:fixed;inset:0;z-index:120;')} />
+          <div role="menu" style={css('position:fixed;top:54px;right:12px;z-index:121;width:232px;background:var(--surface);border:1px solid var(--border2);border-radius:11px;box-shadow:0 16px 44px rgba(0,0,0,.45);padding:6px;animation:fadein .12s ease;')}>
+            <div style={css('display:flex;flex-direction:column;gap:2px;padding:8px 10px 10px;')}>
+              <span style={css('font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{me.name}</span>
+              <span style={css('font-size:11.5px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{me.sub}</span>
+            </div>
+            <div style={css('height:1px;background:var(--border);margin:0 4px 6px;')} />
+            <button className="hov tap" onClick={signOut} style={css('display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 10px;background:transparent;border:none;border-radius:7px;color:var(--red);font-size:13px;font-weight:500;text-align:left;')}><Icon name="slashCircle" size={16} sw={1.8} />Sign out</button>
           </div>
         </>
       )}
