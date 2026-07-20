@@ -410,7 +410,7 @@ export default function App() {
                 <button onClick={() => setRailOpen(false)} aria-label="Close filters" className="tap" style={css('display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text2);')}><Icon name="x" size={15} /></button>
               </div>
               <div style={css('flex:1;overflow-y:auto;padding:14px 14px 8px;')}>
-                <FilterChat state={{ channel, score, filters, q, view }} onPatch={applyChatPatch} />
+                <FilterChat onPatch={applyChatPatch} />
                 <div style={css(railLabel)}>Channel</div>
                 <div style={css('display:flex;gap:4px;padding:3px;background:var(--surface2);border-radius:7px;margin-bottom:20px;')}>
                   <button className="hov" onClick={() => setCh('off')} style={css(chSeg(channel === 'off'))}><span style={css('width:7px;height:7px;border-radius:2px;background:var(--off);flex:0 0 auto;')} />Off-market</button>
