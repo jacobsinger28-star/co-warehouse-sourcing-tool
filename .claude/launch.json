@@ -3,9 +3,11 @@
   "configurations": [
     {
       "name": "sourcing-platform",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "cwd": "frontend",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/razkorteran/Desktop/code/SimiCapital/sourcing-platform/frontend && npm run dev"
+      ],
       "port": 3001,
       "autoPort": true
     }
