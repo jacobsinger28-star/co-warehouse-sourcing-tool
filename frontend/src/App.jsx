@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { css } from './css.js'
 import { RealDataContext } from './RealDataContext.js'
 import Icon from './Icon.jsx'
@@ -170,7 +170,10 @@ export default function App() {
 
   // derived
   const ql = q.trim().toLowerCase()
-  const visibleProps = propsData.filter((p) => {
+  // memoized so unrelated state churn (the 3s/60s live-status poller) keeps the
+  // array identity stable — otherwise DealMap re-renders every tick and Leaflet
+  // tears down / re-adds markers, flickering any open popup
+  const visibleProps = useMemo(() => propsData.filter((p) => {
     if (!(channel === 'both' || p.channel === channel) || !score[p.cat]) return false
     if (ql) {
       const hay = `${p.addr} ${p.owner || ''} ${p.broker || ''} ${p.firm || ''} ${p.apn || ''} ${p.mkt || ''} ${p.person || ''} ${(p.phones || []).join(' ')} ${(p.emails || []).join(' ')}`.toLowerCase()
@@ -208,7 +211,7 @@ export default function App() {
     if (sg.distress && !(p.nViol > 0 || p.nPermit > 0 || p.sigs?.length > 0)) return false
     if (sg.contact && (p.contact === 'No contact' || p.contact === 'Listing only')) return false
     return true
-  })
+  }), [propsData, ql, channel, score, filters])
   const matchShown = visibleProps.length
   const showEmpty = matchShown === 0 && (view === 'table' || view === 'map')
   const bulkCount = view === 'brokers' ? selBrokers.length : selProps.length

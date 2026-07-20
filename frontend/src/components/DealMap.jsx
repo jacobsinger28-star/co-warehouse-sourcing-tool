@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useMemo, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Tooltip, ZoomControl, useMap } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import L from 'leaflet'
@@ -12,13 +12,18 @@ import PropPopup from './PropPopup.jsx'
 
 const CAT_HEX = { Actionable: '#22c55e', Tentative: '#f59e0b', Pass: '#ef4444' }
 
+// icons cached per (channel, category) — a fresh L.divIcon each render would make
+// react-leaflet setIcon() every marker on every parent re-render, closing open popups
+const ICON_CACHE = {}
 function markerIcon(p) {
+  const key = `${p.channel}:${p.cat}`
+  if (ICON_CACHE[key]) return ICON_CACHE[key]
   const color = CAT_HEX[p.cat] ?? '#94a3b8'
   const html =
     p.channel === 'off'
       ? `<div style="width:15px;height:15px;border-radius:50%;background:transparent;border:2.5px solid ${color};box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`
       : `<div style="width:14px;height:14px;border-radius:50% 50% 50% 0;background:${color};border:1.5px solid #fff;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`
-  return L.divIcon({ className: '', html, iconSize: [15, 15], iconAnchor: [8, 8], popupAnchor: [0, -10] })
+  return (ICON_CACHE[key] = L.divIcon({ className: '', html, iconSize: [15, 15], iconAnchor: [8, 8], popupAnchor: [0, -10] }))
 }
 
 // Tile sources keyed by the console's map-style + theme toggle.
@@ -50,7 +55,7 @@ function FitBounds({ points }) {
   return null
 }
 
-export default function DealMap({ props = [], meta, mapStyle = 'clean', theme = 'dark', onOpen }) {
+function DealMap({ props = [], meta, mapStyle = 'clean', theme = 'dark', onOpen }) {
   const points = useMemo(() => props.filter((p) => p.lat != null && p.lng != null), [props])
   const t = tiles(mapStyle, theme)
 
@@ -78,3 +83,7 @@ export default function DealMap({ props = [], meta, mapStyle = 'clean', theme = 
     </MapContainer>
   )
 }
+
+// memoized: with visibleProps/meta/onOpen identity-stable in App, the live-status
+// poller's re-renders never reach Leaflet
+export default memo(DealMap)
