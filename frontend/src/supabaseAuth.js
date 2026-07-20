@@ -1,6 +1,7 @@
 // Minimal Supabase (GoTrue) email/password auth over REST — no SDK dependency,
 // matching this codebase's lean style (crypto.js hand-rolls WebCrypto the same
 // way). Only what the Gate needs: sign in, and keep the token fresh.
+import { clearSaved, loadRefreshToken } from './session.js'
 //
 // cfg = { url, anonKey } — served by GET /api/config (Railway) or via
 // VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (local dev). The anon key is a
@@ -13,7 +14,11 @@ async function tokenRequest(cfg, grantType, body) {
     body: JSON.stringify(body),
   })
   const d = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(d.error_description || d.msg || d.error || `Sign-in failed (${r.status})`)
+  if (!r.ok) {
+    const e = new Error(d.error_description || d.msg || d.error || `Sign-in failed (${r.status})`)
+    e.status = r.status // callers distinguish definitive 4xx from transient failures
+    throw e
+  }
   return d // { access_token, refresh_token, expires_in, user }
 }
 
@@ -43,11 +48,16 @@ export const refreshSession = (cfg, refreshToken) =>
 
 /**
  * Keep the access token fresh for the life of the page. Refreshes ~60s before
- * expiry; on a failed refresh keeps the old token and retries shortly (the
- * server will 401 if it truly expired — same UX as the old "reload to re-auth").
- * Supabase rotates the refresh token on every use, so onRefreshToken (optional)
- * fires with each new one for callers that persist it across reloads.
- * Returns a stop() cleanup.
+ * expiry. Supabase rotates the refresh token on every use, so onRefreshToken
+ * (optional) fires with each new one for callers that persist it across
+ * reloads — and each refresh prefers the token persisted in session.js over
+ * this tab's in-memory copy, so several open tabs share one rotating chain
+ * instead of tripping Supabase's reuse detection (which revokes the whole
+ * token family and used to sign everyone out within the hour).
+ * A definitive 4xx (revoked/expired family) stops refreshing and drops the
+ * persisted token; anything transient keeps the old token and retries (the
+ * server will 401 if it truly expired — same UX as the old "reload to
+ * re-auth"). Returns a stop() cleanup.
  */
 export function startAutoRefresh(cfg, session, onToken, onRefreshToken) {
   let timer
@@ -55,12 +65,18 @@ export function startAutoRefresh(cfg, session, onToken, onRefreshToken) {
   const arm = (expiresIn) => { timer = setTimeout(run, Math.max(30, (expiresIn || 3600) - 60) * 1000) }
   const run = async () => {
     try {
-      const s = await refreshSession(cfg, refreshToken)
+      const s = await refreshSession(cfg, loadRefreshToken() || refreshToken)
       refreshToken = s.refresh_token || refreshToken
       onToken(s.access_token)
       if (s.refresh_token) onRefreshToken?.(s.refresh_token)
       arm(s.expires_in)
-    } catch {
+    } catch (e) {
+      if (e?.status >= 400 && e.status < 500) {
+        // Token family revoked — this page keeps working until its JWT
+        // expires, but a reload should go straight to the sign-in form.
+        clearSaved()
+        return
+      }
       arm(120) // transient failure — retry in 2 min with the old refresh token
     }
   }

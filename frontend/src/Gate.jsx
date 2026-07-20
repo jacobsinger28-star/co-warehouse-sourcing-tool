@@ -34,19 +34,25 @@ async function sha256Hex(s) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-// Resolve the auth mode: a Supabase {url, anonKey, allowedDomains?} config, or
-// null → legacy. VITE env vars (local dev) take precedence for url/key, but we
-// still ask the server for allowedDomains so the signup hint works everywhere.
+// Resolve the auth mode: {cfg, reachable} where cfg is a Supabase
+// {url, anonKey, allowedDomains?} config or null → legacy. VITE env vars
+// (local dev) take precedence for url/key, but we still ask the server for
+// allowedDomains so the signup hint works everywhere. `reachable` records
+// whether /api/config actually answered: a restarting/unreachable server must
+// not be mistaken for "the server says legacy mode" (that mistake used to
+// wipe a perfectly good saved session during deploys).
 async function detectSupabase(baseUrl) {
   let server = null
+  let reachable = false
   try {
     const r = await fetch(`${baseUrl}api/config`, { cache: 'no-store' })
+    reachable = r.ok
     if (r.ok) server = (await r.json())?.supabase ?? null
-  } catch { /* static host, no backend */ }
+  } catch { /* static host, no backend, or server mid-restart */ }
   const url = import.meta.env.VITE_SUPABASE_URL
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-  if (url && anonKey) return { url, anonKey, allowedDomains: server?.allowedDomains }
-  return server
+  if (url && anonKey) return { cfg: { url, anonKey, allowedDomains: server?.allowedDomains }, reachable: true }
+  return { cfg: server, reachable }
 }
 
 export default function Gate({ children }) {
@@ -67,44 +73,68 @@ export default function Gate({ children }) {
 
   const baseUrl = import.meta.env.BASE_URL
 
+  // Defined BEFORE the effect and before any conditional return: the restore
+  // effect calls this on its first run, when the splash's early return means
+  // nothing below it in the component body has been initialized yet (a const
+  // down there would still be in its temporal dead zone — calling it threw a
+  // ReferenceError that silently killed every silent sign-in).
+  const enterWithSession = async (session, c = cfg) => {
+    setSessionToken(session.access_token)
+    if (session.refresh_token) saveRefreshToken(session.refresh_token)
+    // Supabase rotates refresh tokens — persist each new one or the stored copy
+    // goes stale within the hour.
+    stopRefresh.current?.()
+    stopRefresh.current = startAutoRefresh(c, session, setSessionToken, saveRefreshToken)
+    const data = await loadRealData({ token: session.access_token }, baseUrl)
+    setRealData(data)
+    setOk(true)
+  }
+
   useEffect(() => {
     let on = true
     ;(async () => {
-      const c = await detectSupabase(baseUrl)
+      const det = await detectSupabase(baseUrl)
       if (!on) return
-      // Silent restore from a previous visit — keeps the form hidden (cfg stays
-      // undefined → "Checking sign-in method…") until we know it failed.
+      const c = det.cfg
+      const rt = loadRefreshToken()
+      const savedPw = loadSavedPassword()
+      // Silent restore from a previous visit — the splash stays up until this
+      // either enters the app or falls through to the sign-in form.
       try {
-        if (c) {
-          const rt = loadRefreshToken()
-          if (rt) {
-            const session = await refreshSession(c, rt)
-            if (!on) return
-            setCfg(c)
-            await enterWithSession(session, c)
-            return
-          }
-        } else {
-          const saved = loadSavedPassword()
-          if (saved && (await sha256Hex(saved)) === PW_HASH) {
-            const data = await loadRealData({ password: saved }, baseUrl).catch(() => null)
-            if (!on) return
-            setSessionPassword(saved)
-            setCfg(c)
-            setRealData(data)
-            setOk(true)
-            return
-          }
+        if (c && rt) {
+          const session = await refreshSession(c, rt)
+          if (!on) return
+          setCfg(c)
+          await enterWithSession(session, c)
+          return
         }
-      } catch { /* stale/revoked credential — fall through to the form */ }
-      if (on) {
-        // Any credential still saved here failed to restore (revoked token,
-        // changed password, wrong mode) — drop it so the next load goes
-        // straight to the form instead of replaying the splash.
-        clearSaved()
-        setCfg(c)
-        setRestoring(false)
+        if (!c && savedPw && (await sha256Hex(savedPw)) === PW_HASH) {
+          const data = await loadRealData({ password: savedPw }, baseUrl).catch(() => null)
+          if (!on) return
+          setSessionPassword(savedPw)
+          setCfg(c)
+          setRealData(data)
+          setOk(true)
+          return
+        }
+        // A credential is saved but unusable in the detected mode (legacy
+        // password under Supabase, changed password, leftover token in legacy
+        // mode). Only drop it when the server actually answered — an
+        // unreachable server says nothing about the credential.
+        if (det.reachable && (rt || savedPw)) clearSaved()
+      } catch (ex) {
+        if (!on) return
+        console.error('[gate] silent sign-in restore failed', ex)
+        if (ex?.status >= 400 && ex.status < 500) {
+          clearSaved() // the auth server rejected the token outright — it's dead
+        } else if (/allowed list/.test(ex?.message || '')) {
+          clearSaved() // valid account, but the server refuses it data access
+          setErr(ex.message)
+        }
+        // anything else (network hiccup, 5xx, mid-deploy restart) keeps the
+        // credential — the next load retries, and manual sign-in still works
       }
+      if (on) { setCfg(c); setRestoring(false) }
     })()
     return () => {
       on = false
@@ -145,18 +175,6 @@ export default function Gate({ children }) {
     !cfg.allowedDomains.includes(email.toLowerCase().slice(email.lastIndexOf('@')))
       ? `Heads up: only ${cfg.allowedDomains.join(', ')} accounts get data access.`
       : ''
-
-  const enterWithSession = async (session, c = cfg) => {
-    setSessionToken(session.access_token)
-    if (session.refresh_token) saveRefreshToken(session.refresh_token)
-    // Supabase rotates refresh tokens — persist each new one or the stored copy
-    // goes stale within the hour.
-    stopRefresh.current?.()
-    stopRefresh.current = startAutoRefresh(c, session, setSessionToken, saveRefreshToken)
-    const data = await loadRealData({ token: session.access_token }, baseUrl)
-    setRealData(data)
-    setOk(true)
-  }
 
   const submit = async (e) => {
     e.preventDefault()

@@ -329,3 +329,58 @@ export const EXAMPLES = [
   'hide pass · low clear · within 5 miles',
   'reset',
 ]
+
+// ── chip selection: derive "is this term active?" from the live console state ─
+// Chips stay lit after a click AND light up when the same value is set from the
+// legacy filter rail — selection is computed from state, never stored.
+const _termPatch = new Map()
+export function patchForTerm(term) {
+  if (!_termPatch.has(term)) _termPatch.set(term, parseQuery(term).patch)
+  return _termPatch.get(term)
+}
+
+export function patchSatisfied(patch, state) {
+  if (!patch || !Object.keys(patch).length || patch.reset) return false
+  const f = state?.filters || {}
+  for (const [k, v] of Object.entries(patch)) {
+    if (k === 'reply') continue
+    if (k === 'channel') { if (state.channel !== v) return false }
+    else if (k === 'score') { for (const [b, on] of Object.entries(v)) if (Boolean(state.score?.[b]) !== on) return false }
+    else if (k === 'sig') { for (const [sk, on] of Object.entries(v)) if (Boolean(f.sig?.[sk]) !== on) return false }
+    else if (k === 'q') { if ((state.q || '') !== v) return false }
+    else if (k === 'view') { if (state.view !== v) return false }
+    else if (String(f[k] ?? '') !== String(v)) return false
+  }
+  return true
+}
+
+// Per-key defaults — clicking a SELECTED chip un-applies it back to these.
+export function inversePatch(patch) {
+  const inv = {}
+  for (const [k, v] of Object.entries(patch)) {
+    if (k === 'reply' || k === 'reset' || k === 'view') continue // view has no "off"
+    if (k === 'channel') inv.channel = 'both'
+    else if (k === 'score') { inv.score = Object.fromEntries(Object.keys(v).map((b) => [b, true])) }
+    else if (k === 'sig') { inv.sig = Object.fromEntries(Object.keys(v).map((s) => [s, false])) }
+    else if (k === 'q') inv.q = ''
+    else if (['market', 'ownerType', 'ownerLoc', 'bucket'].includes(k)) inv[k] = 'all'
+    else inv[k] = ''
+  }
+  return inv
+}
+
+// Pristine console state — used to spot "default chips" (all markets, both
+// channels…): they light up whenever state matches, but never toggle OFF
+// (their inverse is themselves).
+export const DEFAULT_STATE = {
+  channel: 'both',
+  score: { Actionable: true, Tentative: true, Pass: true },
+  q: '',
+  view: 'map',
+  filters: { market: 'all', ownerType: 'all', ownerLoc: 'all', bucket: 'all',
+    clearMax: '', yearMin: '', yearMax: '', sfMin: '', sfMax: '', distMax: '',
+    holdMin: '', heldSince: '', saleYearMin: '', salePriceMin: '', salePriceMax: '',
+    salePsfMax: '',
+    sig: { oos: false, tax: false, code: false, permit: false, vacant: false, distress: false, contact: false } },
+}
+export const isDefaultTerm = (term) => patchSatisfied(patchForTerm(term), DEFAULT_STATE)

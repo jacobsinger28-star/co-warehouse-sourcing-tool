@@ -55,6 +55,7 @@ const SIG_DEFS = [
   ['vacant', 'Inferred-vacant'],
   ['distress', 'Any distress signal'],
   ['contact', 'Has owner / broker contact'],
+  ['lease', 'LoopNet lease listing'],
 ]
 const SIG_LABEL = Object.fromEntries(SIG_DEFS)
 // Full filter set — parity with the off-market tool's map/dashboard (search, SF
@@ -68,7 +69,7 @@ const EMPTY_FILTERS = {
   clearMax: '', yearMin: '', yearMax: '', sfMin: '', sfMax: '',
   distMax: '', holdMin: '', heldSince: '',
   saleYearMin: '', salePriceMin: '', salePriceMax: '', salePsfMax: '',
-  sig: { oos: false, tax: false, code: false, permit: false, vacant: false, distress: false, contact: false },
+  sig: { oos: false, tax: false, code: false, permit: false, vacant: false, distress: false, contact: false, lease: false },
 }
 const numInput = 'height:32px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;outline:none;width:100%;'
 
@@ -210,6 +211,7 @@ export default function App() {
     if (sg.vacant && !(p.comp && p.comp.vacancy_evidence > 0)) return false
     if (sg.distress && !(p.nViol > 0 || p.nPermit > 0 || p.sigs?.length > 0)) return false
     if (sg.contact && (p.contact === 'No contact' || p.contact === 'Listing only')) return false
+    if (sg.lease && !p.lease) return false
     return true
   }), [propsData, ql, channel, score, filters])
   const matchShown = visibleProps.length
@@ -410,7 +412,7 @@ export default function App() {
                 <button onClick={() => setRailOpen(false)} aria-label="Close filters" className="tap" style={css('display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text2);')}><Icon name="x" size={15} /></button>
               </div>
               <div style={css('flex:1;overflow-y:auto;padding:14px 14px 8px;')}>
-                <FilterChat onPatch={applyChatPatch} />
+                <FilterChat state={{ channel, score, filters, q, view }} onPatch={applyChatPatch} />
                 <div style={css(railLabel)}>Channel</div>
                 <div style={css('display:flex;gap:4px;padding:3px;background:var(--surface2);border-radius:7px;margin-bottom:20px;')}>
                   <button className="hov" onClick={() => setCh('off')} style={css(chSeg(channel === 'off'))}><span style={css('width:7px;height:7px;border-radius:2px;background:var(--off);flex:0 0 auto;')} />Off-market</button>
@@ -532,7 +534,7 @@ export default function App() {
                           <tr key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(rowStyle(p.cat))}>
                             <td style={css('padding:0 0 0 14px;')} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selProps.includes(p.id)} onChange={() => toggleProp(p.id)} aria-label="Select property" style={css('accent-color:var(--accent);')} /></td>
                             <td style={css('padding:9px 8px;')}><span style={css(chDot(p.channel))} /></td>
-                            <td style={css('padding:9px 8px;font-weight:500;white-space:nowrap;')}>{p.addr}</td>
+                            <td style={css('padding:9px 8px;font-weight:500;white-space:nowrap;')}>{p.addr}{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title={`${p.lease.note} — open on LoopNet`} style={css('display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:10px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 7px;border-radius:5px;text-decoration:none;vertical-align:middle;')}>For Lease<Icon name="chevronRight" size={9} sw={2.4} /></a>}</td>
                             <td style={css('padding:9px 8px;color:var(--text2);')}>{p.mkt}</td>
                             <td style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;')}>{fmtSF(p.sf)}</td>
                             <td style={css('padding:9px 8px;')}><span style={css('display:inline-flex;align-items:center;gap:6px;')}><span style={css(scDot(p.cat))} /><span style={css(scLabel(p.cat))}>{p.cat}</span><span style={css('font-family:var(--mono);font-size:11.5px;color:var(--text3);')}>{p.score}</span></span></td>
@@ -554,7 +556,7 @@ export default function App() {
                     {visibleProps.map((p) => (
                       <div key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(cardStyle(p.cat))}>
                         <div style={css('display:flex;align-items:center;gap:9px;')}><span style={css(scDot(p.cat))} /><span style={css('font-weight:600;font-size:14.5px;flex:1;')}>{p.addr}</span><Icon name="chevronRight" size={16} stroke="var(--text3)" /></div>
-                        <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}><span style={css(chTag(p.channel))}>{chLabel(p.channel)}</span><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span></div>
+                        <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}><span style={css(chTag(p.channel))}>{chLabel(p.channel)}</span><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span>{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={css('font-size:11px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 8px;border-radius:5px;text-decoration:none;')}>For Lease</a>}</div>
                         <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{p.mkt}</span><span style={css('font-family:var(--mono);')}>{fmtSF(p.sf)} SF</span><span>{cardSub(p)}</span></div>
                         <div style={css('font-size:11.5px;color:var(--text3);')}>{p.signal}</div>
                       </div>
@@ -712,6 +714,19 @@ export default function App() {
                           <div style={css('background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:18px;')}>
                             <div style={css('display:flex;justify-content:space-between;margin-bottom:6px;')}><span style={css('font-weight:600;')}>{drawerProp.broker}</span><span style={css('font-family:var(--mono);color:var(--accent);')}>{fmtMoney2(drawerProp.ask)}/SF</span></div>
                             <div style={css('font-size:11.5px;color:var(--text2);')}>{drawerProp.firm}{drawerProp.daysOn != null ? ` · ${drawerProp.daysOn} days on market` : ''} · {drawerProp.signal}</div>
+                          </div>
+                        </>
+                      )}
+                      {drawerProp.lease && (
+                        <>
+                          <div style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--green);font-weight:600;margin-bottom:8px;')}>Listed for lease · LoopNet</div>
+                          <div style={css('background:var(--green-tint);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:18px;')}>
+                            <div style={css('font-size:11.5px;color:var(--text2);line-height:1.55;margin-bottom:10px;')}>{drawerProp.lease.note}{drawerProp.lease.n > 1 ? ` · ${drawerProp.lease.n} active listings at this address` : ''}</div>
+                            <div style={css('display:flex;flex-direction:column;gap:7px;')}>
+                              {(drawerProp.lease.listings || [drawerProp.lease]).map((l, i) => (
+                                <a key={i} href={l.url} target="_blank" rel="noreferrer" className="tap hov" style={css('height:36px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:8px;background:var(--surface);border:1px solid var(--border2);color:var(--text);font-size:12px;font-weight:600;text-decoration:none;')}><Icon name="search" size={13} sw={1.9} />Open on LoopNet{drawerProp.lease.n > 1 ? ` · ${l.addr}` : ''}</a>
+                              ))}
+                            </div>
                           </div>
                         </>
                       )}

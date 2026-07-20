@@ -7,9 +7,9 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { css } from './css.js'
 import Icon from './Icon.jsx'
-import { parseQuery, VOCAB, EXAMPLES } from './filterLang.js'
+import { parseQuery, patchForTerm, patchSatisfied, inversePatch, isDefaultTerm, VOCAB, EXAMPLES } from './filterLang.js'
 
-export default function FilterChat({ onPatch }) {
+export default function FilterChat({ state, onPatch }) {
   const [open, setOpen] = useState(false)
   const [msg, setMsg] = useState('')
   const [reply, setReply] = useState('')       // last result, shown under the rail trigger
@@ -21,6 +21,21 @@ export default function FilterChat({ onPatch }) {
     setPopReply(res.reply)
     setReply(res.reply)
   }
+  // Chip click: not selected → apply the term; already selected → un-apply it
+  // (back to that key's default). Selection is DERIVED from live state, so
+  // changes made in the legacy filter rail light chips up too.
+  const clickTerm = (term) => {
+    const p = patchForTerm(term)
+    if (patchSatisfied(p, state) && !isDefaultTerm(term)) {
+      const inv = inversePatch(p)
+      if (Object.keys(inv).length) onPatch(inv)
+      setPopReply(`Removed — ${term}`)
+      setReply(`Removed — ${term}`)
+    } else {
+      apply(term)
+    }
+  }
+
   const submit = (e) => {
     e?.preventDefault()
     const m = msg.trim()
@@ -82,9 +97,12 @@ export default function FilterChat({ onPatch }) {
                         <span style={css('flex:0 0 172px;color:var(--text);font-weight:500;padding-top:2px;')}>{what}</span>
                         {Array.isArray(terms) ? (
                           <span style={css('flex:1;display:flex;flex-wrap:wrap;gap:5px;')}>
-                            {terms.map((term) => (
-                              <button key={term} type="button" className="term-chip" onClick={() => apply(term)} title={`Apply: ${term}`} style={css('height:22px;padding:0 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:11px;color:var(--text3);font-family:var(--mono);font-size:10.5px;')}>{term}</button>
-                            ))}
+                            {terms.map((term) => {
+                              const on = patchSatisfied(patchForTerm(term), state)
+                              return (
+                                <button key={term} type="button" className={on ? 'term-chip on' : 'term-chip'} aria-pressed={on} onClick={() => clickTerm(term)} title={on && !isDefaultTerm(term) ? `Remove: ${term}` : `Apply: ${term}`} style={css('height:22px;padding:0 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:11px;color:var(--text3);font-family:var(--mono);font-size:10.5px;')}>{term}</button>
+                              )
+                            })}
                           </span>
                         ) : (
                           <span style={css('flex:1;color:var(--text3);font-size:11px;padding-top:2px;')}>{terms}</span>
@@ -97,9 +115,12 @@ export default function FilterChat({ onPatch }) {
               <div style={css('padding-top:12px;border-top:1px solid var(--border);')}>
                 <div style={css('font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:7px;')}>Try one</div>
                 <div style={css('display:flex;flex-wrap:wrap;gap:6px;')}>
-                  {EXAMPLES.map((ex) => (
-                    <button key={ex} type="button" className="term-chip" onClick={() => apply(ex)} style={css('height:26px;padding:0 10px;background:var(--surface2);border:1px solid var(--border2);border-radius:13px;color:var(--text);font-size:11px;')}>{ex}</button>
-                  ))}
+                  {EXAMPLES.map((ex) => {
+                    const on = patchSatisfied(patchForTerm(ex), state)
+                    return (
+                      <button key={ex} type="button" className={on ? 'term-chip on' : 'term-chip'} aria-pressed={on} onClick={() => clickTerm(ex)} style={css('height:26px;padding:0 10px;background:var(--surface2);border:1px solid var(--border2);border-radius:13px;color:var(--text);font-size:11px;')}>{ex}</button>
+                    )
+                  })}
                 </div>
               </div>
             </div>

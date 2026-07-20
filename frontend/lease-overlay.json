@@ -1,0 +1,1154 @@
+{
+ "generatedAt": "2026-07-20",
+ "source": "LoopNet industrial for-lease sweep, 7 metros (728 listings)",
+ "props": {
+  "off-07202005300": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1015-W-Kirkland-Ave-Nashville-TN/33446251/",
+     "addr": "1015 W Kirkland Ave",
+     "city": "Nashville",
+     "note": "American Business Centers Built in 1955 1,600 - 4,622 SF Industrial Spaces $19 SF/YR",
+     "match": "exact",
+     "geoKm": 0.13
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1015-W-Kirkland-Ave-Nashville-TN/33446251/",
+   "note": "American Business Centers Built in 1955 1,600 - 4,622 SF Industrial Spaces $19 SF/YR",
+   "n": 1
+  },
+  "off-09307003300": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/400-414-Davidson-St-Nashville-TN/34396539/",
+     "addr": "400-414 Davidson St",
+     "city": "Nashville",
+     "note": "Sara David Realty, Inc. Nashville Storage Center Built in 1968 10,000 - 150,000 SF",
+     "match": "exact",
+     "geoKm": 11.2
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/400-414-Davidson-St-Nashville-TN/34396539/",
+   "note": "Sara David Realty, Inc. Nashville Storage Center Built in 1968 10,000 - 150,000 SF",
+   "n": 1
+  },
+  "off-11815000900": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/100-128-Powell-Pl-Nashville-TN/40708757/",
+     "addr": "100-128 Powell Pl",
+     "city": "Nashville",
+     "note": "Built in 1982 35,020 SF Industrial Space $15.95 SF/YR",
+     "match": "exact",
+     "geoKm": 0.23
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/100-128-Powell-Pl-Nashville-TN/40708757/",
+   "note": "Built in 1982 35,020 SF Industrial Space $15.95 SF/YR",
+   "n": 1
+  },
+  "off-10609001800": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1133-Polk-Ave-Nashville-TN/36375849/",
+     "addr": "1133 Polk Ave",
+     "city": "Nashville",
+     "note": "Built in 1961 50 - 33,650 SF Spaces Price Upon Request",
+     "match": "exact"
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1133-Polk-Ave-Nashville-TN/36375849/",
+   "note": "Built in 1961 50 - 33,650 SF Spaces Price Upon Request",
+   "n": 1
+  },
+  "off-13208001100": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/4061-4081-Powell-Ave-Nashville-TN/40922678/",
+     "addr": "4061-4081 Powell Ave",
+     "city": "Nashville",
+     "note": "Built in 1962 34,844 SF Industrial Space $12.00 SF/YR",
+     "match": "exact",
+     "geoKm": 1.46
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/4061-4081-Powell-Ave-Nashville-TN/40922678/",
+   "note": "Built in 1962 34,844 SF Industrial Space $12.00 SF/YR",
+   "n": 1
+  },
+  "off-560-181272": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1685-1781-Westbelt-Dr-Columbus-OH/41028350/",
+     "addr": "1685-1781 Westbelt Dr",
+     "city": "Columbus",
+     "note": "Commerce Center Built in 1978 3,375 SF Industrial Space $10.95 SF/YR",
+     "match": "exact",
+     "geoKm": 0.18
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1685-1781-Westbelt-Dr-Columbus-OH/41028350/",
+   "note": "Commerce Center Built in 1978 3,375 SF Industrial Space $10.95 SF/YR",
+   "n": 1
+  },
+  "off-13400017000": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/428-Harding-Industrial-Dr-Nashville-TN/39892653/",
+     "addr": "428 Harding Industrial Dr",
+     "city": "Nashville",
+     "note": "Built in 1981 49,952 - 99,904 SF Industrial Space $8.50 SF/YR",
+     "match": "exact",
+     "geoKm": 0.39
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/428-Harding-Industrial-Dr-Nashville-TN/39892653/",
+   "note": "Built in 1981 49,952 - 99,904 SF Industrial Space $8.50 SF/YR",
+   "n": 1
+  },
+  "off-4610901001": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/62-Brigade-St-Charleston-SC/40458036/",
+     "addr": "62 Brigade St",
+     "city": "Charleston",
+     "note": "Built in 1978 1,600 SF Industrial Space $18.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.1
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/62-Brigade-St-Charleston-SC/40458036/",
+   "note": "Built in 1978 1,600 SF Industrial Space $18.00 SF/YR",
+   "n": 1
+  },
+  "off-010-182464": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1900-1936-Britains-Ln-Columbus-OH/40367486/",
+     "addr": "1900-1936 Britains Ln",
+     "city": "Columbus",
+     "note": "Built in 1985 6,000 SF Industrial Space $8.50 SF/YR",
+     "match": "exact",
+     "geoKm": 0.21
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1900-1936-Britains-Ln-Columbus-OH/40367486/",
+   "note": "Built in 1985 6,000 SF Industrial Space $8.50 SF/YR",
+   "n": 1
+  },
+  "off-100-006348": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/6575-Huntley-Rd-Columbus-OH/34396631/",
+     "addr": "6575 Huntley Rd",
+     "city": "Columbus",
+     "note": "Northpoint Distribution Center Built in 1961 5,578 - 147,590 SF Industrial Spaces $5+ SF/YR",
+     "match": "exact",
+     "geoKm": 0.2
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/6575-Huntley-Rd-Columbus-OH/34396631/",
+   "note": "Northpoint Distribution Center Built in 1961 5,578 - 147,590 SF Industrial Spaces $5+ SF/YR",
+   "n": 1
+  },
+  "off-560-129713": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2541-2559-Westbelt-Dr-Columbus-OH/16833410/",
+     "addr": "2541-2559 Westbelt Dr",
+     "city": "Columbus",
+     "note": "Exchange Center Built in 1977 6,766 SF Industrial Space $11.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.03
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2541-2559-Westbelt-Dr-Columbus-OH/16833410/",
+   "note": "Exchange Center Built in 1977 6,766 SF Industrial Space $11.00 SF/YR",
+   "n": 1
+  },
+  "off-11803000600": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2461-2517-Bransford-Ave-Nashville-TN/40847026/",
+     "addr": "2461-2517 Bransford Ave",
+     "city": "Nashville",
+     "note": "Berry Hill Industrial Center Built in 1950 36,014 SF Industrial Space $8.75 SF/YR",
+     "match": "exact",
+     "geoKm": 0.11
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2461-2517-Bransford-Ave-Nashville-TN/40847026/",
+   "note": "Berry Hill Industrial Center Built in 1950 36,014 SF Industrial Space $8.75 SF/YR",
+   "n": 1
+  },
+  "off-560-137711": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3820-3834-Zane-Trace-Dr-Columbus-OH/38081150/",
+     "addr": "3820-3834 Zane Trace Dr",
+     "city": "Columbus",
+     "note": "Building 1 Built in 1977 44,000 SF Industrial Space $7.50 SF/YR",
+     "match": "exact",
+     "geoKm": 0.11
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3820-3834-Zane-Trace-Dr-Columbus-OH/38081150/",
+   "note": "Building 1 Built in 1977 44,000 SF Industrial Space $7.50 SF/YR",
+   "n": 1
+  },
+  "off-560-180949": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3915-Zane-Trace-Dr-Columbus-OH/6741894/",
+     "addr": "3915 Zane Trace Dr",
+     "city": "Columbus",
+     "note": "Premier Office Movers Building Built in 1994 500 - 25,000 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.14
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3915-Zane-Trace-Dr-Columbus-OH/6741894/",
+   "note": "Premier Office Movers Building Built in 1994 500 - 25,000 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-4100000005": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/4500-Leeds-Ave-North-Charleston-SC/38143481/",
+     "addr": "4500 Leeds Ave",
+     "city": "North Charleston",
+     "note": "Building 16 4 Star | Built in 1964 50,000 - 202,654 SF Industrial Space $5.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.17
+    },
+    {
+     "url": "https://www.loopnet.com/Listing/4500-Leeds-Ave-North-Charleston-SC/32967809/",
+     "addr": "4500 Leeds Ave",
+     "city": "North Charleston",
+     "note": "World Trade Center Charleston 4 Star | Built in 1964 1,754 - 301,488 SF Spaces $20.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.17
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/4500-Leeds-Ave-North-Charleston-SC/38143481/",
+   "note": "Building 16 4 Star | Built in 1964 50,000 - 202,654 SF Industrial Space $5.00 SF/YR",
+   "n": 2
+  },
+  "off-5370000062": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/450-Wando-Park-Blvd-Mount-Pleasant-SC/37330364/",
+     "addr": "450 Wando Park Blvd",
+     "city": "Mount Pleasant",
+     "note": "Hubner Manufacturing Inc. Expansion Built in 2015 13,098 - 126,442 SF Industrial Space",
+     "match": "exact",
+     "geoKm": 0.16
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/450-Wando-Park-Blvd-Mount-Pleasant-SC/37330364/",
+   "note": "Hubner Manufacturing Inc. Expansion Built in 2015 13,098 - 126,442 SF Industrial Space",
+   "n": 1
+  },
+  "off-152-000187": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2100-Mcgaw-Rd-Columbus-OH/16828858/",
+     "addr": "2100 Mcgaw Rd",
+     "city": "Columbus",
+     "note": "Skyline Properties Group Built in 1988 100,000 SF Industrial Space $4.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.16
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2100-Mcgaw-Rd-Columbus-OH/16828858/",
+   "note": "Skyline Properties Group Built in 1988 100,000 SF Industrial Space $4.00 SF/YR",
+   "n": 1
+  },
+  "off-4690600084": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3601-Meeting-Street-Rd-North-Charleston-SC/33041972/",
+     "addr": "3601 Meeting Street Rd",
+     "city": "North Charleston",
+     "note": "Built in 1962 500 - 28,556 SF Spaces $8.00 - $18.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.1
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3601-Meeting-Street-Rd-North-Charleston-SC/33041972/",
+   "note": "Built in 1962 500 - 28,556 SF Spaces $8.00 - $18.00 SF/YR",
+   "n": 1
+  },
+  "off-560-184536": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1614-1634-Westbelt-Dr-Columbus-OH/36047717/",
+     "addr": "1614-1634 Westbelt Dr",
+     "city": "Columbus",
+     "note": "Park A Built in 1986 56,872 - 229,200 SF Industrial Space $5.75 SF/YR",
+     "match": "exact",
+     "geoKm": 0.09
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1614-1634-Westbelt-Dr-Columbus-OH/36047717/",
+   "note": "Park A Built in 1986 56,872 - 229,200 SF Industrial Space $5.75 SF/YR",
+   "n": 1
+  },
+  "off-560-184538": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/4401-4419-Equity-Dr-Columbus-OH/38761294/",
+     "addr": "4401-4419 Equity Dr",
+     "city": "Columbus",
+     "note": "Built in 1980 77,795 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.18
+    },
+    {
+     "url": "https://www.loopnet.com/Listing/4401-4419-Equity-Dr-Columbus-OH/30954557/",
+     "addr": "4401-4419 Equity Dr",
+     "city": "Columbus",
+     "note": "Built in 1980 34,545 - 80,605 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.03
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/4401-4419-Equity-Dr-Columbus-OH/38761294/",
+   "note": "Built in 1980 77,795 SF Industrial Space Price Upon Request",
+   "n": 2
+  },
+  "off-10800000200": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/565-Royal-Pky-Nashville-TN/34595098/",
+     "addr": "565 Royal Pky",
+     "city": "Nashville",
+     "note": "Built in 1977 48,000 - 220,859 SF Industrial Spaces $12.50 SF/YR",
+     "match": "exact",
+     "geoKm": 0.16
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/565-Royal-Pky-Nashville-TN/34595098/",
+   "note": "Built in 1977 48,000 - 220,859 SF Industrial Spaces $12.50 SF/YR",
+   "n": 1
+  },
+  "off-025-010788": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/861-Taylor-Rd-Gahanna-OH/34698999/",
+     "addr": "861 Taylor Rd",
+     "city": "Gahanna",
+     "note": "Taylor Road Business Park Built in 1996 24,000 SF Industrial Space $9.25 SF/YR",
+     "match": "exact",
+     "geoKm": 0.24
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/861-Taylor-Rd-Gahanna-OH/34698999/",
+   "note": "Taylor Road Business Park Built in 1996 24,000 SF Industrial Space $9.25 SF/YR",
+   "n": 1
+  },
+  "off-050-002875": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3700-Parkway-Ln-Hilliard-OH/15007348/",
+     "addr": "3700 Parkway Ln",
+     "city": "Hilliard",
+     "note": "Built in 1973 8,000 SF Industrial Space $12.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3700-Parkway-Ln-Hilliard-OH/15007348/",
+   "note": "Built in 1973 8,000 SF Industrial Space $12.00 SF/YR",
+   "n": 1
+  },
+  "off-560-138795": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1685-1781-Westbelt-Dr-Columbus-OH/41028350/",
+     "addr": "1685-1781 Westbelt Dr",
+     "city": "Columbus",
+     "note": "Commerce Center Built in 1978 3,375 SF Industrial Space $10.95 SF/YR",
+     "match": "exact",
+     "geoKm": 0.06
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1685-1781-Westbelt-Dr-Columbus-OH/41028350/",
+   "note": "Commerce Center Built in 1978 3,375 SF Industrial Space $10.95 SF/YR",
+   "n": 1
+  },
+  "off-560-211480": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2252-2300-Westbrooke-Dr-Columbus-OH/39142302/",
+     "addr": "2252-2300 Westbrooke Dr",
+     "city": "Columbus",
+     "note": "Bldg K Built in 1988 11,565 - 34,123 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.15
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2252-2300-Westbrooke-Dr-Columbus-OH/39142302/",
+   "note": "Bldg K Built in 1988 11,565 - 34,123 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-560-211481": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2252-2300-Westbrooke-Dr-Columbus-OH/39142302/",
+     "addr": "2252-2300 Westbrooke Dr",
+     "city": "Columbus",
+     "note": "Bldg K Built in 1988 11,565 - 34,123 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.18
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2252-2300-Westbrooke-Dr-Columbus-OH/39142302/",
+   "note": "Bldg K Built in 1988 11,565 - 34,123 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-570-214696": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3563-3611-Interchange-Rd-Columbus-OH/34189453/",
+     "addr": "3563-3611 Interchange Rd",
+     "city": "Columbus",
+     "note": "Interchange I Built in 1989 9,008 SF Industrial Space $10.95 SF/YR",
+     "match": "exact",
+     "geoKm": 0.04
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3563-3611-Interchange-Rd-Columbus-OH/34189453/",
+   "note": "Interchange I Built in 1989 9,008 SF Industrial Space $10.95 SF/YR",
+   "n": 1
+  },
+  "off-07900007100": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/7021-Westbelt-Dr-Nashville-TN/33296203/",
+     "addr": "7021 Westbelt Dr",
+     "city": "Nashville",
+     "note": "4 Star | Built in 2028 250,000 - 505,682 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.38
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/7021-Westbelt-Dr-Nashville-TN/33296203/",
+   "note": "4 Star | Built in 2028 250,000 - 505,682 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-050-009383": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3700-3720-Lacon-Rd-Hilliard-OH/37896830/",
+     "addr": "3700-3720 Lacon Rd",
+     "city": "Hilliard",
+     "note": "Built in 1966 22,162 - 165,444 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.17
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3700-3720-Lacon-Rd-Hilliard-OH/37896830/",
+   "note": "Built in 1966 22,162 - 165,444 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-040-007212": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3655-Brookham-Dr-Grove-City-OH/6443143/",
+     "addr": "3655 Brookham Dr",
+     "city": "Grove City",
+     "note": "SouthPark 4 4 Star | Built in 1996 27,170 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.13
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3655-Brookham-Dr-Grove-City-OH/6443143/",
+   "note": "SouthPark 4 4 Star | Built in 1996 27,170 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-040-008992": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3563-Southpark-Pl-Grove-City-OH/32323731/",
+     "addr": "3563 Southpark Pl",
+     "city": "Grove City",
+     "note": "Building III 4 Star | Built in 2020 50,000 - 62,914 SF Industrial Space $6.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.18
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3563-Southpark-Pl-Grove-City-OH/32323731/",
+   "note": "Building III 4 Star | Built in 2020 50,000 - 62,914 SF Industrial Space $6.00 SF/YR",
+   "n": 1
+  },
+  "off-550-102592": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/6606-Tussing-Rd-Reynoldsburg-OH/40305824/",
+     "addr": "6606 Tussing Rd",
+     "city": "Reynoldsburg",
+     "note": "4 Star | Built in 1977 56,000 SF Industrial Space $6.75 SF/YR",
+     "match": "exact",
+     "geoKm": 0.27
+    },
+    {
+     "url": "https://www.loopnet.com/Listing/6606-Tussing-Rd-Reynoldsburg-OH/39748141/",
+     "addr": "6606 Tussing Rd",
+     "city": "Reynoldsburg",
+     "note": "4 Star | Built in 1977 56,000 - 326,000 SF Industrial Space $6.25 SF/YR",
+     "match": "exact",
+     "geoKm": 0.27
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/6606-Tussing-Rd-Reynoldsburg-OH/40305824/",
+   "note": "4 Star | Built in 1977 56,000 SF Industrial Space $6.75 SF/YR",
+   "n": 2
+  },
+  "off-560-129615": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2201-Westbelt-Dr-Columbus-OH/21333105/",
+     "addr": "2201 Westbelt Dr",
+     "city": "Columbus",
+     "note": "Westbelt Distribution Center Built in 1977 34,200 SF Industrial Space $8.25 SF/YR",
+     "match": "exact",
+     "geoKm": 0.05
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2201-Westbelt-Dr-Columbus-OH/21333105/",
+   "note": "Westbelt Distribution Center Built in 1977 34,200 SF Industrial Space $8.25 SF/YR",
+   "n": 1
+  },
+  "off-560-181276": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2781-Westbelt-Dr-Columbus-OH/40570296/",
+     "addr": "2781 Westbelt Dr",
+     "city": "Columbus",
+     "note": "Westbelt Business Park Built in 1980 30,000 - 100,333 SF Industrial Spaces Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.27
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2781-Westbelt-Dr-Columbus-OH/40570296/",
+   "note": "Westbelt Business Park Built in 1980 30,000 - 100,333 SF Industrial Spaces Price Upon Request",
+   "n": 1
+  },
+  "off-025-013692": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1801-1831-Deffenbaugh-Ct-Columbus-OH/19769895/",
+     "addr": "1801-1831 Deffenbaugh Ct",
+     "city": "Columbus",
+     "note": "4 Star | Built in 2015 20,000 SF Industrial Space $12.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1801-1831-Deffenbaugh-Ct-Columbus-OH/19769895/",
+   "note": "4 Star | Built in 2015 20,000 SF Industrial Space $12.00 SF/YR",
+   "n": 1
+  },
+  "off-010-007967": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3563-3611-Interchange-Rd-Columbus-OH/34189453/",
+     "addr": "3563-3611 Interchange Rd",
+     "city": "Columbus",
+     "note": "Interchange I Built in 1989 9,008 SF Industrial Space $10.95 SF/YR",
+     "match": "exact",
+     "geoKm": 0.13
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3563-3611-Interchange-Rd-Columbus-OH/34189453/",
+   "note": "Interchange I Built in 1989 9,008 SF Industrial Space $10.95 SF/YR",
+   "n": 1
+  },
+  "off-100-003923": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/480-Schrock-Rd-Columbus-OH/35043950/",
+     "addr": "480 Schrock Rd",
+     "city": "Columbus",
+     "note": "Built in 1986 12,280 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.1
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/480-Schrock-Rd-Columbus-OH/35043950/",
+   "note": "Built in 1986 12,280 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-530-156581": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3330-Alum-Creek-Dr-Columbus-OH/39625665/",
+     "addr": "3330 Alum Creek Dr",
+     "city": "Columbus",
+     "note": "4 Star | Built in 2023 76,500 SF Industrial Space $6.60 SF/YR",
+     "match": "exact",
+     "geoKm": 0.19
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3330-Alum-Creek-Dr-Columbus-OH/39625665/",
+   "note": "4 Star | Built in 2023 76,500 SF Industrial Space $6.60 SF/YR",
+   "n": 1
+  },
+  "off-025-013638": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/890-Claycraft-Rd-Gahanna-OH/34411844/",
+     "addr": "890 Claycraft Rd",
+     "city": "Gahanna",
+     "note": "4 Star | Built in 2019 52,500 SF Industrial Space $6.50 SF/YR",
+     "match": "exact",
+     "geoKm": 0.11
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/890-Claycraft-Rd-Gahanna-OH/34411844/",
+   "note": "4 Star | Built in 2019 52,500 SF Industrial Space $6.50 SF/YR",
+   "n": 1
+  },
+  "off-495-300545": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1260-London-Groveport-Rd-Columbus-OH/14343255/",
+     "addr": "1260 London Groveport Rd",
+     "city": "Columbus",
+     "note": "The Hub - Building 4 4 Star | Built in 2027 40,000 - 148,720 SF Industrial Space",
+     "match": "exact",
+     "geoKm": 0.47
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1260-London-Groveport-Rd-Columbus-OH/14343255/",
+   "note": "The Hub - Building 4 4 Star | Built in 2027 40,000 - 148,720 SF Industrial Space",
+   "n": 1
+  },
+  "off-03400005000": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/526-Myatt-Dr-Madison-TN/40443613/",
+     "addr": "526 Myatt Dr",
+     "city": "Madison",
+     "note": "Park at Myatt Built in 2022 35,137 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.58
+    },
+    {
+     "url": "https://www.loopnet.com/Listing/526-Myatt-Dr-Madison-TN/40164098/",
+     "addr": "526 Myatt Dr",
+     "city": "Madison",
+     "note": "Building A Built in 2022 35,000 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.58
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/526-Myatt-Dr-Madison-TN/40443613/",
+   "note": "Park at Myatt Built in 2022 35,137 SF Industrial Space Price Upon Request",
+   "n": 2
+  },
+  "off-495-300106": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1815-Beggrow-St-Lockbourne-OH/34212340/",
+     "addr": "1815 Beggrow St",
+     "city": "Lockbourne",
+     "note": "Rickenbacker West II 4 Star | Built in 2020 14,100 SF Industrial Space $11.50 SF/YR",
+     "match": "exact"
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1815-Beggrow-St-Lockbourne-OH/34212340/",
+   "note": "Rickenbacker West II 4 Star | Built in 2020 14,100 SF Industrial Space $11.50 SF/YR",
+   "n": 1
+  },
+  "off-610-289523": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/640-700-Dearborn-Park-Ln-Worthington-OH/40165011/",
+     "addr": "640-700 Dearborn Park Ln",
+     "city": "Worthington",
+     "note": "680 Dearborn Park Ln. Built in 1988 18,000 SF Industrial Space $10.25 SF/YR",
+     "match": "exact",
+     "geoKm": 0.09
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/640-700-Dearborn-Park-Ln-Worthington-OH/40165011/",
+   "note": "680 Dearborn Park Ln. Built in 1988 18,000 SF Industrial Space $10.25 SF/YR",
+   "n": 1
+  },
+  "off-2500000002": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/860-Main-Rd-Johns-Island-SC/36362162/",
+     "addr": "860 Main Rd",
+     "city": "Johns Island",
+     "note": "Vine Works Trade Park, Johns Island - Bldg 1 Built in 1960 1,500 - 108,848 SF Industrial Space",
+     "match": "exact",
+     "geoKm": 0.32
+    },
+    {
+     "url": "https://www.loopnet.com/Listing/860-Main-Rd-Johns-Island-SC/36362420/",
+     "addr": "860 Main Rd",
+     "city": "Johns Island",
+     "note": "Vine Works Trade Park, Johns Island - Bldg 2 Built in 1985 1,500 - 81,350 SF Industrial Space Price Upon Reque",
+     "match": "exact",
+     "geoKm": 0.32
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/860-Main-Rd-Johns-Island-SC/36362162/",
+   "note": "Vine Works Trade Park, Johns Island - Bldg 1 Built in 1960 1,500 - 108,848 SF Industrial Space",
+   "n": 2
+  },
+  "off-430-296400": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/7200-Alum-Creek-Dr-Columbus-OH/33910012/",
+     "addr": "7200 Alum Creek Dr",
+     "city": "Columbus",
+     "note": "Air Cargo Terminal 1 Built in 2000 9,600 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.15
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/7200-Alum-Creek-Dr-Columbus-OH/33910012/",
+   "note": "Air Cargo Terminal 1 Built in 2000 9,600 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-13400009000": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1201-Antioch-Pike-Nashville-TN/39723334/",
+     "addr": "1201 Antioch Pike",
+     "city": "Nashville",
+     "note": "Built in 1986 31,015 SF Industrial Space $11.95 SF/YR",
+     "match": "exact",
+     "geoKm": 0.18
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1201-Antioch-Pike-Nashville-TN/39723334/",
+   "note": "Built in 1986 31,015 SF Industrial Space $11.95 SF/YR",
+   "n": 1
+  },
+  "off-13305008700": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/478-Allied-Dr-Nashville-TN/33237183/",
+     "addr": "478 Allied Dr",
+     "city": "Nashville",
+     "note": "Built in 1972 9,600 SF Industrial Space $16.75 SF/YR",
+     "match": "exact",
+     "geoKm": 0.08
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/478-Allied-Dr-Nashville-TN/33237183/",
+   "note": "Built in 1972 9,600 SF Industrial Space $16.75 SF/YR",
+   "n": 1
+  },
+  "off-09100002900": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/6100-Centennial-Blvd-Nashville-TN/35744147/",
+     "addr": "6100 Centennial Blvd",
+     "city": "Nashville",
+     "note": "Built in 1954 1,850 - 23,830 SF Industrial Spaces $13.25 - $15.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.1
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/6100-Centennial-Blvd-Nashville-TN/35744147/",
+   "note": "Built in 1954 1,850 - 23,830 SF Industrial Spaces $13.25 - $15.00 SF/YR",
+   "n": 1
+  },
+  "off-082329000000002": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3701-3709-Vineland-Rd-Orlando-FL/32501723/",
+     "addr": "3701-3709 Vineland Rd",
+     "city": "Orlando",
+     "note": "Vineland Commerce Center Built in 1985 19,535 SF Industrial Space $11.95 SF/YR",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3701-3709-Vineland-Rd-Orlando-FL/32501723/",
+   "note": "Vineland Commerce Center Built in 1985 19,535 SF Industrial Space $11.95 SF/YR",
+   "n": 1
+  },
+  "off-082329862900040": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/4121-34th-St-Orlando-FL/33193549/",
+     "addr": "4121 34th St",
+     "city": "Orlando",
+     "note": "Portal Warehousing Orlando 25,334 SF Available Built in 1983 100 - 25,334 SF Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/4121-34th-St-Orlando-FL/33193549/",
+   "note": "Portal Warehousing Orlando 25,334 SF Available Built in 1983 100 - 25,334 SF Price Upon Request",
+   "n": 1
+  },
+  "off-272329633402000": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2003-2021-Viscount-Row-Orlando-FL/37528377/",
+     "addr": "2003-2021 Viscount Row",
+     "city": "Orlando",
+     "note": "Viscount Row Built in 1972 15,543 - 31,224 SF Industrial Spaces $12.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2003-2021-Viscount-Row-Orlando-FL/37528377/",
+   "note": "Viscount Row Built in 1972 15,543 - 31,224 SF Industrial Spaces $12.00 SF/YR",
+   "n": 1
+  },
+  "off-282329636402000": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/7101-Presidents-Dr-Orlando-FL/17212710/",
+     "addr": "7101 Presidents Dr",
+     "city": "Orlando",
+     "note": "Presidents Plaza Built in 1986 5,295 - 22,884 SF Spaces $15.50 - $16.95 SF/YR",
+     "match": "exact",
+     "geoKm": 0.1
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/7101-Presidents-Dr-Orlando-FL/17212710/",
+   "note": "Presidents Plaza Built in 1986 5,295 - 22,884 SF Spaces $15.50 - $16.95 SF/YR",
+   "n": 1
+  },
+  "off-092229000000067": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2515-Shader-Rd-Orlando-FL/24231658/",
+     "addr": "2515 Shader Rd",
+     "city": "Orlando",
+     "note": "Shader Industrial Park Built in 1968 25,282 SF Industrial Space $11.50 SF/YR",
+     "match": "exact",
+     "geoKm": 0.17
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2515-Shader-Rd-Orlando-FL/24231658/",
+   "note": "Shader Industrial Park Built in 1968 25,282 SF Industrial Space $11.50 SF/YR",
+   "n": 1
+  },
+  "off-112429735600010": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/10407-Rocket-Blvd-Orlando-FL/27687532/",
+     "addr": "10407 Rocket Blvd",
+     "city": "Orlando",
+     "note": "Built in 1981 5,000 - 30,000 SF Industrial Space $13.75 SF/YR",
+     "match": "exact",
+     "geoKm": 0.09
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/10407-Rocket-Blvd-Orlando-FL/27687532/",
+   "note": "Built in 1981 5,000 - 30,000 SF Industrial Space $13.75 SF/YR",
+   "n": 1
+  },
+  "off-222229000000005": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1900-W-New-Hampshire-St-Orlando-FL/38057063/",
+     "addr": "1900 W New Hampshire St",
+     "city": "Orlando",
+     "note": "Built in 1962 42,800 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1900-W-New-Hampshire-St-Orlando-FL/38057063/",
+   "note": "Built in 1962 42,800 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-242329868009013": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/6103-6119-Anno-Ave-Orlando-FL/37989765/",
+     "addr": "6103-6119 Anno Ave",
+     "city": "Orlando",
+     "note": "Bldg 1 Built in 1969 2,400 SF Industrial Space $22.50 SF/YR",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/6103-6119-Anno-Ave-Orlando-FL/37989765/",
+   "note": "Bldg 1 Built in 1969 2,400 SF Industrial Space $22.50 SF/YR",
+   "n": 1
+  },
+  "off-362329842900030": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/100-Sunport-Ln-Orlando-FL/4098991/",
+     "addr": "100 Sunport Ln",
+     "city": "Orlando",
+     "note": "4 Star | Built in 1986 28,961 SF Industrial Space $18.50 SF/YR",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/100-Sunport-Ln-Orlando-FL/4098991/",
+   "note": "4 Star | Built in 1986 28,961 SF Industrial Space $18.50 SF/YR",
+   "n": 1
+  },
+  "off-092229924800101": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3122-Shader-Rd-Orlando-FL/40148755/",
+     "addr": "3122 Shader Rd",
+     "city": "Orlando",
+     "note": "Built in 1963 40,000 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3122-Shader-Rd-Orlando-FL/40148755/",
+   "note": "Built in 1963 40,000 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-282329636201000": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2455-2467-Premier-Row-Orlando-FL/34998209/",
+     "addr": "2455-2467 Premier Row",
+     "city": "Orlando",
+     "note": "Walgreens Distribution Center Offices Built in 1980 351,429 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.01
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2455-2467-Premier-Row-Orlando-FL/34998209/",
+   "note": "Walgreens Distribution Center Offices Built in 1980 351,429 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-362329003300040": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/8500-Parkline-Blvd-Orlando-FL/33282679/",
+     "addr": "8500 Parkline Blvd",
+     "city": "Orlando",
+     "note": "Airport Commerce Center Built in 1986 7,200 - 74,179 SF Industrial Spaces Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/8500-Parkline-Blvd-Orlando-FL/33282679/",
+   "note": "Airport Commerce Center Built in 1986 7,200 - 74,179 SF Industrial Spaces Price Upon Request",
+   "n": 1
+  },
+  "off-212330003400010": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/5730-5892-S-Semoran-Blvd-Orlando-FL/39462074/",
+     "addr": "5730-5892 S Semoran Blvd",
+     "city": "Orlando",
+     "note": "BaySpace Orlando International Business Center 35,464 SF Available Built in 1983 851 - 35,464 SF",
+     "match": "exact",
+     "geoKm": 0.14
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/5730-5892-S-Semoran-Blvd-Orlando-FL/39462074/",
+   "note": "BaySpace Orlando International Business Center 35,464 SF Available Built in 1983 851 - 35,464 SF",
+   "n": 1
+  },
+  "off-082329862800850": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/4506-L-B-Mcleod-Rd-Orlando-FL/38658854/",
+     "addr": "4506 L B Mcleod Rd",
+     "city": "Orlando",
+     "note": "LB McLeod Industrial Center Built in 1985 36,800 SF Industrial Space $9.50 SF/YR",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/4506-L-B-Mcleod-Rd-Orlando-FL/38658854/",
+   "note": "LB McLeod Industrial Center Built in 1985 36,800 SF Industrial Space $9.50 SF/YR",
+   "n": 1
+  },
+  "off-282329637600010": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/7550-7584-Brokerage-Dr-Orlando-FL/39503067/",
+     "addr": "7550-7584 Brokerage Dr",
+     "city": "Orlando",
+     "note": "Orlando Central Park V Built in 1985 10,000 - 66,700 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.0
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/7550-7584-Brokerage-Dr-Orlando-FL/39503067/",
+   "note": "Orlando Central Park V Built in 1985 10,000 - 66,700 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-332329726800140": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2292-W-Sand-Lake-Rd-Orlando-FL/27367953/",
+     "addr": "2292 W Sand Lake Rd",
+     "city": "Orlando",
+     "note": "Built in 1971 149,570 SF Industrial Space Price Upon Request",
+     "match": "exact",
+     "geoKm": 0.14
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2292-W-Sand-Lake-Rd-Orlando-FL/27367953/",
+   "note": "Built in 1971 149,570 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-1714283644": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2114-Atlantic-Ave-Raleigh-NC/31240350/",
+     "addr": "2114 Atlantic Ave",
+     "city": "Raleigh",
+     "note": "DRR Realty, LLC Built in 1957 26,400 - 142,240 SF Industrial Spaces $10.00 SF/YR",
+     "match": "exact",
+     "geoKm": 0.04
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2114-Atlantic-Ave-Raleigh-NC/31240350/",
+   "note": "DRR Realty, LLC Built in 1957 26,400 - 142,240 SF Industrial Spaces $10.00 SF/YR",
+   "n": 1
+  },
+  "off-0791935009": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1413-Transport-Dr-Raleigh-NC/41073578/",
+     "addr": "1413 Transport Dr",
+     "city": "Raleigh",
+     "note": "Built in 1985 30,000 SF Industrial Space $13.95 SF/YR",
+     "match": "exact",
+     "geoKm": 0.19
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1413-Transport-Dr-Raleigh-NC/41073578/",
+   "note": "Built in 1985 30,000 SF Industrial Space $13.95 SF/YR",
+   "n": 1
+  },
+  "off-1716815084": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/4200-Atlantic-Ave-Raleigh-NC/39560986/",
+     "addr": "4200 Atlantic Ave",
+     "city": "Raleigh",
+     "note": "Built in 1982 3,600 - 9,510 SF Industrial Spaces $12.95 SF/YR",
+     "match": "exact",
+     "geoKm": 0.14
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/4200-Atlantic-Ave-Raleigh-NC/39560986/",
+   "note": "Built in 1982 3,600 - 9,510 SF Industrial Spaces $12.95 SF/YR",
+   "n": 1
+  },
+  "off-010-213590": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/1150-1180-Corrugated-Way-Columbus-OH/38918548/",
+     "addr": "1150-1180 Corrugated Way",
+     "city": "Columbus",
+     "note": "Shoemaker Plaza Built in 1940 4,000 - 14,400 SF Industrial Spaces Price Upon Request",
+     "match": "fuzzy",
+     "geoKm": 0.09
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/1150-1180-Corrugated-Way-Columbus-OH/38918548/",
+   "note": "Shoemaker Plaza Built in 1940 4,000 - 14,400 SF Industrial Spaces Price Upon Request",
+   "n": 1
+  },
+  "off-010-254285": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3445-3455-Millennium-Ct-Columbus-OH/40078754/",
+     "addr": "3445-3455 Millennium Ct",
+     "city": "Columbus",
+     "note": "4 Star | Built in 2002 65,200 SF Industrial Space $6.50 SF/YR",
+     "match": "fuzzy",
+     "geoKm": 0.21
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3445-3455-Millennium-Ct-Columbus-OH/40078754/",
+   "note": "4 Star | Built in 2002 65,200 SF Industrial Space $6.50 SF/YR",
+   "n": 1
+  },
+  "off-040-004266": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/3319-Southwest-Blvd-Grove-City-OH/35405588/",
+     "addr": "3319 Southwest Blvd",
+     "city": "Grove City",
+     "note": "4 Star | Built in 2008 71,232 SF Industrial Space Price Upon Request",
+     "match": "fuzzy",
+     "geoKm": 0.09
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/3319-Southwest-Blvd-Grove-City-OH/35405588/",
+   "note": "4 Star | Built in 2008 71,232 SF Industrial Space Price Upon Request",
+   "n": 1
+  },
+  "off-161-001059": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2882-Lewis-Centre-Way-Urbancrest-OH/16918456/",
+     "addr": "2882 Lewis Centre Way",
+     "city": "Urbancrest",
+     "note": "Building 4 Star | Built in 2022 54,000 - 108,000 SF Industrial Space $12.00 SF/YR",
+     "match": "fuzzy",
+     "geoKm": 0.11
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2882-Lewis-Centre-Way-Urbancrest-OH/16918456/",
+   "note": "Building 4 Star | Built in 2022 54,000 - 108,000 SF Industrial Space $12.00 SF/YR",
+   "n": 1
+  },
+  "off-570-109437": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/5300-Crosswind-Dr-Columbus-OH/22667881/",
+     "addr": "5300 Crosswind Dr",
+     "city": "Columbus",
+     "note": "Southwest Exchange 416,388 SF Industrial Available Built in 1989 20,000+ SF",
+     "match": "fuzzy",
+     "geoKm": 0.04
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/5300-Crosswind-Dr-Columbus-OH/22667881/",
+   "note": "Southwest Exchange 416,388 SF Industrial Available Built in 1989 20,000+ SF",
+   "n": 1
+  },
+  "off-3951600009": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/7421-W-Spartan-Blvd-Charleston-SC/39241575/",
+     "addr": "7421 W Spartan Blvd",
+     "city": "Charleston",
+     "note": "Built in 2002 12,000 SF Industrial Space $12.20 SF/YR",
+     "match": "fuzzy",
+     "geoKm": 0.12
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/7421-W-Spartan-Blvd-Charleston-SC/39241575/",
+   "note": "Built in 2002 12,000 SF Industrial Space $12.20 SF/YR",
+   "n": 1
+  },
+  "off-040-007207": {
+   "listings": [
+    {
+     "url": "https://www.loopnet.com/Listing/2180-Southwest-Blvd-Grove-City-OH/31391177/",
+     "addr": "2180 Southwest Blvd",
+     "city": "Grove City",
+     "note": "Built in 2006 18,067 SF Industrial Space Price Upon Request",
+     "match": "fuzzy",
+     "geoKm": 0.17
+    }
+   ],
+   "url": "https://www.loopnet.com/Listing/2180-Southwest-Blvd-Grove-City-OH/31391177/",
+   "note": "Built in 2006 18,067 SF Industrial Space Price Upon Request",
+   "n": 1
+  }
+ }
+}

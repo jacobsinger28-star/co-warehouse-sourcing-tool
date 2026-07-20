@@ -92,3 +92,5 @@ button { cursor:pointer; }
 /* clickable known-term chips in the ASK popup */
 .term-chip { transition: background .12s ease, border-color .12s ease, color .12s ease; cursor: pointer; }
 .term-chip:hover { background: var(--accent-dim)!important; border-color: var(--accent-line)!important; color: var(--text)!important; }
+
+.term-chip.on { background: var(--accent-dim)!important; border-color: var(--accent)!important; color: var(--text)!important; }

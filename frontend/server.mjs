@@ -77,6 +77,21 @@ if (DATA_DIR) {
   }
 }
 console.log(`[server] data ${hasData(DATA) ? `loaded (${DATA.props.length} props, ${DATA.brokers?.length || 0} brokers)` : 'absent → app falls back to sample'}`)
+
+// LoopNet lease overlay — committed alongside the code (holds only county-APN
+// ids + public LoopNet listing facts, no owner PII). Merged at serve time so
+// GitHub auto-deploys (which carry no dataset) still flag lease-listed props
+// once the baked/volume dataset loads. Refresh: rerun the LoopNet sweep and
+// regenerate lease-overlay.json.
+const LEASE_OVERLAY = readJson(join(__dirname, 'lease-overlay.json'))
+if (hasData(DATA) && LEASE_OVERLAY?.props) {
+  let leaseN = 0
+  for (const p of DATA.props) {
+    const l = LEASE_OVERLAY.props[p.id]
+    if (l) { p.lease = l; leaseN++ }
+  }
+  console.log(`[server] lease overlay: ${leaseN} of ${Object.keys(LEASE_OVERLAY.props).length} flagged props present in dataset`)
+}
 if (SUPABASE_ENABLED && ALLOWED_ENTRIES.length === 0)
   console.warn('[server] ⚠ Supabase configured but ALLOWED_EMAILS is empty — every Supabase login will be refused (fail closed). Set ALLOWED_EMAILS in Railway → Variables.')
 if (!SUPABASE_ENABLED && !PASSWORD)
