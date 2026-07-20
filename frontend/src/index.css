@@ -28,6 +28,7 @@ input::placeholder { color: var(--text2); opacity: .85; }
 @keyframes drawerin { from{transform:translateX(24px);opacity:0} to{transform:translateX(0);opacity:1} }
 @keyframes sheetup { from{transform:translateY(100%)} to{transform:translateY(0)} }
 @keyframes fadein { from{opacity:0} to{opacity:1} }
+@keyframes spin { to{transform:rotate(360deg)} }
 ::-webkit-scrollbar { width:9px; height:9px } ::-webkit-scrollbar-thumb { background:#2C353F; border-radius:5px } ::-webkit-scrollbar-track { background:transparent }
 .skel { background:linear-gradient(90deg,var(--surface2) 25%,var(--surface3) 50%,var(--surface2) 75%); background-size:460px 100%; animation:shimmer 1.4s infinite linear; border-radius:3px }
 
@@ -87,3 +88,7 @@ button { cursor:pointer; }
   .content-pad { padding:16px 14px!important; }
   .tap { min-height:44px!important; }
 }
+
+/* clickable known-term chips in the ASK popup */
+.term-chip { transition: background .12s ease, border-color .12s ease, color .12s ease; cursor: pointer; }
+.term-chip:hover { background: var(--accent-dim)!important; border-color: var(--accent-line)!important; color: var(--text)!important; }

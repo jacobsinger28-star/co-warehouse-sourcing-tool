@@ -60,6 +60,9 @@ export default function Gate({ children }) {
   const [err, setErr] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  // A saved credential exists → we're attempting a silent restore; show the
+  // splash (not the sign-in form) until it succeeds or falls through.
+  const [restoring, setRestoring] = useState(() => !!(loadRefreshToken() || loadSavedPassword()))
   const stopRefresh = useRef(null)
 
   const baseUrl = import.meta.env.BASE_URL
@@ -96,7 +99,7 @@ export default function Gate({ children }) {
       } catch {
         clearSaved() // stale/revoked credential — fall through to the form
       }
-      if (on) setCfg(c)
+      if (on) { setCfg(c); setRestoring(false) }
     })()
     return () => {
       on = false
@@ -105,6 +108,27 @@ export default function Gate({ children }) {
   }, [baseUrl]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (ok) return <RealDataContext.Provider value={realData}>{children}</RealDataContext.Provider>
+
+  // Silent-restore splash: brand mark + spinner instead of a flash of the
+  // sign-in form. Falls through to the form only if the restore fails.
+  if (restoring) {
+    return (
+      <div data-theme="dark" style={css('min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--text);')}>
+        <div style={css('display:flex;flex-direction:column;align-items:center;gap:18px;animation:fadein .3s ease;')}>
+          <div style={css('display:flex;align-items:center;gap:10px;')}>
+            <div style={css('width:22px;height:22px;border-radius:5px;background:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);animation:pulse 1.6s ease infinite;')} />
+            <span style={css('font-weight:600;font-size:15px;letter-spacing:-.01em;')}>SimiCapital</span>
+            <span style={css('color:var(--text3);')}>·</span>
+            <span style={css('color:var(--text2);font-weight:500;font-size:13px;')}>Sourcing</span>
+          </div>
+          <div style={css('display:flex;align-items:center;gap:9px;color:var(--text2);font-size:12.5px;')}>
+            <span style={css('width:14px;height:14px;border-radius:50%;border:2px solid var(--border2);border-top-color:var(--accent);animation:spin .7s linear infinite;')} />
+            Signing you in…
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const supa = cfg != null
 
@@ -172,7 +196,7 @@ export default function Gate({ children }) {
 
   return (
     <div data-theme="dark" style={css('min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--text);padding:24px;')}>
-      <form onSubmit={submit} style={css('width:min(360px,92vw);display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:28px 26px;box-shadow:0 24px 70px rgba(0,0,0,.5);')}>
+      <form onSubmit={submit} style={css('width:min(360px,92vw);display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:28px 26px;box-shadow:0 24px 70px rgba(0,0,0,.5);animation:fadein .25s ease;')}>
         <div style={css('display:flex;align-items:center;gap:10px;margin-bottom:18px;')}>
           <div style={css('width:22px;height:22px;border-radius:5px;background:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);')} />
           <span style={css('font-weight:600;font-size:15px;letter-spacing:-.01em;')}>SimiCapital</span>

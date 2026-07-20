@@ -12,6 +12,14 @@ export default function FilterChat({ onPatch }) {
   const [reply, setReply] = useState('')
   const [helpOpen, setHelpOpen] = useState(false)
 
+  const [popReply, setPopReply] = useState('')
+  const applyTerm = (term) => {
+    const res = parseQuery(term)
+    if (Object.keys(res.patch).length) onPatch(res.patch)
+    setPopReply(res.reply)
+    setReply(res.reply)
+  }
+
   const send = (e) => {
     e?.preventDefault()
     const m = msg.trim()
@@ -47,10 +55,15 @@ export default function FilterChat({ onPatch }) {
               <span style={css('font-size:14.5px;font-weight:600;')}>Everything the filter search understands</span>
               <button className="tap" onClick={() => setHelpOpen(false)} aria-label="Close" style={css('margin-left:auto;display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button>
             </div>
+            {popReply && (
+              <div role="status" style={css('flex:0 0 auto;padding:8px 18px;border-bottom:1px solid var(--border);background:var(--accent-dim);font-size:11.5px;color:var(--text);line-height:1.5;')}>
+                {popReply}
+              </div>
+            )}
             <div style={css('flex:1;overflow-y:auto;padding:14px 18px 18px;')}>
               <div style={css('font-size:11.5px;color:var(--text2);line-height:1.55;margin-bottom:14px;')}>
-                Combine as many terms as you want in one query. Every query <b>adds to</b> the current
-                filters — search once, then narrow further with the next query. Say <b>reset</b> to start over.
+                Combine as many terms as you want in one query — or just <b>click any term below</b> to
+                apply it. Every query <b>adds to</b> the current filters; say <b>reset</b> to start over.
               </div>
               {VOCAB.map((sec) => (
                 <div key={sec.title} style={css('margin-bottom:16px;')}>
@@ -58,8 +71,16 @@ export default function FilterChat({ onPatch }) {
                   <div style={css('display:flex;flex-direction:column;gap:5px;')}>
                     {sec.rows.map(([what, terms]) => (
                       <div key={what} style={css('display:flex;gap:10px;font-size:11.5px;line-height:1.5;')}>
-                        <span style={css('flex:0 0 172px;color:var(--text);font-weight:500;')}>{what}</span>
-                        <span style={css('flex:1;color:var(--text3);font-family:var(--mono);font-size:10.5px;')}>{terms}</span>
+                        <span style={css('flex:0 0 172px;color:var(--text);font-weight:500;padding-top:2px;')}>{what}</span>
+                        {Array.isArray(terms) ? (
+                          <span style={css('flex:1;display:flex;flex-wrap:wrap;gap:5px;')}>
+                            {terms.map((term) => (
+                              <button key={term} type="button" className="term-chip" onClick={() => applyTerm(term)} title={`Apply: ${term}`} style={css('height:22px;padding:0 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:11px;color:var(--text3);font-family:var(--mono);font-size:10.5px;')}>{term}</button>
+                            ))}
+                          </span>
+                        ) : (
+                          <span style={css('flex:1;color:var(--text3);font-size:11px;padding-top:2px;')}>{terms}</span>
+                        )}
                       </div>
                     ))}
                   </div>

@@ -261,61 +261,64 @@ export function parseQuery(text) {
 }
 
 // ── the "known terms" popup content — mirrors the rules above ───────────────
+// ── the "known terms" popup content — mirrors the rules above ───────────────
+// Rows hold ARRAYS of real, clickable queries (each chip parses + applies);
+// a plain string row renders as explanatory text instead of chips.
 export const VOCAB = [
   { title: 'Channel', rows: [
-    ['Off-market owner leads', 'off-market · owner leads · county leads · unlisted · not listed'],
-    ['On-market listings', 'on-market · listed · listings · brokered · for-sale'],
-    ['Both', 'both channels · all channels'],
+    ['Off-market owner leads', ['off-market', 'owner leads', 'county leads', 'unlisted', 'not listed']],
+    ['On-market listings', ['on-market', 'listed', 'brokered', 'for-sale']],
+    ['Both', ['both channels']],
   ] },
   { title: 'Score buckets', rows: [
-    ['Only one bucket', 'only actionable · just tentative · actionable only · green / yellow / red'],
-    ['Hide a bucket', 'hide pass · no pass · without tentative · exclude red'],
-    ['Everything', 'all scores · any score · show everything'],
+    ['Only one bucket', ['only actionable', 'just tentative', 'only green', 'only yellow', 'only red']],
+    ['Hide a bucket', ['hide pass', 'no pass', 'without tentative', 'exclude red']],
+    ['Everything', ['all scores', 'any score', 'show everything']],
   ] },
   { title: 'Markets (one at a time)', rows: [
-    ...Object.entries(MARKET_ALIASES).map(([name, a]) => [name, a.join(' · ')]),
-    ['All markets', 'all markets · anywhere · nationwide'],
+    ...Object.entries(MARKET_ALIASES).map(([name, a]) => [name, [...a]]),
+    ['All markets', ['all markets', 'anywhere', 'nationwide']],
   ] },
   { title: 'Size (building SF)', rows: [
-    ['Minimum', 'over 100k sf · at least 80,000 sf · 100k+ sf · more than 120k'],
-    ['Maximum', 'under 200k sf · up to 150k sf · less than 90k'],
-    ['Range', 'between 100k and 200k sf'],
+    ['Minimum', ['over 100k sf', 'at least 80,000 sf', '100k+ sf', 'more than 120k']],
+    ['Maximum', ['under 200k sf', 'up to 150k sf', 'less than 90k']],
+    ['Range', ['between 100k and 200k sf', 'between 60k and 300k sf']],
   ] },
   { title: 'Clear height (max — buy-box wants low clear)', rows: [
-    ['Max clear', 'clear under 24 · ceiling below 22 ft · under 24 ft clear · low clear'],
+    ['Max clear', ['clear under 24', 'ceiling below 22 ft', 'under 28 ft clear', 'low clear']],
   ] },
   { title: 'Year built', rows: [
-    ['After', 'built after 1970 · built since 1975 · newer than 1980 · post-1970'],
-    ['Before', 'built before 1990 · pre-1985 · older than 1990'],
-    ['Range / decades', 'built 1960 to 1979 · 1960-1990 · 60s · 60s and 70s'],
+    ['After', ['built after 1970', 'built since 1975', 'newer than 1980', 'post-1970']],
+    ['Before', ['built before 1990', 'pre-1985', 'older than 1990']],
+    ['Range / decades', ['built 1960 to 1979', '60s', '60s and 70s', '70s and 80s']],
   ] },
   { title: 'Owner', rows: [
-    ['Type', 'llc · trust · individual · private owner · partnership · corp · any owner'],
-    ['Location', 'out-of-state · oos · absentee · out of town · local owner · in-state'],
-    ['Hold', 'held 10+ years · owned for 15 years · long hold · owned since 2005'],
+    ['Type', ['llc', 'trust', 'individual', 'private owner', 'partnership', 'corp', 'any owner']],
+    ['Location', ['out-of-state', 'absentee', 'out of town', 'local owner', 'in-state']],
+    ['Hold', ['held 10+ years', 'owned for 15 years', 'long hold', 'owned since 2005']],
   ] },
   { title: 'Distress signals', rows: [
-    ['Tax', 'tax-delinquent · delinquent · back taxes · tax lien · unpaid taxes'],
-    ['Code', 'code violations · violations · code enforcement'],
-    ['Permits', 'permit anomaly · permit gap · no permits'],
-    ['Vacancy', 'vacant · empty · abandoned · unoccupied'],
-    ['Any distress', 'distressed · any signal'],
-    ['Contact', 'has contact · with phone · has email · skip-traced · reachable'],
+    ['Tax', ['tax-delinquent', 'back taxes', 'tax lien', 'unpaid taxes']],
+    ['Code', ['code violations', 'code enforcement']],
+    ['Permits', ['permit anomaly', 'permit gap', 'no permits']],
+    ['Vacancy', ['vacant', 'empty', 'abandoned', 'unoccupied']],
+    ['Any distress', ['distressed', 'any signal']],
+    ['Contact', ['has contact', 'with phone', 'has email', 'skip-traced', 'reachable']],
   ] },
   { title: 'Previous sale', rows: [
-    ['Sold since', 'sold after 2015 · bought since 2018'],
-    ['Price', 'bought for under $5m · sold over $1m · purchased below $3,500,000'],
-    ['$ per SF', 'under $80/sf · below $60 per sf'],
+    ['Sold since', ['sold after 2015', 'bought since 2018']],
+    ['Price', ['bought for under $5m', 'sold over $1m', 'purchased below $2m']],
+    ['$ per SF', ['under $80/sf', 'below $60 per sf']],
   ] },
   { title: 'Distance & parcels', rows: [
-    ['Distance to core', 'within 5 miles · under 10 mi · 5 miles of downtown'],
-    ['Parcel bucket', 'manual review · review bucket · 60-75k · scored universe · all parcels'],
+    ['Distance to core', ['within 5 miles', 'under 10 mi', '5 miles of downtown']],
+    ['Parcel bucket', ['manual review', 'review bucket', '60-75k', 'scored universe', 'all parcels']],
   ] },
   { title: 'View, search & stacking', rows: [
-    ['Switch view', 'map · table · list · brokers'],
-    ['Text search', '"1106 davidson" (in quotes) · search couchville pike'],
+    ['Switch view', ['map', 'table', 'brokers']],
+    ['Text search', ['"1106 davidson"', 'search couchville pike']],
     ['Stacking', 'each query ADDS to the current filters — e.g. “nashville”, then “over 100k sf”, then “only actionable”'],
-    ['Start over', 'reset · clear filters · start over'],
+    ['Start over', ['reset', 'clear filters', 'start over']],
   ] },
 ]
 

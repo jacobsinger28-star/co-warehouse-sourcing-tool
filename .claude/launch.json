@@ -10,6 +10,16 @@
       ],
       "port": 3001,
       "autoPort": true
+    },
+    {
+      "name": "sourcing-dev",
+      "runtimeExecutable": "/Users/razkorteran/.nvm/versions/node/v22.23.1/bin/node",
+      "runtimeArgs": [
+        "/Users/razkorteran/Desktop/code/SimiCapital/sourcing-platform/frontend/node_modules/vite/bin/vite.js",
+        "/Users/razkorteran/Desktop/code/SimiCapital/sourcing-platform/frontend"
+      ],
+      "port": 3002,
+      "autoPort": true
     }
   ]
 }
