@@ -78,8 +78,10 @@ export default function ReuseFinder() {
 
   const [bbMetro, setBbMetro] = useState('All')
   const [bbBandOnly, setBbBandOnly] = useState(false)
+  const [bbDeal, setBbDeal] = useState('All')
+  const dealOf = (d) => (d.status.startsWith('Lease') ? 'Lease' : 'Sale')
   const bbRows = BUYBOX_CANDIDATES
-    .filter((d) => (bbMetro === 'All' || d.metro === bbMetro) && (!bbBandOnly || inBand(d.sf)))
+    .filter((d) => (bbMetro === 'All' || d.metro === bbMetro) && (bbDeal === 'All' || dealOf(d) === bbDeal) && (!bbBandOnly || inBand(d.sf)))
     .sort((a, b) => b.sf - a.sf)
   const bbBandCount = BUYBOX_CANDIDATES.filter((d) => inBand(d.sf)).length
 
@@ -111,6 +113,9 @@ export default function ReuseFinder() {
       <div style={css('display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;')}>
         <div style={css('display:flex;gap:2px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:8px;')}>
           {METROS.map((m) => <button key={m} className="hov" onClick={() => setBbMetro(m)} style={css(seg(bbMetro === m))}>{m}</button>)}
+        </div>
+        <div style={css('display:flex;gap:2px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:8px;')}>
+          {['All', 'Sale', 'Lease'].map((m) => <button key={m} className="hov" onClick={() => setBbDeal(m)} style={css(seg(bbDeal === m))}>{m}</button>)}
         </div>
         <label style={css('display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer;')}>
           <input type="checkbox" checked={bbBandOnly} onChange={() => setBbBandOnly((v) => !v)} style={css('accent-color:var(--accent);width:15px;height:15px;')} />

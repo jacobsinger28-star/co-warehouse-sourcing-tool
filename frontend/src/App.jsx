@@ -4,6 +4,7 @@ import { RealDataContext } from './RealDataContext.js'
 import Icon from './Icon.jsx'
 import { PROPS, BROKERS, SCRAPE_SOURCES, MARKETS, SOURCES } from './data.js'
 import { liveScrape, liveStop, liveStatus, liveRows } from './liveApi.js'
+import { signOut } from './session.js'
 import FilterChat from './FilterChat.jsx'
 import {
   fmtInt, fmtSF, fmtMoney2, scDot, scLabel, chDot, chTag, chLabel, scChip,
@@ -602,7 +603,8 @@ export default function App() {
 
               {/* MAP */}
               {view === 'map' && !showEmpty && (
-                <div className="map-view" data-map={mapStyle} style={css('flex:1;position:relative;min-height:0;overflow:hidden;background:var(--map-land);')}>
+                // isolation contains Leaflet's internal z-indexes (panes 200-700, controls 1000, our overlays 1100) so the detail drawer (z-index 26) can sit above the whole map
+                <div className="map-view" data-map={mapStyle} style={css('flex:1;position:relative;isolation:isolate;min-height:0;overflow:hidden;background:var(--map-land);')}>
                   <DealMap props={visibleProps} meta={dataset.meta} mapStyle={mapStyle} theme={theme} onOpen={setDrawerId} />
 
                   <div style={css('position:absolute;top:12px;left:12px;display:flex;gap:2px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:7px;z-index:1100;')}>
@@ -780,7 +782,8 @@ export default function App() {
             <div style={css('width:38px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 14px;')} />
             <div style={css('display:flex;align-items:center;gap:11px;margin-bottom:18px;')}><div style={css('width:42px;height:42px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--text2);')}>JS</div><div style={css('flex:1;')}><div style={css('font-size:14px;font-weight:600;')}>J. Simi</div><div style={css('font-size:11.5px;color:var(--text3);')}>Acquisitions analyst</div></div><button className="tap" onClick={() => setAcctOpen(false)} aria-label="Close" style={css('display:flex;align-items:center;justify-content:center;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button></div>
             <button className="tap" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} style={css('display:flex;align-items:center;gap:10px;width:100%;height:48px;padding:0 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:13.5px;margin-bottom:10px;')}><Icon name="moon" size={17} sw={1.7} />Toggle light / dark theme</button>
-            <div style={css('display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:10px 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:13.5px;')}><span style={css('width:8px;height:8px;border-radius:50%;background:var(--accent);flex:0 0 auto;')} /><div style={css('flex:1;')}>Markets</div><span style={css('font-size:12px;color:var(--text3);')}>All 10 metros</span></div>
+            <div style={css('display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:10px 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--text);font-size:13.5px;margin-bottom:10px;')}><span style={css('width:8px;height:8px;border-radius:50%;background:var(--accent);flex:0 0 auto;')} /><div style={css('flex:1;')}>Markets</div><span style={css('font-size:12px;color:var(--text3);')}>All 10 metros</span></div>
+            <button className="tap" onClick={signOut} style={css('display:flex;align-items:center;gap:10px;width:100%;height:48px;padding:0 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;color:var(--red);font-size:13.5px;')}><Icon name="slashCircle" size={17} sw={1.7} />Sign out</button>
           </div>
         </>
       )}

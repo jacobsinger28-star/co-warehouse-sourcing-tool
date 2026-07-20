@@ -45,9 +45,11 @@ export const refreshSession = (cfg, refreshToken) =>
  * Keep the access token fresh for the life of the page. Refreshes ~60s before
  * expiry; on a failed refresh keeps the old token and retries shortly (the
  * server will 401 if it truly expired — same UX as the old "reload to re-auth").
+ * Supabase rotates the refresh token on every use, so onRefreshToken (optional)
+ * fires with each new one for callers that persist it across reloads.
  * Returns a stop() cleanup.
  */
-export function startAutoRefresh(cfg, session, onToken) {
+export function startAutoRefresh(cfg, session, onToken, onRefreshToken) {
   let timer
   let refreshToken = session.refresh_token
   const arm = (expiresIn) => { timer = setTimeout(run, Math.max(30, (expiresIn || 3600) - 60) * 1000) }
@@ -56,6 +58,7 @@ export function startAutoRefresh(cfg, session, onToken) {
       const s = await refreshSession(cfg, refreshToken)
       refreshToken = s.refresh_token || refreshToken
       onToken(s.access_token)
+      if (s.refresh_token) onRefreshToken?.(s.refresh_token)
       arm(s.expires_in)
     } catch {
       arm(120) // transient failure — retry in 2 min with the old refresh token

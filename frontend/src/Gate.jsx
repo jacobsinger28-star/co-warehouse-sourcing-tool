@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { css } from './css.js'
 import { loadRealData } from './crypto.js'
 import { RealDataContext } from './RealDataContext.js'
-import { setSessionPassword, setSessionToken } from './session.js'
-import { signInWithPassword, signUp, startAutoRefresh } from './supabaseAuth.js'
+import {
+  clearSaved, loadRefreshToken, loadSavedPassword, savePassword, saveRefreshToken,
+  setSessionPassword, setSessionToken,
+} from './session.js'
+import { refreshSession, signInWithPassword, signUp, startAutoRefresh } from './supabaseAuth.js'
 
 // Access gate for this internal, PII-bearing tool. Two modes, picked at load:
 //
@@ -20,7 +23,10 @@ import { signInWithPassword, signUp, startAutoRefresh } from './supabaseAuth.js'
 //     shasum -a 256 the new value, swap PW_HASH, and re-run
 //     `DASHBOARD_PASSWORD=… node tools/encrypt_data.mjs`.
 //
-// Credentials are never stored (no sessionStorage): a reload re-prompts.
+// A successful unlock persists a "keep me signed in" credential in localStorage
+// (Supabase: the refresh token; legacy: the shared password — see session.js),
+// and page load silently restores it, so a refresh does NOT re-prompt. The
+// account menu's Sign out clears it.
 const PW_HASH = 'be55c493fa78734fbcd06ec54d500cf21f6ef25edfca096f00776b45265513f5'
 
 async function sha256Hex(s) {
@@ -60,12 +66,43 @@ export default function Gate({ children }) {
 
   useEffect(() => {
     let on = true
-    detectSupabase(baseUrl).then((c) => { if (on) setCfg(c) })
+    ;(async () => {
+      const c = await detectSupabase(baseUrl)
+      if (!on) return
+      // Silent restore from a previous visit — keeps the form hidden (cfg stays
+      // undefined → "Checking sign-in method…") until we know it failed.
+      try {
+        if (c) {
+          const rt = loadRefreshToken()
+          if (rt) {
+            const session = await refreshSession(c, rt)
+            if (!on) return
+            setCfg(c)
+            await enterWithSession(session, c)
+            return
+          }
+        } else {
+          const saved = loadSavedPassword()
+          if (saved && (await sha256Hex(saved)) === PW_HASH) {
+            const data = await loadRealData({ password: saved }, baseUrl).catch(() => null)
+            if (!on) return
+            setSessionPassword(saved)
+            setCfg(c)
+            setRealData(data)
+            setOk(true)
+            return
+          }
+        }
+      } catch {
+        clearSaved() // stale/revoked credential — fall through to the form
+      }
+      if (on) setCfg(c)
+    })()
     return () => {
       on = false
       stopRefresh.current?.()
     }
-  }, [baseUrl])
+  }, [baseUrl]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (ok) return <RealDataContext.Provider value={realData}>{children}</RealDataContext.Provider>
 
@@ -80,9 +117,13 @@ export default function Gate({ children }) {
       ? `Heads up: only ${cfg.allowedDomains.join(', ')} accounts get data access.`
       : ''
 
-  const enterWithSession = async (session) => {
+  const enterWithSession = async (session, c = cfg) => {
     setSessionToken(session.access_token)
-    stopRefresh.current = startAutoRefresh(cfg, session, setSessionToken)
+    if (session.refresh_token) saveRefreshToken(session.refresh_token)
+    // Supabase rotates refresh tokens — persist each new one or the stored copy
+    // goes stale within the hour.
+    stopRefresh.current?.()
+    stopRefresh.current = startAutoRefresh(c, session, setSessionToken, saveRefreshToken)
     const data = await loadRealData({ token: session.access_token }, baseUrl)
     setRealData(data)
     setOk(true)
@@ -116,7 +157,8 @@ export default function Gate({ children }) {
         const match = (await sha256Hex(pw)) === PW_HASH
         if (!match) throw new Error('Incorrect password — try again.')
         const data = await loadRealData({ password: pw }, baseUrl).catch(() => null)
-        setSessionPassword(pw) // memory-only; authed API calls (deals chat) reuse it
+        setSessionPassword(pw) // authed API calls (deals chat) reuse it
+        savePassword(pw) // keep signed in across reloads (Sign out clears)
         setRealData(data)
         setOk(true)
       }
