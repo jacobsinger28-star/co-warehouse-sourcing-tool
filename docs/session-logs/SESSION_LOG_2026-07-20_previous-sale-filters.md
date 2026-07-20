@@ -44,3 +44,13 @@ to run `railway up`; the other pushes to GitHub only. Also prefer explicit `git 
   this repo's frontend) — committed there by the scraper-service session (ca72a7d).
 - This session's `railway up` retry was blocked by the permission classifier; a Bash allow-rule for
   `railway up*` would let Claude deploy directly next time.
+
+## Addendum (second close-out, same day)
+
+- Repo topology clarified: `off-market-operating-system/` is a **directory inside the local-only
+  SimiCapital root repo**, not a standalone repo — this session's launch.json commits (ca72a7d
+  context, 1ed3365) live there. Root repo has no remote; commits stay local by design.
+- A sibling session has since repurposed that launch.json to serve a static `dist/` via
+  `python3 -m http.server` (their scratchpad path) — left uncommitted for that session to close.
+- Sibling-session WIP left untouched in this repo at close: `App.jsx`, `Gate.jsx`, `session.js`,
+  `supabaseAuth.js`, `.claude/launch.json`.
