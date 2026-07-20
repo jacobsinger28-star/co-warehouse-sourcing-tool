@@ -89,7 +89,13 @@ def _run_scrape(
                     listing["score_category"] = "Unscored"
                     listing["scoring_reason"] = ""
                 address = listing.get("address") or ""
-                lat, lng = geocode_sync(address)
+                # geocode_sync BLOCKS (Nominatim 1 req/sec + sync HTTP). Running
+                # it inline froze the event loop, stalling every parallel site
+                # task during each wait. Off-loading it to a thread lets the sites
+                # keep scraping while a listing geocodes — the actual overlap that
+                # makes the parallelism pay off. Still serial per listing (the
+                # consumer awaits each one), so the 1 req/sec limit holds.
+                lat, lng = await loop.run_in_executor(None, geocode_sync, address)
                 listing["lat"] = lat
                 listing["lng"] = lng
                 upsert_listing(listing)

@@ -403,16 +403,28 @@ class CrexiScraper(BaseScraper):
                         await asyncio.sleep(0.4)  # politeness between pages
             finally:
                 logger.info("[crexi] %s — emitted %d new listing(s)", mk["name"], market_emitted)
-                await queue.put(_DONE)
+                # Best-effort nudge; the reader below tracks task.done(), not this.
+                # A blocking put() here deadlocks at teardown once the reader stops.
+                try:
+                    queue.put_nowait(_DONE)
+                except asyncio.QueueFull:
+                    pass
 
         tasks = [asyncio.create_task(_scan_market(mk)) for mk in target]
         emitted = 0
-        markets_done = 0
         try:
-            while markets_done < len(tasks):
-                item = await queue.get()
+            while True:
+                if self._should_stop():
+                    break
+                # Done when every market task finished AND the queue is drained —
+                # robust to a dropped _DONE (put_nowait can drop one when full).
+                if all(t.done() for t in tasks) and queue.empty():
+                    break
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=0.2)
+                except asyncio.TimeoutError:
+                    continue
                 if item is _DONE:
-                    markets_done += 1
                     continue
                 yield item
                 emitted += 1

@@ -1646,28 +1646,36 @@ async () => {{
                         await page.close()
                     except Exception:  # noqa: BLE001 — teardown only
                         pass
-                await queue.put(_DONE)
+                # Best-effort wakeup nudge — the drain tracks completion via
+                # task.done(), NOT by counting these. A blocking put() here would
+                # deadlock at teardown: once the consumer stops draining, the
+                # queue stays full and this await would hang the cancellation.
+                try:
+                    queue.put_nowait(_DONE)
+                except asyncio.QueueFull:
+                    pass
 
         async def _drain():
             tasks = [asyncio.create_task(_run_site(s)) for s in self._sites]
-            sites_done = 0
             try:
-                while sites_done < len(tasks):
-                    # Poll for stop rather than blocking indefinitely on get():
-                    # a site stuck in a long Playwright fetch won't reach its own
-                    # stop-check for many seconds, so the drain has to be the
-                    # thing that reacts — it breaks here and the finally cancels
-                    # every site task (cancellation interrupts even a blocking
-                    # page.goto), halting the run within ~1s of Stop.
+                while True:
+                    # React to Stop promptly even when a site is mid-fetch:
+                    # break, and the finally cancels every task (cancellation
+                    # interrupts even a blocking page.goto).
                     if self._should_stop():
                         logger.info("[scrape] stop requested — cancelling %d site task(s)", len(tasks))
                         break
+                    # Done when every site task has finished AND the queue is
+                    # drained. Tracking task.done() (not _DONE sentinels) means a
+                    # dropped sentinel — put_nowait can drop one when the queue is
+                    # momentarily full — can never wedge the loop.
+                    if all(t.done() for t in tasks) and queue.empty():
+                        break
                     try:
-                        item = await asyncio.wait_for(queue.get(), timeout=0.5)
+                        item = await asyncio.wait_for(queue.get(), timeout=0.2)
                     except asyncio.TimeoutError:
                         continue
                     if item is _DONE:
-                        sites_done += 1
                         continue
                     yield item
             finally:
