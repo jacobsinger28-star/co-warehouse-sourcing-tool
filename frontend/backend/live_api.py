@@ -26,7 +26,7 @@ from scorer import score_listing
 from database import (
     init_db, start_job, finish_job, get_job_status, get_listings,
     upsert_listing, prune_stale_listings, get_source_counts,
-    get_cached_source_counts, set_coords, _conn,
+    get_cached_source_counts, set_coords, reconcile_orphaned_jobs, _conn,
 )
 from geocoder import geocode_cached, geocode_batch
 from scrapers.markets import market_for_coords, market_for_address
@@ -35,6 +35,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 init_db()
+# A restart/redeploy kills any in-flight scrape thread but leaves its job row
+# 'running' — which wedges the Keep Sourcing / Stop buttons. Clear those here.
+_orphaned = reconcile_orphaned_jobs()
+if _orphaned:
+    logger.warning("[startup] marked %d orphaned 'running' job(s) as interrupted", _orphaned)
 app = FastAPI(title="Sourcing Console Live Scraper", version="1.0.0")
 
 _scrape_lock = threading.Lock()

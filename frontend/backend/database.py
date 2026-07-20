@@ -300,3 +300,19 @@ def get_job_status() -> dict | None:
             "SELECT * FROM scrape_jobs ORDER BY id DESC LIMIT 1"
         ).fetchone()
     return dict(row) if row else None
+
+
+def reconcile_orphaned_jobs() -> int:
+    """A freshly-started process cannot have a live scrape thread, so any job
+    still marked 'running' is orphaned — its worker died on a container
+    restart/redeploy without ever calling finish_job(). Left as-is it wedges
+    the console: 'Keep Sourcing' returns already_running and 'Stop' never
+    resolves. Mark such rows 'interrupted' at boot so the buttons work again.
+    Returns the number of rows fixed."""
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE scrape_jobs SET status='interrupted', finished_at=? "
+            "WHERE status='running'",
+            (datetime.utcnow().isoformat(),),
+        )
+        return cur.rowcount
