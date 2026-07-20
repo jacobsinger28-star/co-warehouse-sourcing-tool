@@ -8,16 +8,27 @@ import { createPortal } from 'react-dom'
 import { css } from './css.js'
 import Icon from './Icon.jsx'
 import { parseQuery, patchForTerm, patchSatisfied, inversePatch, isDefaultTerm, VOCAB, EXAMPLES } from './filterLang.js'
+import { recordApply, recordUnmatched, topTerms, unmatchedList, clearUsage } from './filterUsage.js'
 
 export default function FilterChat({ state, onPatch }) {
   const [open, setOpen] = useState(false)
   const [msg, setMsg] = useState('')
   const [reply, setReply] = useState('')       // last result, shown under the rail trigger
   const [popReply, setPopReply] = useState('') // same result, pinned inside the modal
+  // usage memory (device-local) — powers the "Frequent" and "Not recognized" rows
+  const [frequent, setFrequent] = useState([])
+  const [unmatched, setUnmatched] = useState([])
+  const refreshUsage = () => { setFrequent(topTerms(8)); setUnmatched(unmatchedList()) }
+  const openModal = () => { setPopReply(''); refreshUsage(); setOpen(true) }
 
   const apply = (text) => {
     const res = parseQuery(text)
-    if (Object.keys(res.patch).length) onPatch(res.patch)
+    const matched = Object.keys(res.patch).length > 0
+    if (matched) { onPatch(res.patch); recordApply(text) }
+    // remember queries the parser couldn't (fully) handle — nothing matched, or
+    // some words were ignored — so the vocabulary gap stays visible
+    if (!matched || (res.leftover && res.leftover.length)) recordUnmatched(text, res.leftover)
+    refreshUsage()
     setPopReply(res.reply)
     setReply(res.reply)
   }
@@ -48,7 +59,7 @@ export default function FilterChat({ state, onPatch }) {
     <div style={css('margin-bottom:18px;')}>
       <button
         type="button"
-        onClick={() => { setOpen(true); setPopReply('') }}
+        onClick={openModal}
         aria-label="Open filter search"
         className="hov"
         style={css('display:flex;align-items:center;gap:8px;width:100%;height:34px;padding:0 10px;background:var(--surface2);border:1px solid var(--accent-line);border-radius:8px;cursor:text;')}
@@ -88,6 +99,38 @@ export default function FilterChat({ state, onPatch }) {
                 Type any mix of terms and hit <b>Enter</b> — or <b>click any term below</b> to apply it
                 instantly. Every query <b>adds to</b> the current filters; say <b>reset</b> to start over.
               </div>
+
+              {/* FREQUENT — the filters this browser applies most, surfaced up top */}
+              {frequent.length > 0 && (
+                <div style={css('margin-bottom:16px;')}>
+                  <div style={css('font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:600;margin-bottom:7px;')}>Frequent</div>
+                  <div style={css('display:flex;flex-wrap:wrap;gap:5px;')}>
+                    {frequent.map(({ term, count }) => {
+                      const on = patchSatisfied(patchForTerm(term), state)
+                      return (
+                        <button key={term} type="button" className={on ? 'term-chip on' : 'term-chip'} aria-pressed={on} onClick={() => clickTerm(term)} title={`Used ${count}×`} style={css('display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text);font-size:11px;')}>{term}<span style={css('font-family:var(--mono);font-size:9px;color:var(--text3);')}>{count}</span></button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* NOT RECOGNIZED — searches the parser couldn't handle; a to-add list */}
+              {unmatched.length > 0 && (
+                <div style={css('margin-bottom:16px;padding:11px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;')}>
+                  <div style={css('display:flex;align-items:center;gap:8px;margin-bottom:8px;')}>
+                    <span style={css('font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;')}>Searched but not filtered</span>
+                    <button type="button" className="hov" onClick={() => { clearUsage(); refreshUsage() }} style={css('margin-left:auto;background:none;border:none;color:var(--text3);font-size:10.5px;')}>Clear</button>
+                  </div>
+                  <div style={css('font-size:10.5px;color:var(--text3);line-height:1.5;margin-bottom:8px;')}>These didn’t match a known filter — worth adding to the vocabulary.</div>
+                  <div style={css('display:flex;flex-wrap:wrap;gap:5px;')}>
+                    {unmatched.slice(0, 10).map((u) => (
+                      <button key={u.q} type="button" className="term-chip" onClick={() => { setMsg(u.q) }} title="Put back in the box to retry" style={css('height:22px;padding:0 8px;background:transparent;border:1px dashed var(--border2);border-radius:11px;color:var(--text2);font-size:10.5px;')}>{u.q}{u.leftover?.length ? <span style={css('color:var(--warn,#c98a3a);')}> · {u.leftover.slice(0, 3).join(' ')}</span> : null}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {VOCAB.map((sec) => (
                 <div key={sec.title} style={css('margin-bottom:16px;')}>
                   <div style={css('font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:7px;')}>{sec.title}</div>
