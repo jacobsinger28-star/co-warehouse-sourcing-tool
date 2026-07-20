@@ -177,21 +177,30 @@ def get_known_urls(max_age_hours: float | None = None) -> set[str]:
     return {row[0] for row in rows}
 
 
-def prune_stale_listings(scraped_since: str) -> int:
+def prune_stale_listings(scraped_since: str, sources: list[str] | None = None) -> int:
     """
     Delete listings whose scraped_at is older than `scraped_since` (ISO timestamp).
     Used after a forced full-refresh: anything not touched during the run is
     no longer appearing on brokerage sites (sold / removed).
+
+    `sources` restricts the prune to those source names. Pass the sites that
+    actually COMPLETED the refresh — a site that errored out (bot wall, selector
+    rot) must not get its whole inventory wiped just because it yielded nothing.
+    None/empty = prune nothing (fail-safe; the old prune-everything behavior
+    required every site to have succeeded).
 
     Cached listings (restored from backup) are NEVER pruned — they need to be
     confirmed fresh by a real scrape before they become subject to pruning.
 
     Returns the number of rows deleted.
     """
+    if not sources:
+        return 0
+    ph = ",".join("?" for _ in sources)
     with _conn() as c:
         cur = c.execute(
-            "DELETE FROM listings WHERE scraped_at < ? AND cached = 0",
-            (scraped_since,),
+            f"DELETE FROM listings WHERE scraped_at < ? AND cached = 0 AND source IN ({ph})",
+            (scraped_since, *sources),
         )
         return cur.rowcount
 

@@ -8,8 +8,10 @@ Filters: 75,000–300,000 SF, US addresses only.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import AsyncGenerator
@@ -24,6 +26,11 @@ _CONFIG_PATH = Path(__file__).parent.parent / "scraper_config.json"
 # SF range filter — listings outside this range are skipped
 _SF_MIN = 75_000
 _SF_MAX = 300_000
+
+# Brokerage sites scraped concurrently. Each Playwright site gets its own page
+# (one shared Chromium); the API sites (crexi, colliers) are browserless. Capped
+# so a small container isn't juggling 7 heavy SPAs at once.
+_SITE_CONCURRENCY = max(1, int(os.environ.get("SITE_CONCURRENCY", "4")))
 
 # US state / territory abbreviations.
 # Territories (VI, GU, PR, MP, AS) collide with common foreign state abbreviations
@@ -549,7 +556,14 @@ class BrokerageScraper(BaseScraper):
         self._sites = _BUILTIN_SITES + cfg.get("custom_sites", [])
         if enabled_sites:
             self._sites = [s for s in self._sites if s["name"] in enabled_sites]
+            missing = set(enabled_sites) - {s["name"] for s in self._sites}
+            if missing:
+                logger.warning("[scrape] unknown site name(s) ignored: %s", ", ".join(sorted(missing)))
         self._stop_event = stop_event
+        # Live per-site progress, readable by the API layer while a run is going:
+        # {site: {status: pending|running|done|error|stopped, found: int,
+        #         markets: {metro: int}, error?: str}}
+        self.site_progress: dict[str, dict] = {}
 
     def _should_stop(self) -> bool:
         """True if a graceful stop has been requested."""
@@ -1577,114 +1591,211 @@ async () => {{
                 state = re.escape(parts[1].strip())
                 market_patterns.append(re.compile(rf",\s*{state}(?=[,\d\s]|$)", re.I))
 
-        async with self:
-            page = await self.new_page()
-            for site in self._sites:
-                site_name = site.get("name", "unknown")
-                logger.info("[scrape] starting brokerage: %s", site_name)
-                try:
-                    if site.get("cbre_mode"):
-                        async for listing in self._scrape_cbre_cards(
-                            page, market_patterns, markets, market_rents, known_urls=known_urls
-                        ):
-                            yield listing
+        # Sites run CONCURRENTLY (capped by _SITE_CONCURRENCY): each site task
+        # produces into one queue; this generator drains it, so downstream
+        # consumers (scoring → geocode → SQLite upsert) stay single-threaded.
+        # Mutated in place (never rebound) so callers holding a reference to
+        # self.site_progress see live updates.
+        self.site_progress.clear()
+        self.site_progress.update({
+            s.get("name", "unknown"): {"status": "pending", "found": 0, "markets": {}}
+            for s in self._sites
+        })
+        queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+        _DONE = object()  # per-site completion marker
+        site_sem = asyncio.Semaphore(_SITE_CONCURRENCY)
+
+        async def _run_site(site: dict) -> None:
+            site_name = site.get("name", "unknown")
+            prog = self.site_progress[site_name]
+            page = None
+            try:
+                async with site_sem:
+                    prog["status"] = "running"
+                    logger.info("[scrape] starting brokerage: %s", site_name)
+                    # API-mode sites are browserless; the rest get their own page
+                    # on the shared stealth context.
+                    api_mode = site.get("crexi_mode") or (
+                        site.get("colliers_mode") and site.get("colliers_use_api", True)
+                    )
+                    if not api_mode:
+                        page = await self.new_page()
+                    async for listing in self._site_listings(
+                        site, page, market_patterns, markets, market_rents, known_urls
+                    ):
+                        await queue.put(listing)
+                        prog["found"] += 1
+                        mkt = (listing.get("raw_data") or {}).get("market")
+                        if mkt:
+                            prog["markets"][mkt] = prog["markets"].get(mkt, 0) + 1
+                    prog["status"] = "stopped" if self._should_stop() else "done"
+            except asyncio.CancelledError:
+                prog["status"] = "stopped"
+                raise
+            except Exception as exc:
+                # Isolate per-brokerage failures — record and let the others run
+                prog["status"] = "error"
+                prog["error"] = str(exc)[:300]
+                logger.error(
+                    "[%s] brokerage scrape failed, skipping: %s", site_name, exc,
+                    exc_info=True,
+                )
+            finally:
+                if page is not None:
+                    try:
+                        await page.close()
+                    except Exception:  # noqa: BLE001 — teardown only
+                        pass
+                await queue.put(_DONE)
+
+        async def _drain():
+            tasks = [asyncio.create_task(_run_site(s)) for s in self._sites]
+            sites_done = 0
+            try:
+                while sites_done < len(tasks):
+                    # Poll for stop rather than blocking indefinitely on get():
+                    # a site stuck in a long Playwright fetch won't reach its own
+                    # stop-check for many seconds, so the drain has to be the
+                    # thing that reacts — it breaks here and the finally cancels
+                    # every site task (cancellation interrupts even a blocking
+                    # page.goto), halting the run within ~1s of Stop.
+                    if self._should_stop():
+                        logger.info("[scrape] stop requested — cancelling %d site task(s)", len(tasks))
+                        break
+                    try:
+                        item = await asyncio.wait_for(queue.get(), timeout=0.5)
+                    except asyncio.TimeoutError:
                         continue
-
-                    if site.get("colliers_mode"):
-                        if site.get("colliers_use_api", True):
-                            # Direct-API path — no browser, captures broker contacts.
-                            # Self-contained httpx context so it doesn't share the
-                            # Playwright page or the brokerage browser session.
-                            from .colliers import ColliersScraper
-                            async with ColliersScraper(stop_event=self._stop_event) as cs:
-                                async for listing in cs.scrape(
-                                    markets, market_rents, known_urls=known_urls,
-                                ):
-                                    yield listing
-                        else:
-                            # Legacy Playwright fallback (selector-rotted as of
-                            # 2026-06-08, kept for emergency switchover).
-                            async for listing in self._scrape_colliers_cards(
-                                page, market_patterns, markets, market_rents, known_urls=known_urls
-                            ):
-                                yield listing
+                    if item is _DONE:
+                        sites_done += 1
                         continue
+                    yield item
+            finally:
+                for t in tasks:
+                    t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
 
-                    if site.get("crexi_mode"):
-                        # Direct-API path — no browser. Self-contained httpx
-                        # context; scoped to the buy-box markets internally.
-                        from .crexi import CrexiScraper
-                        async with CrexiScraper(stop_event=self._stop_event) as cx:
-                            async for listing in cx.scrape(
-                                markets, market_rents, known_urls=known_urls,
-                            ):
-                                yield listing
-                        continue
+        # Only launch Chromium when a selected site actually needs a browser —
+        # a crexi/colliers-only run is pure httpx.
+        needs_browser = any(
+            not (s.get("crexi_mode") or (s.get("colliers_mode") and s.get("colliers_use_api", True)))
+            for s in self._sites
+        )
+        if needs_browser:
+            async with self:
+                async for item in _drain():
+                    yield item
+        else:
+            async for item in _drain():
+                yield item
 
-                    if site.get("newmark_mode"):
-                        async for listing in self._scrape_newmark_cards(
-                            page, market_patterns, markets, market_rents, known_urls=known_urls
-                        ):
-                            yield listing
-                        continue
+    async def _site_listings(
+        self,
+        site: dict,
+        page,
+        market_patterns: list[re.Pattern],
+        markets: list[str],
+        market_rents: dict[str, float],
+        known_urls: set[str],
+    ) -> AsyncGenerator[dict, None]:
+        """Yield listings for ONE brokerage site — the per-site half of scrape().
+        `page` is this site's own Playwright page (None for API-mode sites)."""
+        site_name = site.get("name", "unknown")
 
-                    if site.get("nai_mode"):
-                        async for listing in self._scrape_nai_cards(
-                            page, market_patterns, markets, market_rents, known_urls=known_urls
-                        ):
-                            yield listing
-                        continue
+        if site.get("cbre_mode"):
+            async for listing in self._scrape_cbre_cards(
+                page, market_patterns, markets, market_rents, known_urls=known_urls
+            ):
+                yield listing
+            return
 
-                    no_loc = site.get("location_param") is None and "location_param" in site
-                    if no_loc or not markets:
-                        # No server-side location filter, OR nationwide mode
-                        listing_urls = await self._collect_listing_urls(page, site, "")
-                        new_urls    = [u for u in listing_urls[:300] if u not in known_urls]
-                        cached_skip = len(listing_urls[:300]) - len(new_urls)
-                        if cached_skip:
-                            logger.info("[%s] skipping %d cached URLs, fetching %d new",
-                                        site_name, cached_skip, len(new_urls))
-                        for url in new_urls:
-                            detail = await self._scrape_detail(page, url, site)
-                            if not detail:
-                                await self._human_delay(1, 2)
-                                continue
-                            addr = detail.get("address") or ""
-                            if market_patterns and not any(p.search(addr) for p in market_patterns):
-                                continue
-                            if not _is_us_address(addr):
-                                logger.debug("[%s] skip %s — non-US", site_name, addr)
-                                continue
-                            if not _passes_sf_filter(detail.get("total_sf")):
-                                logger.debug(
-                                    "[%s] skip %s — SF %.0f out of range",
-                                    site_name, addr, detail.get("total_sf") or 0,
-                                )
-                                continue
-                            yield detail
-                            await self._human_delay(1, 2)
-                    else:
-                        for market in markets:
-                            rent = market_rents.get(market.lower())
-                            listing_urls = await self._collect_listing_urls(page, site, market)
-                            new_urls = [u for u in listing_urls[:100] if u not in known_urls]
-                            for url in new_urls:
-                                detail = await self._scrape_detail(page, url, site)
-                                if detail:
-                                    addr = detail.get("address") or ""
-                                    if not _is_us_address(addr):
-                                        continue
-                                    if not _passes_sf_filter(detail.get("total_sf")):
-                                        continue
-                                    if rent and not detail.get("market_gross_rent_small_bay"):
-                                        detail["market_gross_rent_small_bay"] = rent
-                                    yield detail
-                                await self._human_delay(1, 2)
+        if site.get("colliers_mode"):
+            if site.get("colliers_use_api", True):
+                # Direct-API path — no browser, captures broker contacts.
+                # Self-contained httpx context so it doesn't share the
+                # Playwright page or the brokerage browser session.
+                from .colliers import ColliersScraper
+                async with ColliersScraper(stop_event=self._stop_event) as cs:
+                    async for listing in cs.scrape(
+                        markets, market_rents, known_urls=known_urls,
+                    ):
+                        yield listing
+            else:
+                # Legacy Playwright fallback (selector-rotted as of
+                # 2026-06-08, kept for emergency switchover).
+                async for listing in self._scrape_colliers_cards(
+                    page, market_patterns, markets, market_rents, known_urls=known_urls
+                ):
+                    yield listing
+            return
 
-                except Exception as exc:
-                    # Isolate per-brokerage failures — log and continue to next site
-                    logger.error(
-                        "[%s] brokerage scrape failed, skipping: %s", site_name, exc,
-                        exc_info=True,
+        if site.get("crexi_mode"):
+            # Direct-API path — no browser. Self-contained httpx context;
+            # scoped to the buy-box markets internally (parallel per-metro).
+            from .crexi import CrexiScraper
+            async with CrexiScraper(stop_event=self._stop_event) as cx:
+                async for listing in cx.scrape(
+                    markets, market_rents, known_urls=known_urls,
+                ):
+                    yield listing
+            return
+
+        if site.get("newmark_mode"):
+            async for listing in self._scrape_newmark_cards(
+                page, market_patterns, markets, market_rents, known_urls=known_urls
+            ):
+                yield listing
+            return
+
+        if site.get("nai_mode"):
+            async for listing in self._scrape_nai_cards(
+                page, market_patterns, markets, market_rents, known_urls=known_urls
+            ):
+                yield listing
+            return
+
+        no_loc = site.get("location_param") is None and "location_param" in site
+        if no_loc or not markets:
+            # No server-side location filter, OR nationwide mode
+            listing_urls = await self._collect_listing_urls(page, site, "")
+            new_urls    = [u for u in listing_urls[:300] if u not in known_urls]
+            cached_skip = len(listing_urls[:300]) - len(new_urls)
+            if cached_skip:
+                logger.info("[%s] skipping %d cached URLs, fetching %d new",
+                            site_name, cached_skip, len(new_urls))
+            for url in new_urls:
+                detail = await self._scrape_detail(page, url, site)
+                if not detail:
+                    await self._human_delay(1, 2)
+                    continue
+                addr = detail.get("address") or ""
+                if market_patterns and not any(p.search(addr) for p in market_patterns):
+                    continue
+                if not _is_us_address(addr):
+                    logger.debug("[%s] skip %s — non-US", site_name, addr)
+                    continue
+                if not _passes_sf_filter(detail.get("total_sf")):
+                    logger.debug(
+                        "[%s] skip %s — SF %.0f out of range",
+                        site_name, addr, detail.get("total_sf") or 0,
                     )
                     continue
+                yield detail
+                await self._human_delay(1, 2)
+        else:
+            for market in markets:
+                rent = market_rents.get(market.lower())
+                listing_urls = await self._collect_listing_urls(page, site, market)
+                new_urls = [u for u in listing_urls[:100] if u not in known_urls]
+                for url in new_urls:
+                    detail = await self._scrape_detail(page, url, site)
+                    if detail:
+                        addr = detail.get("address") or ""
+                        if not _is_us_address(addr):
+                            continue
+                        if not _passes_sf_filter(detail.get("total_sf")):
+                            continue
+                        if rent and not detail.get("market_gross_rent_small_bay"):
+                            detail["market_gross_rent_small_bay"] = rent
+                        yield detail
+                    await self._human_delay(1, 2)

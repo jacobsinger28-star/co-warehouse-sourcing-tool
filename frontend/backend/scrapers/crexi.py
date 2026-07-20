@@ -58,9 +58,13 @@ _SITE = "https://www.crexi.com"
 _PAGE_SIZE = 60
 # Defensive page cap per market (a single metro box holds well under this).
 _MAX_PAGES = 25
-# Concurrent detail+broker fetches per page. Each kept candidate needs 1-2 GETs;
-# bounding this keeps us polite while making a full run practical (~6x faster).
+# Concurrent detail+broker fetches ACROSS the whole run (shared semaphore), so
+# scanning markets in parallel can't multiply request pressure. Each kept
+# candidate needs 1-2 GETs.
 _ENRICH_CONCURRENCY = 6
+# Metro bounding boxes scanned concurrently. Each market still pages politely
+# (0.4s between pages) and shares the enrichment semaphore above.
+_MARKET_CONCURRENCY = 4
 
 # Statuses we never want to surface — this is a for-sale sourcing tool, so drop
 # closed/withdrawn inventory. Anything else (On-Market, Under Contract, Auction)
@@ -316,90 +320,106 @@ class CrexiScraper(BaseScraper):
 
         known_urls = known_urls or set()
         target = match_markets(markets)
-        logger.info("[crexi] scanning %d target market(s): %s",
-                    len(target), ", ".join(m["name"] for m in target))
+        logger.info("[crexi] scanning %d target market(s) (%d at a time): %s",
+                    len(target), min(_MARKET_CONCURRENCY, len(target)),
+                    ", ".join(m["name"] for m in target))
 
+        # Shared across all market tasks. Everything runs on one event loop, so
+        # plain set/int mutation between awaits is safe.
         seen_in_run: set[str] = set()
-        emitted = 0
+        enrich_sem = asyncio.Semaphore(_ENRICH_CONCURRENCY)
+        market_sem = asyncio.Semaphore(_MARKET_CONCURRENCY)
+        queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+        _DONE = object()  # per-market completion marker
 
-        for mk in target:
-            if self._should_stop():
-                logger.info("[crexi] stop requested before market %s", mk["name"])
-                return
-
-            offset = 0
-            market_total = None
+        async def _scan_market(mk: dict) -> None:
             market_emitted = 0
-
-            for _ in range(_MAX_PAGES):
-                if self._should_stop():
-                    return
-                try:
-                    payload = await self._search(mk["bbox"], offset)
-                except Exception as exc:
-                    logger.warning("[crexi] %s search failed at offset=%d: %s",
-                                   mk["name"], offset, exc)
-                    break
-
-                data = payload.get("data") or []
-                total = payload.get("totalCount") or 0
-                if market_total is None:
-                    market_total = total
-                    logger.info("[crexi] %s: %d industrial-for-sale listings in box",
-                                mk["name"], total)
-                if not data:
-                    break
-
-                # Cheap filters first → candidate list, then enrich concurrently.
-                candidates: list[tuple] = []
-                for a in data:
-                    status = (a.get("status") or "").strip().lower()
-                    if status in _DEAD_STATUSES:
-                        continue
-                    sf = a.get("squareFootage")
-                    if not _passes_sf_filter(sf):
-                        continue
-                    locs = a.get("locations") or []
-                    loc = locs[0] if locs else {}
-                    address = _clean(loc.get("fullAddress")) or _clean(a.get("name"))
-                    if not address or not _is_us_address(address):
-                        continue
-                    asset_id = a.get("id")
-                    slug = a.get("urlSlug") or ""
-                    listing_url = f"{_SITE}/properties/{asset_id}/{slug}".rstrip("/")
-                    if listing_url in seen_in_run:
-                        continue
-                    seen_in_run.add(listing_url)
-                    if listing_url in known_urls:
-                        continue
-                    candidates.append((a, address, sf, listing_url))
-
-                # Bounded-concurrency detail+broker enrichment for this page.
-                sem = asyncio.Semaphore(_ENRICH_CONCURRENCY)
-
-                async def _do(a, address, sf, url):
-                    async with sem:
+            try:
+                async with market_sem:
+                    offset = 0
+                    market_total = None
+                    for _ in range(_MAX_PAGES):
+                        if self._should_stop():
+                            return
                         try:
-                            return await self._enrich_asset(a, mk, url, address, sf)
-                        except Exception as exc:  # noqa: BLE001 — isolate per-listing
-                            logger.debug("[crexi] enrich failed %s: %s", url, exc)
-                            return None
+                            payload = await self._search(mk["bbox"], offset)
+                        except Exception as exc:
+                            logger.warning("[crexi] %s search failed at offset=%d: %s",
+                                           mk["name"], offset, exc)
+                            return
+                        data = payload.get("data") or []
+                        total = payload.get("totalCount") or 0
+                        if market_total is None:
+                            market_total = total
+                            logger.info("[crexi] %s: %d industrial-for-sale listings in box",
+                                        mk["name"], total)
+                        if not data:
+                            return
 
-                results = (
-                    await asyncio.gather(*[_do(*c) for c in candidates])
-                    if candidates else []
-                )
-                for r in results:
-                    if r:
-                        yield r
-                        emitted += 1
-                        market_emitted += 1
+                        # Cheap filters first → candidate list, then enrich concurrently.
+                        candidates: list[tuple] = []
+                        for a in data:
+                            status = (a.get("status") or "").strip().lower()
+                            if status in _DEAD_STATUSES:
+                                continue
+                            sf = a.get("squareFootage")
+                            if not _passes_sf_filter(sf):
+                                continue
+                            locs = a.get("locations") or []
+                            loc = locs[0] if locs else {}
+                            address = _clean(loc.get("fullAddress")) or _clean(a.get("name"))
+                            if not address or not _is_us_address(address):
+                                continue
+                            asset_id = a.get("id")
+                            slug = a.get("urlSlug") or ""
+                            listing_url = f"{_SITE}/properties/{asset_id}/{slug}".rstrip("/")
+                            if listing_url in seen_in_run:
+                                continue
+                            seen_in_run.add(listing_url)
+                            if listing_url in known_urls:
+                                continue
+                            candidates.append((a, address, sf, listing_url))
 
-                offset += len(data)
-                if market_total is not None and offset >= market_total:
-                    break
-                await asyncio.sleep(0.4)  # politeness between pages
+                        async def _do(a, address, sf, url):
+                            async with enrich_sem:
+                                try:
+                                    return await self._enrich_asset(a, mk, url, address, sf)
+                                except Exception as exc:  # noqa: BLE001 — isolate per-listing
+                                    logger.debug("[crexi] enrich failed %s: %s", url, exc)
+                                    return None
 
-            logger.info("[crexi] %s — emitted %d new listing(s)", mk["name"], market_emitted)
+                        results = (
+                            await asyncio.gather(*[_do(*c) for c in candidates])
+                            if candidates else []
+                        )
+                        for r in results:
+                            if r:
+                                await queue.put(r)
+                                market_emitted += 1
+
+                        offset += len(data)
+                        if market_total is not None and offset >= market_total:
+                            return
+                        await asyncio.sleep(0.4)  # politeness between pages
+            finally:
+                logger.info("[crexi] %s — emitted %d new listing(s)", mk["name"], market_emitted)
+                await queue.put(_DONE)
+
+        tasks = [asyncio.create_task(_scan_market(mk)) for mk in target]
+        emitted = 0
+        markets_done = 0
+        try:
+            while markets_done < len(tasks):
+                item = await queue.get()
+                if item is _DONE:
+                    markets_done += 1
+                    continue
+                yield item
+                emitted += 1
+        finally:
+            # Consumer stopped early (stop_event / generator closed) — reap tasks.
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
         logger.info("[crexi] done — %d new listing(s) across %d market(s)", emitted, len(target))

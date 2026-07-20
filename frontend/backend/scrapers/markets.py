@@ -3,8 +3,8 @@ Target buy-box markets — the single source of truth for the markets SimiCap
 actually sources in.
 
 The on-market scrapers cover the whole US, but the team only wants brokers/
-listings in these seven Southeast + Columbus markets. This module defines them
-once, with:
+listings in these target metros (the same ten the console's ALLOWED_MARKETS
+filter shows). This module defines them once, with:
 
   * a lat/long bounding box per market — used by the Crexi scraper to fetch only
     in-market inventory server-side (Crexi's /assets/search filters by
@@ -93,6 +93,40 @@ TARGET_MARKETS: list[dict] = [
             "west palm beach", "palm beach", "riviera beach", "lake worth",
             "palm beach gardens", "jupiter", "lake park", "mangonia park",
             "north palm beach", "greenacres", "wellington",
+        ],
+    },
+    {
+        "name": "Nashville",
+        "state": "TN",
+        "bbox": (35.80, 36.45, -87.10, -86.20),
+        "cities": [
+            "nashville", "smyrna", "la vergne", "lavergne", "murfreesboro",
+            "lebanon", "gallatin", "hendersonville", "franklin", "brentwood",
+            "antioch", "madison", "goodlettsville", "mount juliet",
+            "old hickory", "whites creek",
+        ],
+    },
+    {
+        "name": "Orlando",
+        "state": "FL",
+        "bbox": (28.20, 28.90, -81.75, -81.10),
+        "cities": [
+            "orlando", "winter park", "winter garden", "apopka", "ocoee",
+            "sanford", "longwood", "altamonte springs", "casselberry",
+            "maitland", "kissimmee", "saint cloud", "st cloud", "st. cloud",
+            "lake mary", "oviedo", "taft", "pine castle",
+        ],
+    },
+    {
+        "name": "Cleveland",
+        "state": "OH",
+        "bbox": (41.20, 41.70, -82.10, -81.30),
+        "cities": [
+            "cleveland", "brook park", "parma", "solon", "strongsville",
+            "bedford", "bedford heights", "twinsburg", "avon", "avon lake",
+            "elyria", "euclid", "mentor", "willoughby", "brooklyn heights",
+            "garfield heights", "valley view", "independence",
+            "maple heights", "oakwood village", "glenwillow",
         ],
     },
 ]

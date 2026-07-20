@@ -29,6 +29,7 @@ from database import (
     get_cached_source_counts, _conn,
 )
 from geocoder import geocode_sync
+from scrapers.markets import market_for_coords, market_for_address
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,9 +39,17 @@ app = FastAPI(title="Sourcing Console Live Scraper", version="1.0.0")
 
 _scrape_lock = threading.Lock()
 _stop_event = threading.Event()
+# Per-site progress of the current/last run — the scraper mutates it, /live/status
+# reads it (cross-thread dict reads are fine for display purposes).
+_site_progress: dict = {}
 
 
-def _run_scrape(job_id: int, enabled_sites: list[str] | None = None, force_refresh: bool = False):
+def _run_scrape(
+    job_id: int,
+    enabled_sites: list[str] | None = None,
+    force_refresh: bool = False,
+    markets: list[str] | None = None,
+):
     """Background thread: runs the Playwright scraper and stores results."""
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -48,15 +57,25 @@ def _run_scrape(job_id: int, enabled_sites: list[str] | None = None, force_refre
     asyncio.set_event_loop(loop)
 
     async def _do():
+        global _site_progress
         from scrapers.brokerage import BrokerageScraper
         scraper = BrokerageScraper(enabled_sites=enabled_sites or None, stop_event=_stop_event)
+        # site_progress is mutated in place by the scraper — this reference stays
+        # live for the whole run and /live/status reads through it.
+        _site_progress = scraper.site_progress
         count = 0
         max_age_hours = 0.0 if force_refresh else 336.0  # 14 days
         run_started_at = datetime.utcnow().isoformat()
         stopped_early = False
+        # markets=[] means nationwide for the crawl-based sites (the console
+        # applies its own metro filter); Crexi always scopes to the target
+        # metros (all of them when the list is empty), scanning them in
+        # parallel. Sites themselves also run in parallel.
+        gen = scraper.scrape(
+            markets=markets or [], market_rents={}, max_age_hours=max_age_hours
+        )
         try:
-            # markets=[] means nationwide — the console applies its own metro filter
-            async for listing in scraper.scrape(markets=[], market_rents={}, max_age_hours=max_age_hours):
+            async for listing in gen:
                 if _stop_event.is_set():
                     logger.info("[scrape] stop requested — halting after %d listings", count)
                     stopped_early = True
@@ -80,12 +99,29 @@ def _run_scrape(job_id: int, enabled_sites: list[str] | None = None, force_refre
             logger.error("[scrape] fatal error: %s", exc)
             finish_job(job_id, count, str(exc))
             return
+        finally:
+            # Breaking out of `async for` leaves the generator SUSPENDED — its
+            # site/market tasks keep running and get destroyed pending at
+            # loop.close(). Closing it here (in this healthy, non-cancelled task)
+            # runs the scraper's finally blocks, which cancel and reap every
+            # child task before we tear the loop down.
+            await gen.aclose()
 
-        if stopped_early:
+        # stopped_early = consumer saw the stop between items; the scraper's own
+        # drain may also have cancelled its tasks and ended the generator without
+        # us breaking — either way, if a stop was requested, record it as stopped
+        # (never "completed") and skip pruning (a partial run must not prune).
+        if stopped_early or _stop_event.is_set():
             finish_job(job_id, count, status="stopped")
             return
         if force_refresh:
-            pruned = prune_stale_listings(scraped_since=run_started_at)
+            # Prune ONLY sources whose site completed the refresh — a site that
+            # errored (bot wall, selector rot) keeps its existing inventory.
+            ok_sources = [s for s, p in scraper.site_progress.items() if p.get("status") == "done"]
+            failed = [s for s, p in scraper.site_progress.items() if p.get("status") == "error"]
+            if failed:
+                logger.warning("[scrape] not pruning failed site(s): %s", ", ".join(failed))
+            pruned = prune_stale_listings(scraped_since=run_started_at, sources=ok_sources)
             if pruned:
                 logger.info("[scrape] pruned %d stale/off-market listings", pruned)
         finish_job(job_id, count)
@@ -106,6 +142,7 @@ def health():
 async def start_scrape(payload: dict = None):
     payload = payload or {}
     sites = payload.get("sites") or []          # empty = all brokerages
+    markets = [str(m) for m in (payload.get("markets") or []) if m]  # empty = all target metros
     force_refresh = bool(payload.get("force_refresh", False))
     with _scrape_lock:
         status = get_job_status()
@@ -113,9 +150,14 @@ async def start_scrape(payload: dict = None):
             return {"status": "already_running"}
         _stop_event.clear()
         job_id = start_job()
-    t = threading.Thread(target=_run_scrape, args=(job_id, sites if sites else None, force_refresh), daemon=True)
+    t = threading.Thread(
+        target=_run_scrape,
+        args=(job_id, sites if sites else None, force_refresh, markets),
+        daemon=True,
+    )
     t.start()
-    return {"status": "started", "job_id": job_id, "sites": sites or "all", "force_refresh": force_refresh}
+    return {"status": "started", "job_id": job_id, "sites": sites or "all",
+            "markets": markets or "all", "force_refresh": force_refresh}
 
 
 @app.post("/live/stop")
@@ -150,6 +192,8 @@ def live_status():
     result = status if status else {"status": "idle"}
     result["source_counts"] = get_source_counts()
     result["cached_source_counts"] = get_cached_source_counts()
+    # Per-site progress of the current (or last) run: status/found/markets/error.
+    result["sites"] = _site_progress
     return result
 
 
@@ -191,11 +235,17 @@ def live_rows():
         if lat is None or lng is None:
             continue
         city, st = _parse_city_state(r.get("address") or "")
+        # Resolve the METRO the listing belongs to (bbox first, then address) so
+        # suburb listings ("Doral", "Smyrna", "Morrisville"…) surface under their
+        # market in the console — its market filter matches metro names exactly.
+        metro = market_for_coords(lat, lng) or market_for_address(r.get("address"))
+        mkt = metro["name"] if metro else city
+        st = metro["state"] if metro else st
         street = (r.get("address") or "").split(",")[0].strip()
         cat = r.get("score_category") or "Tentative"
         reason = (r.get("scoring_reason") or "").strip()
         props.append({
-            "id": f"on-{r['id']}", "channel": "on", "addr": street, "mkt": city, "st": st,
+            "id": f"on-{r['id']}", "channel": "on", "addr": street, "mkt": mkt, "st": st,
             "sf": int(r.get("total_sf") or 0), "cat": cat, "score": CAT_NOMINAL.get(cat, 50),
             "signal": (reason[:60] + "…") if len(reason) > 61 else (reason or "Listed"),
             "broker": broker or "—", "firm": firm,
