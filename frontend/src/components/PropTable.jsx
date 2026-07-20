@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { css } from '../css.js'
 import Icon from '../Icon.jsx'
-import { fmtSF, fmtMoney2, scDot, scLabel, chDot, rowStyle } from '../helpers.js'
+import { fmtSF, fmtInt, fmtMoney2, fmtPhone, scDot, scLabel, chDot, rowStyle } from '../helpers.js'
 
 // Adjustable Properties table: show/hide + drag-to-resize columns, persisted to
 // localStorage. Extracted from App.jsx so the column machinery lives in one place.
@@ -38,6 +38,19 @@ const COLUMNS = [
   { key: 'dist', label: 'DIST MI', align: 'right', w: 76, min: 56, mono: true, cell: (p) => p.distMi ?? '—' },
   { key: 'held', label: 'HELD YR', align: 'right', w: 76, min: 56, mono: true, cell: (p) => (p.holdYears != null ? Math.round(p.holdYears) : '—') },
   { key: 'contact', label: 'CONTACT', align: 'left', w: 130, min: 90, cell: (p) => <span title={p.person || undefined} style={css(contactStyle(p.contact))}>{p.contact}</span> },
+  // ── extra columns: off by default (defOff), available in the Columns menu ──
+  { key: 'st', label: 'ST', align: 'left', w: 52, min: 40, defOff: true, cell: (p) => p.st ?? '—' },
+  { key: 'ownerType', label: 'OWNER TYPE', align: 'left', w: 108, min: 72, defOff: true, cell: (p) => p.ownerType ?? '—' },
+  { key: 'oos', label: 'OUT-OF-STATE', align: 'left', w: 116, min: 76, defOff: true, cell: (p) => p.oos || '—' },
+  { key: 'lastSale', label: 'LAST SALE', align: 'right', w: 100, min: 70, mono: true, defOff: true, cell: (p) => p.lastSale ?? '—' },
+  { key: 'lastPrice', label: 'LAST $', align: 'right', w: 112, min: 80, mono: true, defOff: true, cell: (p) => (p.lastPrice != null ? `$${fmtInt(p.lastPrice)}` : '—') },
+  { key: 'assessed', label: 'ASSESSED', align: 'right', w: 112, min: 80, mono: true, defOff: true, cell: (p) => (p.assessed ? `$${fmtInt(p.assessed)}` : '—') },
+  { key: 'viol', label: 'VIOL', align: 'right', w: 66, min: 48, mono: true, defOff: true, cell: (p) => p.nViol ?? '—' },
+  { key: 'permit', label: 'PERMITS', align: 'right', w: 80, min: 56, mono: true, defOff: true, cell: (p) => p.nPermit ?? '—' },
+  { key: 'landUse', label: 'LAND USE', align: 'left', w: 160, min: 90, defOff: true, cell: (p) => p.landUse ?? '—' },
+  { key: 'apn', label: 'APN', align: 'left', w: 132, min: 80, mono: true, defOff: true, cell: (p) => p.apn ?? '—' },
+  { key: 'phone', label: 'PHONE', align: 'left', w: 132, min: 92, mono: true, defOff: true, cell: (p) => (p.phones?.[0] ? fmtPhone(p.phones[0]) : '—') },
+  { key: 'lease', label: 'LEASE', align: 'left', w: 96, min: 66, defOff: true, cell: (p) => (p.lease ? <span style={css('color:var(--green);font-weight:600;')}>For Lease</span> : '—') },
 ]
 const COL_BY_KEY = Object.fromEntries(COLUMNS.map((c) => [c.key, c]))
 const ORDER = COLUMNS.map((c) => c.key)
@@ -50,6 +63,10 @@ const SORT_VAL = {
   score: (p) => p.score, signal: (p) => p.signal, owner: (p) => ownerOrBroker(p),
   ask: (p) => (p.channel === 'on' ? p.ask : null), year: (p) => p.year,
   clear: (p) => p.clear, dist: (p) => p.distMi, held: (p) => p.holdYears, contact: (p) => p.contact,
+  st: (p) => p.st, ownerType: (p) => p.ownerType, oos: (p) => p.oos || null,
+  lastSale: (p) => p.lastSale, lastPrice: (p) => p.lastPrice, assessed: (p) => p.assessed,
+  viol: (p) => p.nViol, permit: (p) => p.nPermit, landUse: (p) => p.landUse,
+  apn: (p) => p.apn, phone: (p) => p.phones?.[0] || null, lease: (p) => (p.lease ? 1 : 0),
 }
 // comparator: nulls/undefined always sort last; numbers numerically, else localeCompare
 const cmp = (a, b, dir) => {
@@ -96,7 +113,8 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
   }, [menuOpen])
 
-  const isVisible = (k) => prefs.vis[k] !== false // default visible
+  // explicit user choice wins; otherwise visible unless the column is defOff
+  const isVisible = (k) => { const v = prefs.vis[k]; return v === true ? true : v === false ? false : !COL_BY_KEY[k].defOff }
   const widthOf = (k) => prefs.w[k] ?? COL_BY_KEY[k].w
   const visibleCols = useMemo(() => ORDER.filter(isVisible).map((k) => COL_BY_KEY[k]), [prefs.vis]) // eslint-disable-line
   const visCount = visibleCols.length
