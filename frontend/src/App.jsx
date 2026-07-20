@@ -15,6 +15,7 @@ import AICaller from './modules/AICaller.jsx'
 import DealsDB from './modules/DealsDB.jsx'
 import ReuseFinder from './modules/ReuseFinder.jsx'
 import DealMap from './components/DealMap.jsx'
+import PropTable from './components/PropTable.jsx'
 
 const TOTAL_UNIVERSE = 1847
 
@@ -602,38 +603,7 @@ export default function App() {
               {/* TABLE / CARD-LIST */}
               {view === 'table' && !showEmpty && (
                 <>
-                  <div className="data-table-wrap" style={css('flex:1;overflow:auto;min-height:0;')}>
-                    <table style={css('width:100%;border-collapse:collapse;font-size:12.5px;')}>
-                      <thead><tr style={css('position:sticky;top:0;z-index:2;background:var(--surface);')}>
-                        <th style={css('width:34px;padding:9px 0 9px 14px;border-bottom:1px solid var(--border);')}><input type="checkbox" checked={allPropsSel} onChange={selAllProps} aria-label="Select all" style={css('accent-color:var(--accent);')} /></th>
-                        {[th('left'), th('left'), th('left'), th('right'), th('left'), th('left'), th('left'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('right', 'col-secondary'), th('left', 'col-secondary')].map((c, i) => (
-                          <th key={i} className={c.cls} style={css(c.s)}>{['CH', 'ADDRESS', 'MARKET', 'SF', 'SCORE', 'KEY SIGNAL', 'OWNER / BROKER', 'ASK $/SF', 'YEAR', 'CLR FT', 'DIST MI', 'HELD YR', 'CONTACT'][i]}</th>
-                        ))}
-                        <th style={css('width:28px;border-bottom:1px solid var(--border);')} />
-                      </tr></thead>
-                      <tbody>
-                        {visibleProps.map((p) => (
-                          <tr key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(rowStyle(p.cat))}>
-                            <td style={css('padding:0 0 0 14px;')} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selProps.includes(p.id)} onChange={() => toggleProp(p.id)} aria-label="Select property" style={css('accent-color:var(--accent);')} /></td>
-                            <td style={css('padding:9px 8px;')}><span style={css(chDot(p.channel))} /></td>
-                            <td style={css('padding:9px 8px;font-weight:500;white-space:nowrap;')}>{p.addr}{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title={`${p.lease.note} — open on LoopNet`} style={css('display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:10px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 7px;border-radius:5px;text-decoration:none;vertical-align:middle;')}>For Lease<Icon name="chevronRight" size={9} sw={2.4} /></a>}</td>
-                            <td style={css('padding:9px 8px;color:var(--text2);')}>{p.mkt}</td>
-                            <td style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;')}>{fmtSF(p.sf)}</td>
-                            <td style={css('padding:9px 8px;')}><span style={css('display:inline-flex;align-items:center;gap:6px;')}><span style={css(scDot(p.cat))} /><span style={css(scLabel(p.cat))}>{p.cat}</span><span style={css('font-family:var(--mono);font-size:11.5px;color:var(--text3);')}>{p.score}</span></span></td>
-                            <td style={css('padding:9px 8px;color:var(--text2);font-size:12px;white-space:nowrap;')}>{p.signal}</td>
-                            <td style={css('padding:9px 8px;color:var(--text2);white-space:nowrap;')}>{ownerOrBroker(p)}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.channel === 'on' ? fmtMoney2(p.ask) : '—'}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.year ?? '—'}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.clear ?? '—'}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.distMi ?? '—'}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text2);')}>{p.holdYears != null ? Math.round(p.holdYears) : '—'}</td>
-                            <td className="col-secondary" style={css('padding:9px 8px;')}><span title={p.person || undefined} style={css(contactStyle(p.contact))}>{p.contact}</span></td>
-                            <td style={css('padding:9px 14px 9px 4px;text-align:right;color:var(--text3);')}><Icon name="chevronRight" size={14} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <PropTable rows={visibleProps} selProps={selProps} toggleProp={toggleProp} allSel={allPropsSel} onToggleAll={selAllProps} onOpen={setDrawerId} />
                   <div className="card-list" style={css('flex-direction:column;flex:1;overflow-y:auto;min-height:0;')}>
                     {visibleProps.map((p) => (
                       <div key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(cardStyle(p.cat))}>
