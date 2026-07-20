@@ -8,6 +8,7 @@ COPY . .
 # dist. It becomes a server-side-only file that the running server gates behind
 # POST /api/data. If absent, ship an empty object → app falls back to sample data.
 RUN if [ -f public/data.real.json ]; then mv public/data.real.json ./data.real.json; else echo '{}' > ./data.real.json; fi
+RUN [ -f lease-overlay.json ] || echo '{"props":{}}' > lease-overlay.json
 RUN npm run build
 
 # ── runtime — Playwright python (Chromium baked in, matches playwright==1.44.0)

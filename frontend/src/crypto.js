@@ -28,6 +28,8 @@ export async function decryptJson(password, enc) {
 //      JWT + allowlist or password is checked on the server). Secure production path.
 //   2. data.enc.json   — encrypted static blob (Vercel static deploy), decrypted here.
 //   3. data.real.json  — plaintext (local dev only).
+// Only path 1 carries p.lease (the LoopNet lease overlay is merged server-side
+// in server.mjs); on paths 2/3 lease badges/filter are absent by design.
 // Returns the parsed dataset, or null (→ app uses synthetic sample data).
 // In token mode a 401/403 THROWS (signed in but not allowed) so the Gate can say so.
 export async function loadRealData(cred, baseUrl = '/') {

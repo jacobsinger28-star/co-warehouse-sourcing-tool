@@ -724,7 +724,7 @@ export default function App() {
                             <div style={css('font-size:11.5px;color:var(--text2);line-height:1.55;margin-bottom:10px;')}>{drawerProp.lease.note}{drawerProp.lease.n > 1 ? ` · ${drawerProp.lease.n} active listings at this address` : ''}</div>
                             <div style={css('display:flex;flex-direction:column;gap:7px;')}>
                               {(drawerProp.lease.listings || [drawerProp.lease]).map((l, i) => (
-                                <a key={i} href={l.url} target="_blank" rel="noreferrer" className="tap hov" style={css('height:36px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:8px;background:var(--surface);border:1px solid var(--border2);color:var(--text);font-size:12px;font-weight:600;text-decoration:none;')}><Icon name="search" size={13} sw={1.9} />Open on LoopNet{drawerProp.lease.n > 1 ? ` · ${l.addr}` : ''}</a>
+                                <a key={i} href={l.url} target="_blank" rel="noreferrer" className="tap hov" style={css('height:36px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:8px;background:var(--surface);border:1px solid var(--border2);color:var(--text);font-size:12px;font-weight:600;text-decoration:none;')}><Icon name="search" size={13} sw={1.9} />Open on LoopNet{drawerProp.lease.n > 1 ? ` · ${(l.note || l.addr).slice(0, 44)}` : ''}</a>
                               ))}
                             </div>
                           </div>
