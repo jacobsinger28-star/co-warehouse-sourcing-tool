@@ -168,13 +168,32 @@ export default function App() {
     setTotal(props.length)
   }, [realData, liveOn])
   const propsData = dataset.props
+  // On-market listings we can actually show, grouped per broker by normalized name.
+  // A broker's own `listings` field is a source-claimed count that frequently doesn't
+  // match rows we hold (in live data the broker directory and the on-market listings are
+  // separate scrapes with no shared key) — so the # LIST badge, the sort, and the drawer
+  // ALL read from this map. That keeps the count honest: it never shows a phantom number
+  // that opens an empty drawer.
+  const normName = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim()
+  const listingsByBroker = useMemo(() => {
+    const m = new Map()
+    for (const p of propsData) {
+      if (p.channel !== 'on') continue
+      const k = normName(p.broker)
+      if (!k) continue
+      if (!m.has(k)) m.set(k, [])
+      m.get(k).push(p)
+    }
+    return m
+  }, [propsData])
+  const listingsFor = (b) => (b ? listingsByBroker.get(normName(b.name)) || [] : [])
   // Columns aren't click-sortable, so default the brokers list to the useful order:
   // anyone we can actually call (a phone or cell on file) floats to the top. Digit-count
   // guards against blanks / placeholder dashes in live data. Stable sort keeps the rest as-is.
   const hasPhoneNum = (b) => ((b.cell || '').replace(/\D/g, '').length >= 7 || (b.phone || '').replace(/\D/g, '').length >= 7)
-  // sort value per column: phone/cell by digits, # LIST numeric, synced boolean, rest alpha
+  // sort value per column: phone/cell by digits, # LIST = real matched-listing count, synced boolean, rest alpha
   const brokSortVal = (b, key) => {
-    if (key === 'listings') return b.listings || 0
+    if (key === 'listings') return listingsFor(b).length
     if (key === 'synced') return b.synced ? 1 : 0
     if (key === 'phone' || key === 'cell') return (b[key] || '').replace(/\D/g, '')
     return (b[key] || '').toString().toLowerCase()
@@ -195,7 +214,7 @@ export default function App() {
 
   // ── brokers view interactions: sync, listings drawer, email composer ──────
   const listBroker = listBrokId != null ? brokersData.find((b) => b.id === listBrokId) : null
-  const brokerListings = listBroker ? propsData.filter((p) => p.channel === 'on' && p.broker === listBroker.name) : []
+  const brokerListings = listingsFor(listBroker)
   const emailBroker = emailBrokId != null ? brokersData.find((b) => b.id === emailBrokId) : null
   const syncBroker = (id) => setDataset((d) => ({ ...d, brokers: d.brokers.map((x) => (x.id === id ? { ...x, synced: true } : x)) }))
   const openEmail = (b) => {
@@ -724,13 +743,17 @@ export default function App() {
                             <td style={css('padding:10px 8px;font-family:var(--mono);font-size:11.5px;')}><span style={css('color:var(--accent);background:var(--accent-dim);padding:2px 6px;border-radius:4px;')}>{b.cell}</span></td>
                             <td className="col-secondary" style={css('padding:10px 8px;font-size:11.5px;')}><button className="tap hov" onClick={() => openEmail(b)} title={`Email ${b.name}`} style={css('display:inline-flex;align-items:center;gap:5px;max-width:190px;background:none;border:none;padding:0;color:var(--accent);font-size:11.5px;cursor:pointer;')}><Icon name="mail" size={12} sw={1.9} /><span style={css('overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{b.email}</span></button></td>
                             <td style={css('padding:10px 8px;color:var(--text2);white-space:nowrap;')}>{b.mkts}</td>
-                            <td style={css('padding:10px 8px;text-align:right;font-family:var(--mono);')}>{b.listings}</td>
+                            <td style={css('padding:10px 8px;text-align:right;font-family:var(--mono);')}>{listingsFor(b).length}</td>
                             <td style={css('padding:10px 8px;')}>{b.synced ? (
                               <span style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--green);background:var(--green-tint);')}><Icon name="check" size={11} sw={2.4} />Synced</span>
                             ) : (
                               <button className="tap sync-chip" onClick={() => syncBroker(b.id)} title={`Sync ${b.name} to Pipedrive`} style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--text3);background:var(--surface2);')}><Icon name="sync" size={11} sw={2.2} /><span className="off-hover">Not synced</span><span className="on-hover">Sync now</span></button>
                             )}</td>
-                            <td className="col-secondary" style={css('padding:10px 14px 10px 8px;white-space:nowrap;')}><button className="tap hov" onClick={() => setListBrokId(b.id)} style={css('height:26px;padding:0 9px;background:var(--surface3);border:1px solid var(--border2);border-radius:5px;color:var(--text2);font-size:11px;')}>View listings</button></td>
+                            <td className="col-secondary" style={css('padding:10px 14px 10px 8px;white-space:nowrap;')}>{listingsFor(b).length > 0 ? (
+                              <button className="tap hov" onClick={() => setListBrokId(b.id)} style={css('height:26px;padding:0 9px;background:var(--surface3);border:1px solid var(--border2);border-radius:5px;color:var(--text2);font-size:11px;')}>View listings</button>
+                            ) : (
+                              <span style={css('font-size:11px;color:var(--text3);')}>No listings</span>
+                            )}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -744,8 +767,8 @@ export default function App() {
                         ) : (
                           <button className="tap sync-chip" onClick={() => syncBroker(b.id)} title={`Sync ${b.name} to Pipedrive`} style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--text3);background:var(--surface2);')}><Icon name="sync" size={11} sw={2.2} /><span className="off-hover">Not synced</span><span className="on-hover">Sync now</span></button>
                         )}</div>
-                        <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{b.firm}</span><span>{b.mkts}</span><span style={css('font-family:var(--mono);')}>{b.listings} listings</span></div>
-                        <div style={css('display:flex;align-items:center;gap:8px;')}><span style={css('font-family:var(--mono);font-size:11.5px;color:var(--accent);background:var(--accent-dim);padding:2px 7px;border-radius:4px;')}>{b.cell}</span><button className="tap hov" onClick={() => openEmail(b)} aria-label={`Email ${b.name}`} style={css('margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;')}><Icon name="mail" size={13} sw={1.8} />Email</button><button className="tap hov" onClick={() => setListBrokId(b.id)} style={css('display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;')}>Listings</button></div>
+                        <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{b.firm}</span><span>{b.mkts}</span><span style={css('font-family:var(--mono);')}>{listingsFor(b).length} listings</span></div>
+                        <div style={css('display:flex;align-items:center;gap:8px;')}><span style={css('font-family:var(--mono);font-size:11.5px;color:var(--accent);background:var(--accent-dim);padding:2px 7px;border-radius:4px;')}>{b.cell}</span><button className="tap hov" onClick={() => openEmail(b)} aria-label={`Email ${b.name}`} style={css('margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;')}><Icon name="mail" size={13} sw={1.8} />Email</button>{listingsFor(b).length > 0 && <button className="tap hov" onClick={() => setListBrokId(b.id)} style={css('display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;')}>Listings</button>}</div>
                       </div>
                     ))}
                   </div>
@@ -906,7 +929,7 @@ export default function App() {
                     <div style={css('flex:1;overflow-y:auto;padding:16px 18px;')}>
                       <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;')}>
                         <span style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;')}>On-market listings</span>
-                        <span style={css('font-family:var(--mono);font-size:11.5px;color:var(--text3);')}>{brokerListings.length} shown{listBroker.listings > brokerListings.length ? ` · ${listBroker.listings} on source` : ''}</span>
+                        <span style={css('font-family:var(--mono);font-size:11.5px;color:var(--text3);')}>{brokerListings.length} listing{brokerListings.length === 1 ? '' : 's'}</span>
                       </div>
                       {brokerListings.length > 0 ? (
                         <div style={css('display:flex;flex-direction:column;gap:8px;')}>
@@ -919,7 +942,7 @@ export default function App() {
                           ))}
                         </div>
                       ) : (
-                        <div style={css('padding:24px 12px;text-align:center;color:var(--text3);font-size:12px;border:1px dashed var(--border2);border-radius:8px;line-height:1.6;')}>No on-market listings from {listBroker.name} in the current dataset.{listBroker.listings > 0 ? ` (${listBroker.listings} reported on source.)` : ''}</div>
+                        <div style={css('padding:24px 12px;text-align:center;color:var(--text3);font-size:12px;border:1px dashed var(--border2);border-radius:8px;line-height:1.6;')}>No on-market listings on file for {listBroker.name} in the current dataset.</div>
                       )}
                     </div>
                     <div style={css('flex:0 0 auto;padding:13px 18px;border-top:1px solid var(--border);display:flex;gap:9px;')}>
