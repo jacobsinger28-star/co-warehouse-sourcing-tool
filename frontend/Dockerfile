@@ -31,6 +31,7 @@ COPY --from=build /app/dealsChat.mjs ./dealsChat.mjs
 COPY --from=build /app/phoneburner.mjs ./phoneburner.mjs
 COPY --from=build /app/db.mjs ./db.mjs
 COPY --from=build /app/tenants.mjs ./tenants.mjs
+COPY --from=build /app/secrets.mjs ./secrets.mjs
 COPY --from=build /app/data.real.json ./data.real.json
 COPY --from=build /app/lease-overlay.json ./lease-overlay.json
 COPY start.sh ./start.sh

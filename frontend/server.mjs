@@ -40,6 +40,11 @@ import {
 } from './phoneburner.mjs'
 import { resolveTenant, DEFAULT_TENANT } from './tenants.mjs'
 import { tenancyEnabled } from './db.mjs'
+import { installRedaction, secretsEnabled } from './secrets.mjs'
+
+// Route all console output through the secret redactor before anything can log —
+// so a decrypted key can never reach the logs, a traceback, or summary output.
+installRedaction()
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 8080
@@ -106,6 +111,9 @@ if (!SUPABASE_ENABLED && !PASSWORD)
 console.log(`[server] tenancy ${tenancyEnabled()
   ? 'ENABLED — DB-backed tenants + members (email → tenant)'
   : 'off — legacy global allowlist (set SUPABASE_SERVICE_ROLE_KEY to enable multi-tenant)'}`)
+console.log(`[server] BYOK secrets ${secretsEnabled()
+  ? 'ENABLED — envelope-encrypted per-tenant keys'
+  : 'off — providers use process env vars (set SECRETS_KEK + tenancy to enable)'}`)
 
 // ── auth ─────────────────────────────────────────────────────────────────────
 // Verify a Supabase access token by asking Supabase who it belongs to, then
