@@ -38,6 +38,15 @@ const COLUMNS = [
   { key: 'dist', label: 'DIST MI', align: 'right', w: 76, min: 56, mono: true, cell: (p) => p.distMi ?? '—' },
   { key: 'held', label: 'HELD YR', align: 'right', w: 76, min: 56, mono: true, cell: (p) => (p.holdYears != null ? Math.round(p.holdYears) : '—') },
   { key: 'contact', label: 'CONTACT', align: 'left', w: 130, min: 90, cell: (p) => <span title={p.person || undefined} style={css(contactStyle(p.contact))}>{p.contact}</span> },
+  // EMAIL: click opens the prepared-email composer (like the brokers table). Address
+  // is resolved by the parent via ctx.emailOf (owner/contact email, or the listing
+  // broker's email for on-market rows); '—' when none is on file.
+  { key: 'email', label: 'EMAIL', align: 'left', w: 176, min: 110, cell: (p, ctx) => {
+    const em = ctx?.emailOf?.(p) || p.emails?.[0] || ''
+    return em
+      ? <button className="tap hov" onClick={(e) => { e.stopPropagation(); ctx?.onEmail?.(p) }} title={`Prepare email — ${em}`} style={css('display:inline-flex;align-items:center;gap:5px;max-width:100%;background:none;border:none;padding:0;color:var(--accent);font-size:12px;cursor:pointer;')}><Icon name="mail" size={12} sw={1.9} /><span style={css('overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{em}</span></button>
+      : '—'
+  } },
   // ── extra columns: off by default (defOff), available in the Columns menu ──
   { key: 'st', label: 'ST', align: 'left', w: 52, min: 40, defOff: true, cell: (p) => p.st ?? '—' },
   { key: 'ownerType', label: 'OWNER TYPE', align: 'left', w: 108, min: 72, defOff: true, cell: (p) => p.ownerType ?? '—' },
@@ -54,6 +63,24 @@ const COLUMNS = [
 ]
 const COL_BY_KEY = Object.fromEntries(COLUMNS.map((c) => [c.key, c]))
 const ORDER = COLUMNS.map((c) => c.key)
+// Merge a stored custom order (drag-to-reorder) with the canonical ORDER: keep the
+// stored keys in their chosen order, drop any that no longer exist, and splice back
+// any columns the stored order never knew about (newly added) at their canonical
+// spot. Empty/absent stored order → canonical order.
+const effectiveOrder = (stored) => {
+  if (!stored || !stored.length) return ORDER
+  const known = stored.filter((k) => COL_BY_KEY[k])
+  const missing = ORDER.filter((k) => !known.includes(k))
+  if (!missing.length) return known
+  const result = [...known]
+  for (const k of missing) {
+    const canon = ORDER.indexOf(k)
+    let at = result.length
+    for (let i = 0; i < result.length; i++) { if (ORDER.indexOf(result[i]) > canon) { at = i; break } }
+    result.splice(at, 0, k)
+  }
+  return result
+}
 // greedy priority: whichever of these is visible absorbs slack (no fixed width,
 // no resize handle) so the table always fills 100% with no dead gap.
 const GREEDY_PRIORITY = ['owner', 'addr', 'signal', 'score', 'contact']
@@ -63,6 +90,7 @@ const SORT_VAL = {
   score: (p) => p.score, signal: (p) => p.signal, owner: (p) => ownerOrBroker(p),
   ask: (p) => (p.channel === 'on' ? p.ask : null), year: (p) => p.year,
   clear: (p) => p.clear, dist: (p) => p.distMi, held: (p) => p.holdYears, contact: (p) => p.contact,
+  email: (p) => p.emails?.[0] || null,
   st: (p) => p.st, ownerType: (p) => p.ownerType, oos: (p) => p.oos || null,
   lastSale: (p) => p.lastSale, lastPrice: (p) => p.lastPrice, assessed: (p) => p.assessed,
   viol: (p) => p.nViol, permit: (p) => p.nPermit, landUse: (p) => p.landUse,
@@ -84,11 +112,15 @@ const STORE_KEY = 'simicap.propcols.v1'
 const loadPrefs = () => {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE_KEY) || '{}')
-    return { vis: raw.vis && typeof raw.vis === 'object' ? raw.vis : {}, w: raw.w && typeof raw.w === 'object' ? raw.w : {} }
-  } catch { return { vis: {}, w: {} } }
+    return {
+      vis: raw.vis && typeof raw.vis === 'object' ? raw.vis : {},
+      w: raw.w && typeof raw.w === 'object' ? raw.w : {},
+      order: Array.isArray(raw.order) ? raw.order.filter((k) => COL_BY_KEY[k]) : [],
+    }
+  } catch { return { vis: {}, w: {}, order: [] } }
 }
 
-export default function PropTable({ rows, selProps, toggleProp, allSel, onToggleAll, onOpen }) {
+export default function PropTable({ rows, selProps, toggleProp, allSel, onToggleAll, onOpen, onEmail, emailOf }) {
   const [prefs, setPrefs] = useState(loadPrefs) // { vis:{key:bool}, w:{key:px} }
   const [menuOpen, setMenuOpen] = useState(false)
   const [sort, setSort] = useState({ key: null, dir: 'asc' }) // click header to order by
@@ -116,8 +148,24 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
   // explicit user choice wins; otherwise visible unless the column is defOff
   const isVisible = (k) => { const v = prefs.vis[k]; return v === true ? true : v === false ? false : !COL_BY_KEY[k].defOff }
   const widthOf = (k) => prefs.w[k] ?? COL_BY_KEY[k].w
-  const visibleCols = useMemo(() => ORDER.filter(isVisible).map((k) => COL_BY_KEY[k]), [prefs.vis]) // eslint-disable-line
+  // full column order (canonical unless the user has dragged headers to reorder)
+  const order = useMemo(() => effectiveOrder(prefs.order), [prefs.order])
+  const visibleCols = useMemo(() => order.filter(isVisible).map((k) => COL_BY_KEY[k]), [order, prefs.vis]) // eslint-disable-line
   const visCount = visibleCols.length
+  // drag-to-reorder headers: dragKey = column being dragged; dragOver = { key, after }
+  // marks where it will land (left/right of the hovered header).
+  const [dragKey, setDragKey] = useState(null)
+  const [dragOver, setDragOver] = useState(null)
+  const moveColumn = (from, to, after) => {
+    if (!from || from === to) return
+    setPrefs((p) => {
+      const base = effectiveOrder(p.order).filter((k) => k !== from)
+      let idx = base.indexOf(to)
+      if (idx < 0) return p
+      base.splice(after ? idx + 1 : idx, 0, from)
+      return { ...p, order: base }
+    })
+  }
   // pick the greedy (stretch) column among the visible ones
   const greedyKey = useMemo(() => {
     const vis = new Set(visibleCols.map((c) => c.key))
@@ -193,7 +241,7 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
   const minTableW = CHECK_W + CHEV_W + visibleCols.reduce((a, c) => a + (c.key === greedyKey ? c.min : widthOf(c.key)), 0)
 
   const setVis = (k, on) => setPrefs((p) => ({ ...p, vis: { ...p.vis, [k]: on } }))
-  const resetCols = () => { setPrefs({ vis: {}, w: {} }); setSort({ key: null, dir: 'asc' }) }
+  const resetCols = () => { setPrefs({ vis: {}, w: {}, order: [] }); setSort({ key: null, dir: 'asc' }) }
 
   // drag-to-resize a fixed (non-greedy) column
   const startResize = (e, key) => {
@@ -219,20 +267,22 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
 
   const thBase = 'padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);position:relative;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
   const cellBase = 'padding:9px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+  // passed to each column's cell(p, ctx) — only the EMAIL column reads it
+  const cellCtx = { onEmail, emailOf }
 
   return (
     <div className="data-table-wrap" style={css('flex:1;display:flex;flex-direction:column;min-height:0;')}>
       {/* toolbar */}
       <div style={css('flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:6px 14px;border-bottom:1px solid var(--border);background:var(--bg);position:relative;')}>
         <div ref={menuRef} style={css('position:relative;')}>
-          <button className="hov" onClick={() => setMenuOpen((o) => !o)} aria-haspopup="true" aria-expanded={menuOpen} title="Show, hide, and resize table columns" style={css('display:flex;align-items:center;gap:7px;height:28px;padding:0 11px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:11.5px;')}>
+          <button className="hov" onClick={() => setMenuOpen((o) => !o)} aria-haspopup="true" aria-expanded={menuOpen} title="Show, hide, resize, and reorder table columns" style={css('display:flex;align-items:center;gap:7px;height:28px;padding:0 11px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:11.5px;')}>
             <Icon name="list" size={13} sw={1.8} />Columns<span style={css('font-family:var(--mono);color:var(--text3);')}>{visCount}/{COLUMNS.length}</span><Icon name="chevronDown" size={11} sw={2} style={css('color:var(--text3);')} />
           </button>
           {menuOpen && (
             <div style={css('position:absolute;top:34px;right:0;z-index:40;width:224px;background:var(--surface);border:1px solid var(--border2);border-radius:10px;box-shadow:0 14px 40px rgba(0,0,0,.45);padding:7px;')}>
               <div style={css('font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);padding:4px 8px 7px;')}>Visible columns</div>
               <div style={css('max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;')}>
-                {COLUMNS.map((c) => {
+                {order.map((k) => COL_BY_KEY[k]).map((c) => {
                   const on = isVisible(c.key)
                   const last = visCount === 1 && on // don't let the user hide the final column
                   return (
@@ -244,6 +294,7 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
                 })}
               </div>
               <div style={css('border-top:1px solid var(--border);margin-top:6px;padding-top:6px;')}>
+                <div style={css('font-size:10.5px;color:var(--text3);line-height:1.4;padding:0 8px 7px;')}>Drag a column header to reorder.</div>
                 <button className="hov" onClick={resetCols} style={css('width:100%;height:30px;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;color:var(--text2);font-size:11.5px;')}>Reset to defaults</button>
               </div>
             </div>
@@ -268,11 +319,26 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
                 const resizable = c.key !== greedyKey
                 const active = sort.key === c.key
                 const arrow = active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''
+                const over = dragKey && dragOver?.key === c.key && dragKey !== c.key
                 return (
-                  <th key={c.key} title={`${c.label} — click to sort`} onClick={() => toggleSort(c.key)} style={css(thBase + `text-align:${c.align};cursor:pointer;user-select:none;${active ? 'color:var(--text);' : ''}`)}>
-                    {c.label}<span style={css('font-size:9px;color:var(--accent);')}>{arrow}</span>
+                  <th key={c.key} onClick={() => toggleSort(c.key)}
+                    onDragOver={dragKey ? (e) => {
+                      e.preventDefault()
+                      const r = e.currentTarget.getBoundingClientRect()
+                      const after = e.clientX > r.left + r.width / 2
+                      if (!dragOver || dragOver.key !== c.key || dragOver.after !== after) setDragOver({ key: c.key, after })
+                    } : undefined}
+                    onDrop={dragKey ? (e) => { e.preventDefault(); moveColumn(dragKey, c.key, dragOver?.key === c.key ? dragOver.after : false); setDragKey(null); setDragOver(null) } : undefined}
+                    style={css(thBase + `text-align:${c.align};cursor:pointer;user-select:none;${active ? 'color:var(--text);' : ''}${over ? (dragOver.after ? 'box-shadow:inset -2px 0 0 0 var(--accent);' : 'box-shadow:inset 2px 0 0 0 var(--accent);') : ''}`)}>
+                    <span draggable
+                      onDragStart={(e) => { setDragKey(c.key); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', c.key) } catch { /* some browsers throw if unset */ } }}
+                      onDragEnd={() => { setDragKey(null); setDragOver(null) }}
+                      title={`${c.label} — click to sort, drag to reorder`}
+                      style={css(`cursor:${dragKey === c.key ? 'grabbing' : 'grab'};${dragKey === c.key ? 'opacity:.45;' : ''}`)}>
+                      {c.label}<span style={css('font-size:9px;color:var(--accent);')}>{arrow}</span>
+                    </span>
                     {resizable && (
-                      <span onPointerDown={(e) => startResize(e, c.key)} onClick={(e) => e.stopPropagation()} className="col-rsz" style={css('position:absolute;top:0;right:0;width:9px;height:100%;cursor:col-resize;touch-action:none;')} />
+                      <span onPointerDown={(e) => startResize(e, c.key)} onClick={(e) => e.stopPropagation()} draggable={false} onDragStart={(e) => e.preventDefault()} className="col-rsz" style={css('position:absolute;top:0;right:0;width:9px;height:100%;cursor:col-resize;touch-action:none;')} />
                     )}
                   </th>
                 )
@@ -288,7 +354,7 @@ export default function PropTable({ rows, selProps, toggleProp, allSel, onToggle
               <tr ref={i === 0 ? firstRowRef : undefined} key={p.id} className="hov" tabIndex={0} role="button" onClick={() => onOpen(p.id)} style={css(rowStyle(p.cat))}>
                 <td style={css('padding:0 0 0 14px;')} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selProps.includes(p.id)} onChange={() => toggleProp(p.id)} aria-label="Select property" style={css('accent-color:var(--accent);')} /></td>
                 {visibleCols.map((c) => (
-                  <td key={c.key} style={css(cellBase + `text-align:${c.align};color:${c.key === 'addr' ? 'var(--text)' : 'var(--text2)'};${c.key === 'addr' ? 'font-weight:500;' : ''}${c.mono ? 'font-family:var(--mono);font-variant-numeric:tabular-nums;' : ''}`)}>{c.cell(p)}</td>
+                  <td key={c.key} style={css(cellBase + `text-align:${c.align};color:${c.key === 'addr' ? 'var(--text)' : 'var(--text2)'};${c.key === 'addr' ? 'font-weight:500;' : ''}${c.mono ? 'font-family:var(--mono);font-variant-numeric:tabular-nums;' : ''}`)}>{c.cell(p, cellCtx)}</td>
                 ))}
                 <td style={css('padding:9px 14px 9px 4px;text-align:right;color:var(--text3);')}><Icon name="chevronRight" size={14} /></td>
               </tr>

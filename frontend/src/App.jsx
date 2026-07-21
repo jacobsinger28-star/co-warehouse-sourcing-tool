@@ -126,7 +126,9 @@ export default function App() {
   const [brokSort, setBrokSort] = useState({ key: null, dir: 'asc' })
   // brokers view — listings drawer + email composer, both open on the right (no routing)
   const [listBrokId, setListBrokId] = useState(null)
+  // email composer is shared by brokers AND properties — at most one of these ids is set
   const [emailBrokId, setEmailBrokId] = useState(null)
+  const [emailPropId, setEmailPropId] = useState(null)
   const [emailDraft, setEmailDraft] = useState({ subject: '', body: '' })
   const [emailSent, setEmailSent] = useState(false)
   const [mapStyle, setMapStyle] = useState('sat')   // ← default basemap = Satellite
@@ -191,6 +193,26 @@ export default function App() {
     return m
   }, [propsData])
   const listingsFor = (b) => (b ? listingsByBroker.get(normName(b.name)) || [] : [])
+  // broker directory keyed by normalized name — lets an on-market property borrow its
+  // listing broker's email when the row itself carries no scraped email.
+  const brokerByName = useMemo(() => {
+    const m = new Map()
+    for (const b of dataset.brokers) { const k = normName(b.name); if (k && !m.has(k)) m.set(k, b) }
+    return m
+  }, [dataset.brokers])
+  // best email + contact name to reach about a property: the scraped owner/contact
+  // email if present, else (on-market) the listing broker's email from the directory.
+  const propEmail = (p) => (p ? (p.emails?.[0] || (p.channel === 'on' ? brokerByName.get(normName(p.broker))?.email : '') || '') : '')
+  const propContactName = (p) => (p ? (p.person || (p.channel === 'on' ? p.broker : p.owner) || 'there') : 'there')
+  // owners are frequently LLCs/entities, not people — don't greet "Hi Couchville Holdings,"
+  const ENTITY_RE = /\b(LLC|INC|CORP|TRUST|LP|LLP|PARTNERS?|HOLDINGS?|PROPERT(Y|IES)|REALTY|GROUP|CO|COMPANY|ENTERPRISES?|INVESTMENTS?|CAPITAL|ASSOCIATES?|VENTURES?|MANAGEMENT)\b|L\.L\.C|&/i
+  const contactFirst = (p) => {
+    if (p?.person) return p.person.trim().split(' ')[0]
+    const nm = p?.channel === 'on' ? p?.broker : p?.owner
+    return nm && !ENTITY_RE.test(nm) ? nm.trim().split(' ')[0] : 'there'
+  }
+  // short recipient label for buttons — a real first name, else the neutral role noun
+  const propEmailLabel = (p) => (p?.person ? p.person.trim().split(' ')[0] : (p?.channel === 'on' ? (p?.broker?.trim().split(' ')[0] || 'broker') : 'owner'))
   // Columns aren't click-sortable, so default the brokers list to the useful order:
   // anyone we can actually call (a phone or cell on file) floats to the top. Digit-count
   // guards against blanks / placeholder dashes in live data. Stable sort keeps the rest as-is.
@@ -220,6 +242,14 @@ export default function App() {
   const listBroker = listBrokId != null ? brokersData.find((b) => b.id === listBrokId) : null
   const brokerListings = listingsFor(listBroker)
   const emailBroker = emailBrokId != null ? brokersData.find((b) => b.id === emailBrokId) : null
+  const emailProp = emailPropId != null ? propsData.find((p) => p.id === emailPropId) : null
+  // the composer renders one recipient — a broker or a property contact — as { name, email }
+  const emailTo = emailBroker
+    ? { name: emailBroker.name, email: emailBroker.email || '' }
+    : emailProp
+      ? { name: propContactName(emailProp), email: propEmail(emailProp) }
+      : null
+  const closeEmail = () => { setEmailBrokId(null); setEmailPropId(null) }
   const syncBroker = (id) => setDataset((d) => ({ ...d, brokers: d.brokers.map((x) => (x.id === id ? { ...x, synced: true } : x)) }))
   const openEmail = (b) => {
     const first = (b.name || '').trim().split(' ')[0] || 'there'
@@ -229,7 +259,24 @@ export default function App() {
       body: `Hi ${first},\n\nI'm with SimiCapital — we're an active buyer of infill industrial (roughly 100–200k SF, a fenced yard / IOS component a plus) in ${b.mkts}.\n\nI saw you're running ${n} listing${n === 1 ? '' : 's'} out of ${b.firm}. We close quickly with clean terms and would welcome a look at anything you have on- or off-market that fits the box.\n\nDo you have 15 minutes this week for a quick call?\n\nBest,\nSimiCapital Acquisitions`,
     })
     setEmailSent(false)
+    setEmailPropId(null)
     setEmailBrokId(b.id)
+  }
+  // properties email — mirrors openEmail, but the draft is owner-direct (off-market) or
+  // broker-to-listing (on-market). Recipient resolves via propContactName / propEmail.
+  const openPropEmail = (p) => {
+    const first = contactFirst(p)
+    const onMkt = p.channel === 'on'
+    setEmailDraft(onMkt ? {
+      subject: `SimiCapital — interest in your ${p.mkt} listing at ${p.addr}`,
+      body: `Hi ${first},\n\nI'm with SimiCapital — we're an active buyer of infill industrial (roughly 100–200k SF, a fenced yard / IOS component a plus).\n\nYour listing at ${p.addr} in ${p.mkt}${p.ask ? ` (asking ${fmtMoney2(p.ask)}/SF)` : ''} looks like a strong fit for our box. We close quickly with clean terms.\n\nIs it still available, and could we grab 15 minutes this week?\n\nBest,\nSimiCapital Acquisitions`,
+    } : {
+      subject: `SimiCapital — interest in ${p.addr}`,
+      body: `Hi ${first},\n\nI'm with SimiCapital — we're an active, direct buyer of infill industrial (roughly 100–200k SF, a fenced yard / IOS component a plus)${p.mkt ? ` in ${p.mkt}` : ''}.\n\nWe're interested in your property at ${p.addr}${p.sf ? ` (~${fmtSF(p.sf)} SF)` : ''}. We're not brokers — we buy directly, close quickly, and can work around your timeline. No listing required and no obligation.\n\nWould you be open to a short conversation about a potential off-market sale?\n\nBest,\nSimiCapital Acquisitions`,
+    })
+    setEmailSent(false)
+    setEmailBrokId(null)
+    setEmailPropId(p.id)
   }
   const sendEmail = () => setEmailSent(true)
 
@@ -706,14 +753,14 @@ export default function App() {
                   {visibleProps.map((p) => (
                     <div key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(cardStyle(p.cat))}>
                       <div style={css('display:flex;align-items:center;gap:9px;')}><span style={css(scDot(p.cat))} /><span style={css('font-weight:600;font-size:14.5px;flex:1;')}>{p.addr}</span><Icon name="chevronRight" size={16} stroke="var(--text3)" /></div>
-                      <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}><span style={css(chTag(p.channel))}>{chLabel(p.channel)}</span><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span>{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={css('font-size:11px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 8px;border-radius:5px;text-decoration:none;')}>For Lease</a>}</div>
+                      <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}><span style={css(chTag(p.channel))}>{chLabel(p.channel)}</span><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span>{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={css('font-size:11px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 8px;border-radius:5px;text-decoration:none;')}>For Lease</a>}{propEmail(p) && <button className="tap hov" onClick={(e) => { e.stopPropagation(); openPropEmail(p) }} aria-label={`Email ${propEmailLabel(p)}`} style={css('display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-dim);border:1px solid var(--border);padding:2px 8px;border-radius:5px;')}><Icon name="mail" size={11} sw={2} />Email</button>}</div>
                       <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{p.mkt}</span><span style={css('font-family:var(--mono);')}>{fmtSF(p.sf)} SF</span><span>{cardSub(p)}</span></div>
                       <div style={css('font-size:11.5px;color:var(--text3);')}>{p.signal}</div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <PropTable rows={visibleProps} selProps={selProps} toggleProp={toggleProp} allSel={allPropsSel} onToggleAll={selAllProps} onOpen={setDrawerId} />
+                <PropTable rows={visibleProps} selProps={selProps} toggleProp={toggleProp} allSel={allPropsSel} onToggleAll={selAllProps} onOpen={setDrawerId} onEmail={openPropEmail} emailOf={propEmail} />
               ))}
 
               {/* BROKERS */}
@@ -890,6 +937,9 @@ export default function App() {
                           </div>
                         </>
                       )}
+                      {/* PREPARED OUTREACH — opens the shared email composer with a personalized draft */}
+                      <div style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:8px;')}>Prepared outreach</div>
+                      <button className="tap hov" onClick={() => openPropEmail(drawerProp)} title={propEmail(drawerProp) ? `Email ${propEmail(drawerProp)}` : 'Prepare an email draft'} style={css('display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:40px;margin-bottom:18px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:8px;color:var(--accent);font-weight:600;font-size:12.5px;cursor:pointer;')}><Icon name="mail" size={14} sw={2} />Email {propEmailLabel(drawerProp)}{propEmail(drawerProp) ? '' : ' · draft'}</button>
                       {drawerProp.lease && (
                         <>
                           <div style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--green);font-weight:600;margin-bottom:8px;')}>Listed for lease · LoopNet</div>
@@ -962,36 +1012,36 @@ export default function App() {
                 </>
               )}
 
-              {/* BROKER EMAIL COMPOSER — pre-filled, editable, sends in-app */}
-              {emailBroker && (
+              {/* EMAIL COMPOSER — pre-filled, editable, sends in-app. Shared by brokers + properties. */}
+              {emailTo && (
                 <>
-                  <div className="detail-scrim" onClick={() => setEmailBrokId(null)} style={css('position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:27;')} />
+                  <div className="detail-scrim" onClick={closeEmail} style={css('position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:27;')} />
                   <div className="detail-drawer" onClick={(e) => e.stopPropagation()} style={css('position:absolute;top:0;right:0;bottom:0;width:460px;max-width:100%;background:var(--surface);border-left:1px solid var(--border2);z-index:28;display:flex;flex-direction:column;animation:drawerin .18s ease;box-shadow:-14px 0 40px rgba(0,0,0,.35);')}>
                     <div style={css('flex:0 0 auto;padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px;')}>
                       <span style={css('display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;')}><Icon name="mail" size={16} sw={1.9} />New email</span>
-                      <button onClick={() => setEmailBrokId(null)} aria-label="Close composer" className="tap" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;background:none;border:none;color:var(--text3);width:30px;height:30px;')}><Icon name="x" size={17} /></button>
+                      <button onClick={closeEmail} aria-label="Close composer" className="tap" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;background:none;border:none;color:var(--text3);width:30px;height:30px;')}><Icon name="x" size={17} /></button>
                     </div>
                     <div style={css('flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px;')}>
                       <div style={css('display:flex;align-items:center;gap:9px;')}>
                         <span style={css('font-size:10.5px;color:var(--text3);width:52px;text-transform:uppercase;letter-spacing:.05em;')}>To</span>
-                        <div style={css('flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;font-size:12.5px;')}><span style={css('font-weight:600;white-space:nowrap;')}>{emailBroker.name}</span><span style={css('color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{emailBroker.email}</span></div>
+                        <div style={css('flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;font-size:12.5px;')}><span style={css('font-weight:600;white-space:nowrap;')}>{emailTo.name}</span>{emailTo.email ? <span style={css('color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{emailTo.email}</span> : <span style={css('color:var(--text3);font-style:italic;white-space:nowrap;')}>no email on file — draft ready to copy</span>}</div>
                       </div>
                       <div style={css('display:flex;align-items:center;gap:9px;')}>
                         <span style={css('font-size:10.5px;color:var(--text3);width:52px;text-transform:uppercase;letter-spacing:.05em;')}>Subject</span>
                         <input value={emailDraft.subject} onChange={(e) => setEmailDraft((d) => ({ ...d, subject: e.target.value }))} disabled={emailSent} aria-label="Email subject" style={css('flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--text);font-size:12.5px;outline:none;')} />
                       </div>
                       <textarea value={emailDraft.body} onChange={(e) => setEmailDraft((d) => ({ ...d, body: e.target.value }))} disabled={emailSent} aria-label="Email body" style={css('flex:1;min-height:270px;resize:vertical;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 13px;color:var(--text);font-size:12.5px;line-height:1.6;outline:none;font-family:inherit;')} />
-                      {emailSent && <div style={css('display:flex;align-items:center;gap:8px;font-size:12px;color:var(--green);background:var(--green-tint);border:1px solid var(--border);border-radius:7px;padding:9px 12px;')}><Icon name="check" size={14} sw={2.2} />Sent to {emailBroker.name} · {emailBroker.email}</div>}
+                      {emailSent && <div style={css('display:flex;align-items:center;gap:8px;font-size:12px;color:var(--green);background:var(--green-tint);border:1px solid var(--border);border-radius:7px;padding:9px 12px;')}><Icon name="check" size={14} sw={2.2} />Sent to {emailTo.name}{emailTo.email ? ` · ${emailTo.email}` : ''}</div>}
                     </div>
                     <div style={css('flex:0 0 auto;padding:13px 18px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px;')}>
                       {!emailSent ? (
                         <>
                           <button className="tap hov" onClick={sendEmail} disabled={!emailDraft.subject.trim() && !emailDraft.body.trim()} style={css('display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 16px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;')}><Icon name="send" size={14} sw={2} />Send email</button>
-                          <a href={`mailto:${emailBroker.email}?subject=${encodeURIComponent(emailDraft.subject)}&body=${encodeURIComponent(emailDraft.body)}`} className="tap hov" style={css('display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 13px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;text-decoration:none;')}>Open in mail app</a>
-                          <button onClick={() => setEmailBrokId(null)} className="tap hov" style={css('margin-left:auto;height:38px;padding:0 13px;background:none;border:1px solid var(--border2);border-radius:7px;color:var(--text2);font-size:12px;')}>Cancel</button>
+                          <a href={`mailto:${emailTo.email}?subject=${encodeURIComponent(emailDraft.subject)}&body=${encodeURIComponent(emailDraft.body)}`} className="tap hov" style={css('display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 13px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;text-decoration:none;')}>Open in mail app</a>
+                          <button onClick={closeEmail} className="tap hov" style={css('margin-left:auto;height:38px;padding:0 13px;background:none;border:1px solid var(--border2);border-radius:7px;color:var(--text2);font-size:12px;')}>Cancel</button>
                         </>
                       ) : (
-                        <button onClick={() => setEmailBrokId(null)} className="tap hov" style={css('margin-left:auto;height:38px;padding:0 16px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;')}>Done</button>
+                        <button onClick={closeEmail} className="tap hov" style={css('margin-left:auto;height:38px;padding:0 16px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;')}>Done</button>
                       )}
                     </div>
                   </div>
