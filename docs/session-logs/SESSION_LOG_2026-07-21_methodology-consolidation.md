@@ -60,16 +60,17 @@ now lives in two places — treat the scraper's copy as source-of-truth for the 
 - **This session** added `f69a571` (methodology docs) + this log, pushed to
   `origin/feat/multitenant-byok`. **Not on `main`** — it rides the feature branch until it merges.
 
-## Open / follow-ups (flagged, NOT auto-done)
+## Branch decisions (resolved with the user during close-out)
 
-- **Merge `feat/multitenant-byok` → `main`?** That auto-deploys to production. It's
-  mid-development (Phase 0 of a multi-phase BYOK effort, designed as a no-op until
-  `SUPABASE_SERVICE_ROLE_KEY` is set) and is being managed as a pushed feature branch.
-  Held for explicit go-ahead rather than deploying it as a side effect of "document."
-- **`phoneburner-integration`** — stale/superseded: 3 commits behind ~10 newer `main`
-  commits, and `main` already has `phoneburner.mjs` (server imports it). Has unmerged
-  commits, so `git branch -d` would refuse. Not merged, not deleted — flagged for a
-  decision (likely safe to `-D` if its work is confirmed superseded).
+- **`feat/multitenant-byok` → `main`: MERGED + DEPLOYED.** User gave explicit go-ahead
+  (2026-07-21). Fast-forwarded `main` to include Phase 0 (a no-op until
+  `SUPABASE_SERVICE_ROLE_KEY` is set), the property outreach composer, and these docs,
+  then plain-pushed `main` → Railway production redeploy. Not `make deploy` (no PII to Vercel).
+- **`phoneburner-integration`: LEFT AS-IS.** Stale/superseded (3 commits behind ~10 newer
+  `main` commits; `main` already has `phoneburner.mjs`). Per the standing "flag unmerged
+  branches, don't force-delete" rule, user chose to leave it. Not merged, not deleted.
+
+## Still open / pending go-ahead
 - **`feat/pipedrive-writes`** — a worktree at `/private/tmp/pd-writes` sitting exactly at
   `main` (no commits ahead). Left untouched.
 - **Standing handoff items 1–4** (set `RESULTS_TOKEN`, deploy the scraper, rebuild the
