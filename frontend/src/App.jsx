@@ -6,6 +6,7 @@ import { PROPS, BROKERS, SCRAPE_SOURCES, MARKETS, SOURCES } from './data.js'
 import { liveScrape, liveStop, liveStatus, liveRows } from './liveApi.js'
 import { identity, signOut } from './session.js'
 import { addToQueue, removeFromQueue, isQueued, useQueueCount } from './callQueue.js'
+import { pdStatus, pdSyncBroker, pdPushLead, pdPushLeads } from './pipedrive.js'
 import FilterChat from './FilterChat.jsx'
 import {
   fmtInt, fmtSF, fmtMoney2, scDot, scLabel, chDot, chTag, chLabel, scChip,
@@ -133,6 +134,13 @@ export default function App() {
   const [emailSent, setEmailSent] = useState(false)
   const [mapStyle, setMapStyle] = useState('sat')   // ← default basemap = Satellite
 
+  // Pipedrive write integration: token-configured? + in-flight + a transient toast.
+  const [pdOk, setPdOk] = useState(null)   // null=checking, true/false=token configured
+  const [pdBusy, setPdBusy] = useState('') // '', 'bulk', 'lead', or `brok:<id>`
+  const [pdMsg, setPdMsg] = useState(null) // { kind:'ok'|'err', text, url? }
+  useEffect(() => { pdStatus().then((s) => setPdOk(Boolean(s.configured))).catch(() => setPdOk(false)) }, [])
+  useEffect(() => { if (!pdMsg) return undefined; const t = setTimeout(() => setPdMsg(null), 6000); return () => clearTimeout(t) }, [pdMsg])
+
   const [sourcing, setSourcing] = useState(false)
   const [stopping, setStopping] = useState(false)  // stop requested, waiting for the backend job to actually halt
   const [total, setTotal] = useState(TOTAL_UNIVERSE)
@@ -250,7 +258,53 @@ export default function App() {
       ? { name: propContactName(emailProp), email: propEmail(emailProp) }
       : null
   const closeEmail = () => { setEmailBrokId(null); setEmailPropId(null) }
-  const syncBroker = (id) => setDataset((d) => ({ ...d, brokers: d.brokers.map((x) => (x.id === id ? { ...x, synced: true } : x)) }))
+  // Sync a broker to Pipedrive as a Person (dedupes server-side). On success flip
+  // the local "Synced" chip + remember the person URL; on failure show the reason.
+  const syncBroker = async (id) => {
+    const b = dataset.brokers.find((x) => x.id === id)
+    if (!b || pdBusy) return
+    setPdBusy(`brok:${id}`); setPdMsg(null)
+    try {
+      const r = await pdSyncBroker(b)
+      setDataset((d) => ({ ...d, brokers: d.brokers.map((x) => (x.id === id ? { ...x, synced: true, pdUrl: r.url } : x)) }))
+      setPdMsg({ kind: 'ok', text: `${b.name} ${r.status === 'exists' ? 'already in' : 'synced to'} Pipedrive`, url: r.url })
+    } catch (e) { setPdMsg({ kind: 'err', text: `Pipedrive sync failed: ${e.message}` }) }
+    finally { setPdBusy('') }
+  }
+  // Push one property to Pipedrive: an owner Lead (off-market) or broker Deal (on-market).
+  const pushPropToPd = async (p) => {
+    if (!p || pdBusy) return
+    setPdBusy('lead'); setPdMsg(null)
+    try {
+      const r = await pdPushLead(p)
+      const noun = p.channel === 'off' ? 'lead' : 'deal'
+      setPdMsg({ kind: 'ok', text: `${p.addr} — ${r.status === 'exists' ? `already a ${noun} in` : `pushed as a ${noun} to`} Pipedrive`, url: r.url })
+    } catch (e) { setPdMsg({ kind: 'err', text: `Push failed: ${e.message}` }) }
+    finally { setPdBusy('') }
+  }
+  // Bulk-push the current selection: brokers → Person sync, properties → lead/deal.
+  const pushSelectionToPd = async () => {
+    if (pdBusy) return
+    if (view === 'brokers') {
+      const bs = selBrokers.map((id) => dataset.brokers.find((b) => b.id === id)).filter(Boolean)
+      if (!bs.length) return
+      setPdBusy('bulk'); setPdMsg(null)
+      const done = {}; let ok = 0
+      for (const b of bs) { try { const r = await pdSyncBroker(b); ok++; done[b.id] = r.url } catch { /* keep going */ } }
+      setDataset((d) => ({ ...d, brokers: d.brokers.map((x) => (done[x.id] ? { ...x, synced: true, pdUrl: done[x.id] } : x)) }))
+      setPdMsg({ kind: ok === bs.length ? 'ok' : 'err', text: `${ok}/${bs.length} broker${bs.length > 1 ? 's' : ''} synced to Pipedrive` })
+      clearSel(); setPdBusy(''); return
+    }
+    const props = selProps.map((id) => propsData.find((p) => p.id === id)).filter(Boolean)
+    if (!props.length) return
+    setPdBusy('bulk'); setPdMsg(null)
+    try {
+      const r = await pdPushLeads(props)
+      setPdMsg({ kind: r.ok === r.total ? 'ok' : 'err', text: `${r.ok}/${r.total} pushed to Pipedrive` })
+      clearSel()
+    } catch (e) { setPdMsg({ kind: 'err', text: `Bulk push failed: ${e.message}` }) }
+    finally { setPdBusy('') }
+  }
   const openEmail = (b) => {
     const first = (b.name || '').trim().split(' ')[0] || 'there'
     const n = b.listings || 0
@@ -798,7 +852,7 @@ export default function App() {
                             <td style={css('padding:10px 8px;')}>{b.synced ? (
                               <span style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--green);background:var(--green-tint);')}><Icon name="check" size={11} sw={2.4} />Synced</span>
                             ) : (
-                              <button className="tap sync-chip" onClick={() => syncBroker(b.id)} title={`Sync ${b.name} to Pipedrive`} style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--text3);background:var(--surface2);')}><Icon name="sync" size={11} sw={2.2} /><span className="off-hover">Not synced</span><span className="on-hover">Sync now</span></button>
+                              <button className="tap sync-chip" onClick={() => syncBroker(b.id)} disabled={pdOk === false || pdBusy === `brok:${b.id}`} title={pdOk === false ? 'Pipedrive not configured — set PIPEDRIVE_API_TOKEN' : `Sync ${b.name} to Pipedrive`} style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--text3);background:var(--surface2);' + (pdOk === false ? 'opacity:.5;cursor:not-allowed;' : ''))}><Icon name="sync" size={11} sw={2.2} /><span className="off-hover">{pdBusy === `brok:${b.id}` ? 'Syncing…' : 'Not synced'}</span><span className="on-hover">{pdBusy === `brok:${b.id}` ? 'Syncing…' : 'Sync now'}</span></button>
                             )}</td>
                             <td className="col-secondary" style={css('padding:10px 14px 10px 8px;white-space:nowrap;')}>{listingsFor(b).length > 0 ? (
                               <button className="tap hov" onClick={() => setListBrokId(b.id)} style={css('height:26px;padding:0 9px;background:var(--surface3);border:1px solid var(--border2);border-radius:5px;color:var(--text2);font-size:11px;')}>View listings</button>
@@ -816,7 +870,7 @@ export default function App() {
                         <div style={css('display:flex;align-items:center;gap:9px;')}><span style={css('font-weight:600;font-size:14.5px;flex:1;')}>{b.name}</span>{b.synced ? (
                           <span style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--green);background:var(--green-tint);')}><Icon name="check" size={11} sw={2.4} />Synced</span>
                         ) : (
-                          <button className="tap sync-chip" onClick={() => syncBroker(b.id)} title={`Sync ${b.name} to Pipedrive`} style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--text3);background:var(--surface2);')}><Icon name="sync" size={11} sw={2.2} /><span className="off-hover">Not synced</span><span className="on-hover">Sync now</span></button>
+                          <button className="tap sync-chip" onClick={() => syncBroker(b.id)} disabled={pdOk === false || pdBusy === `brok:${b.id}`} title={pdOk === false ? 'Pipedrive not configured — set PIPEDRIVE_API_TOKEN' : `Sync ${b.name} to Pipedrive`} style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--text3);background:var(--surface2);' + (pdOk === false ? 'opacity:.5;cursor:not-allowed;' : ''))}><Icon name="sync" size={11} sw={2.2} /><span className="off-hover">{pdBusy === `brok:${b.id}` ? 'Syncing…' : 'Not synced'}</span><span className="on-hover">{pdBusy === `brok:${b.id}` ? 'Syncing…' : 'Sync now'}</span></button>
                         )}</div>
                         <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{b.firm}</span><span>{b.mkts}</span><span style={css('font-family:var(--mono);')}>{listingsFor(b).length} listings</span></div>
                         <div style={css('display:flex;align-items:center;gap:8px;')}><span style={css('font-family:var(--mono);font-size:11.5px;color:var(--accent);background:var(--accent-dim);padding:2px 7px;border-radius:4px;')}>{b.cell}</span><button className="tap hov" onClick={() => openEmail(b)} aria-label={`Email ${b.name}`} style={css('margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;')}><Icon name="mail" size={13} sw={1.8} />Email</button>{listingsFor(b).length > 0 && <button className="tap hov" onClick={() => setListBrokId(b.id)} style={css('display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;')}>Listings</button>}</div>
@@ -862,7 +916,7 @@ export default function App() {
                 <div className="bulk-bar" style={css('position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:9px 10px 9px 18px;background:var(--surface3);border:1px solid var(--border2);border-radius:11px;box-shadow:0 12px 34px rgba(0,0,0,.45);z-index:20;')}>
                   <span style={css('font-size:12.5px;font-weight:500;white-space:nowrap;')}><span style={css('font-family:var(--mono);color:var(--accent);')}>{bulkCount}</span> selected</span>
                   <div style={css('width:1px;height:20px;background:var(--border2);')} />
-                  <button className="tap hov" style={css('height:32px;padding:0 13px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12px;white-space:nowrap;')}>Send {bulkCount} to Pipedrive</button>
+                  <button className="tap hov" onClick={pushSelectionToPd} disabled={pdOk === false || pdBusy === 'bulk'} title={pdOk === false ? 'Pipedrive not configured — set PIPEDRIVE_API_TOKEN' : ''} style={css('height:32px;padding:0 13px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12px;white-space:nowrap;' + (pdOk === false ? 'opacity:.55;cursor:not-allowed;' : ''))}>{pdBusy === 'bulk' ? 'Sending…' : `Send ${bulkCount} to Pipedrive`}</button>
                   {view === 'table' && <button className="tap hov" onClick={() => { addToQueue(selProps.map((id) => propsData.find((p) => p.id === id)).filter(Boolean)); clearSel() }} style={css('height:32px;padding:0 13px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;white-space:nowrap;')}>Add {bulkCount} to call queue</button>}
                   <button onClick={clearSel} aria-label="Clear selection" style={css('display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:transparent;border:none;color:var(--text3);')}><Icon name="x" size={15} /></button>
                 </div>
@@ -960,7 +1014,7 @@ export default function App() {
                       </div>
                     </div>
                     <div style={css('flex:0 0 auto;padding:13px 18px;border-top:1px solid var(--border);display:flex;gap:9px;')}>
-                      <button className="tap hov" style={css('flex:1;height:38px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;')}>{drawerProp.channel === 'off' ? 'Push owner Lead to Pipedrive' : 'Push broker Deal to Pipedrive'}</button>
+                      <button className="tap hov" onClick={() => pushPropToPd(drawerProp)} disabled={pdOk === false || pdBusy === 'lead'} title={pdOk === false ? 'Pipedrive not configured — set PIPEDRIVE_API_TOKEN' : ''} style={css('flex:1;height:38px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;' + (pdOk === false ? 'opacity:.55;cursor:not-allowed;' : ''))}>{pdBusy === 'lead' ? 'Pushing…' : (drawerProp.channel === 'off' ? 'Push owner Lead to Pipedrive' : 'Push broker Deal to Pipedrive')}</button>
                       {(() => {
                         const queued = isQueued(drawerProp.id)
                         return (
@@ -1006,7 +1060,7 @@ export default function App() {
                     </div>
                     <div style={css('flex:0 0 auto;padding:13px 18px;border-top:1px solid var(--border);display:flex;gap:9px;')}>
                       <button className="tap hov" onClick={() => openEmail(listBroker)} style={css('flex:1;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;')}><Icon name="mail" size={14} sw={2} />Email {listBroker.name.split(' ')[0]}</button>
-                      {!listBroker.synced && <button className="tap hov" onClick={() => syncBroker(listBroker.id)} style={css('display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;')}><Icon name="sync" size={13} sw={2} />Sync</button>}
+                      {!listBroker.synced && <button className="tap hov" onClick={() => syncBroker(listBroker.id)} disabled={pdOk === false || pdBusy === `brok:${listBroker.id}`} title={pdOk === false ? 'Pipedrive not configured — set PIPEDRIVE_API_TOKEN' : 'Sync to Pipedrive'} style={css('display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;' + (pdOk === false ? 'opacity:.55;cursor:not-allowed;' : ''))}><Icon name="sync" size={13} sw={2} />{pdBusy === `brok:${listBroker.id}` ? 'Syncing…' : 'Sync'}</button>}
                     </div>
                   </div>
                 </>
@@ -1120,6 +1174,15 @@ export default function App() {
             <button className="hov tap" onClick={signOut} style={css('display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 10px;background:transparent;border:none;border-radius:7px;color:var(--red);font-size:13px;font-weight:500;text-align:left;')}><Icon name="slashCircle" size={16} sw={1.8} />Sign out</button>
           </div>
         </>
+      )}
+
+      {/* Pipedrive write toast — success/error feedback for the sync + push actions */}
+      {pdMsg && (
+        <div onClick={() => setPdMsg(null)} style={css(`position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:3000;display:flex;align-items:center;gap:10px;max-width:92vw;padding:11px 15px;border-radius:9px;font-size:12.5px;cursor:pointer;box-shadow:0 12px 34px rgba(0,0,0,.45);background:var(--surface3);border:1px solid ${pdMsg.kind === 'err' ? 'var(--red)' : 'var(--accent-line)'};color:${pdMsg.kind === 'err' ? 'var(--red)' : 'var(--text)'};`)}>
+          <Icon name={pdMsg.kind === 'err' ? 'alert' : 'check'} size={15} sw={2} />
+          <span>{pdMsg.text}</span>
+          {pdMsg.url && <a href={pdMsg.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={css('color:var(--accent);text-decoration:none;font-weight:600;white-space:nowrap;')}>Open ↗</a>}
+        </div>
       )}
     </div>
   )

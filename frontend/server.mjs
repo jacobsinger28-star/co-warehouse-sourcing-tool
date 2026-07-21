@@ -40,6 +40,7 @@ import {
 } from './phoneburner.mjs'
 import { resolveTenant, DEFAULT_TENANT } from './tenants.mjs'
 import { tenancyEnabled } from './db.mjs'
+import { pdConfigured, pdStatusInfo, syncBroker, pushLead } from './pipedrive.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 8080
@@ -326,6 +327,50 @@ app.post('/api/phoneburner/hook/:secret/:event', (req, res) => {
     }
   } catch (e) { console.error('[pb hook]', e) }
   res.json({ ok: true })
+})
+
+// ── Pipedrive writes: sync brokers + push sourced leads/deals into the CRM ──
+// Reuses PIPEDRIVE_API_TOKEN (the same token the deal book reads with). Sourced
+// records land in the Tracking pipeline (PIPEDRIVE_SOURCING_STAGE_ID); dedupe by
+// email/phone (persons) and title (deals) makes re-clicks idempotent. Pass
+// { dryRun: true } to preview a payload without writing.
+app.use('/api/pipedrive', rateLimit(60))
+
+app.post('/api/pipedrive/status', requireAuth, async (_req, res) => {
+  try { res.json(await pdStatusInfo()) }
+  catch (e) { console.error('[pd status]', e); res.status(502).json({ error: e.message }) }
+})
+
+// Sync a broker as a Pipedrive Person. Body: { broker:{name,cell,phone,email,firm,...} }
+app.post('/api/pipedrive/broker', requireAuth, async (req, res) => {
+  if (!pdConfigured()) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN)' })
+  const b = req.body?.broker
+  if (!b || !(b.name || b.cell || b.phone || b.email)) return res.status(400).json({ error: 'broker with a name or contact required' })
+  try { res.json(await syncBroker(b, { dryRun: Boolean(req.body?.dryRun) })) }
+  catch (e) { console.error('[pd broker]', e); res.status(502).json({ error: e.message }) }
+})
+
+// Push one property as a lead (off-market) / deal (on-market). Body: { prop:{...} }
+app.post('/api/pipedrive/lead', requireAuth, async (req, res) => {
+  if (!pdConfigured()) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN)' })
+  const p = req.body?.prop
+  if (!p || !p.addr) return res.status(400).json({ error: 'prop with an address required' })
+  try { res.json(await pushLead(p, { dryRun: Boolean(req.body?.dryRun) })) }
+  catch (e) { console.error('[pd lead]', e); res.status(502).json({ error: e.message }) }
+})
+
+// Bulk push. Body: { props:[...] } — sequential + best-effort, per-item results.
+app.post('/api/pipedrive/leads', requireAuth, async (req, res) => {
+  if (!pdConfigured()) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN)' })
+  const props = Array.isArray(req.body?.props) ? req.body.props.slice(0, 100) : []
+  if (!props.length) return res.status(400).json({ error: 'props[] required' })
+  const dryRun = Boolean(req.body?.dryRun)
+  const results = []
+  for (const p of props) {
+    try { results.push({ id: p.id, addr: p.addr, ...(await pushLead(p, { dryRun })) }) }
+    catch (e) { results.push({ id: p.id, addr: p.addr, status: 'error', error: e.message }) }
+  }
+  res.json({ results, ok: results.filter((r) => r.status !== 'error').length, total: results.length })
 })
 
 // static SPA + client-side routing fallback
