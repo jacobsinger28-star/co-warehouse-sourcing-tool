@@ -5,6 +5,7 @@ import Icon from './Icon.jsx'
 import { PROPS, BROKERS, SCRAPE_SOURCES, MARKETS, SOURCES } from './data.js'
 import { liveScrape, liveStop, liveStatus, liveRows } from './liveApi.js'
 import { identity, signOut } from './session.js'
+import { addToQueue, removeFromQueue, isQueued, useQueueCount } from './callQueue.js'
 import FilterChat from './FilterChat.jsx'
 import {
   fmtInt, fmtSF, fmtMoney2, scDot, scLabel, chDot, chTag, chLabel, scChip,
@@ -168,6 +169,9 @@ export default function App() {
     setTotal(props.length)
   }, [realData, liveOn])
   const propsData = dataset.props
+  // Subscribe to the shared call queue so the drawer button's queued-state and the
+  // "AI Caller" nav badge re-render the moment something is added or removed.
+  const queueCount = useQueueCount()
   // On-market listings we can actually show, grouped per broker by normalized name.
   // A broker's own `listings` field is a source-claimed count that frequently doesn't
   // match rows we hold (in live data the broker directory and the on-market listings are
@@ -544,7 +548,7 @@ export default function App() {
         <div style={css('display:flex;gap:2px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:8px;')}>
           <button className="hov" onClick={() => goModule('properties')} style={css(seg(module === 'properties'))}>Properties</button>
           <button className="hov" onClick={() => goModule('reuse')} style={css(seg(module === 'reuse'))}>Reuse Finder</button>
-          <button className="hov" onClick={() => goModule('caller')} style={css(seg(module === 'caller'))}>AI Caller</button>
+          <button className="hov" onClick={() => goModule('caller')} style={css(seg(module === 'caller'))}>AI Caller{queueCount > 0 && <span style={css('display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 5px;background:var(--accent);color:#06120F;border-radius:9px;font-size:10px;font-weight:700;font-family:var(--mono);')}>{queueCount}</span>}</button>
           <button className="hov" onClick={() => goModule('deals')} style={css(seg(module === 'deals'))}>Deals DB</button>
           <button className="hov" onClick={() => goModule('supply')} style={css(seg(module === 'supply'))}>Supply Model</button>
         </div>
@@ -812,7 +816,7 @@ export default function App() {
                   <span style={css('font-size:12.5px;font-weight:500;white-space:nowrap;')}><span style={css('font-family:var(--mono);color:var(--accent);')}>{bulkCount}</span> selected</span>
                   <div style={css('width:1px;height:20px;background:var(--border2);')} />
                   <button className="tap hov" style={css('height:32px;padding:0 13px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12px;white-space:nowrap;')}>Send {bulkCount} to Pipedrive</button>
-                  {view === 'table' && <button className="tap hov" style={css('height:32px;padding:0 13px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;white-space:nowrap;')}>Add {bulkCount} to call queue</button>}
+                  {view === 'table' && <button className="tap hov" onClick={() => { addToQueue(selProps.map((id) => propsData.find((p) => p.id === id)).filter(Boolean)); clearSel() }} style={css('height:32px;padding:0 13px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;white-space:nowrap;')}>Add {bulkCount} to call queue</button>}
                   <button onClick={clearSel} aria-label="Clear selection" style={css('display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:transparent;border:none;color:var(--text3);')}><Icon name="x" size={15} /></button>
                 </div>
               )}
@@ -907,7 +911,12 @@ export default function App() {
                     </div>
                     <div style={css('flex:0 0 auto;padding:13px 18px;border-top:1px solid var(--border);display:flex;gap:9px;')}>
                       <button className="tap hov" style={css('flex:1;height:38px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;')}>{drawerProp.channel === 'off' ? 'Push owner Lead to Pipedrive' : 'Push broker Deal to Pipedrive'}</button>
-                      <button className="tap hov" style={css('height:38px;padding:0 14px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;')}>Add to call queue</button>
+                      {(() => {
+                        const queued = isQueued(drawerProp.id)
+                        return (
+                          <button className="tap hov" onClick={() => (queued ? removeFromQueue(drawerProp.id) : addToQueue(drawerProp))} title={queued ? 'Remove from call queue' : 'Add to call queue'} style={css(`height:38px;padding:0 14px;background:var(--surface3);border:1px solid ${queued ? 'var(--accent)' : 'var(--border2)'};border-radius:7px;color:${queued ? 'var(--accent)' : 'var(--text)'};font-size:12.5px;display:flex;align-items:center;gap:6px;white-space:nowrap;`)}>{queued ? <><Icon name="check" size={13} sw={2.4} />In queue</> : 'Add to call queue'}</button>
+                        )
+                      })()}
                     </div>
                   </div>
                 </>

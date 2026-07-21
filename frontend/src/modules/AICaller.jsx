@@ -3,21 +3,23 @@
 // Flow: connect → stage DNC-scrubbed contacts → push to PhoneBurner → launch the
 // dial session (embedded iframe, with an open-in-new-tab SSO fallback). Call
 // outcomes post back via webhooks into the "Recent" column.
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { css } from '../css.js'
 import Icon from '../Icon.jsx'
-import { CALL_QUEUE } from '../data.js'
 import { scDot } from '../helpers.js'
 import { pbStatus, pbPush, pbDial, pbRecent } from '../phoneBurner.js'
+import { useCallQueue, removeFromQueue, clearQueue } from '../callQueue.js'
 
-// TODO: swap CALL_QUEUE (demo staging) for the operator's real selected owners
-// from the map/table — must be DNC-scrubbed before they land here.
+// The staging list is the shared call queue (callQueue.js): owners/brokers the
+// operator added from the Properties map or table. Still DNC-scrub before dialing.
 const splitName = (owner = '') => {
   const parts = String(owner).trim().split(/\s+/)
   const last = parts.length > 1 ? parts.pop() : ''
   return { first_name: parts.join(' '), last_name: last }
 }
-const toContact = (q, i) => ({ ...splitName(q.owner), phone: q.phone, address: q.addr, external_id: q.addr || `q${i}`, notes: `Score ${q.score} · ${q.cat}` })
+// Stable id used both as the PhoneBurner external_id and to match push-results back to a row.
+const extId = (q, i) => q.addr || String(q.id ?? '') || `q${i}`
+const toContact = (q, i) => ({ ...splitName(q.owner), phone: q.phone, address: q.addr, external_id: extId(q, i), notes: `Score ${q.score} · ${q.cat}` })
 
 const callerTabBtn = (active) =>
   `flex:1;height:32px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;${active ? 'background:var(--surface3);color:var(--text);box-shadow:inset 0 0 0 1px var(--border2);' : 'background:transparent;color:var(--text2);'}`
@@ -26,7 +28,8 @@ const dispColor = (d) => (/warm|qualif/i.test(d || '') ? '--green' : /do.?not|dn
 export default function AICaller() {
   const [tab, setTab] = useState('active')
   const [status, setStatus] = useState(null)     // { configured, mode, connected }
-  const [staged] = useState(() => CALL_QUEUE.map(toContact))
+  const queue = useCallQueue()
+  const staged = useMemo(() => queue.map(toContact), [queue])
   const [pushed, setPushed] = useState([])        // [{external_id, phone, id}]
   const [dialUrl, setDialUrl] = useState('')      // redirect_url for the embedded dialer
   const [recent, setRecent] = useState([])
@@ -84,17 +87,20 @@ export default function AICaller() {
       </div>
 
       <div className="caller-grid" data-tab={tab} style={css('flex:1;display:grid;grid-template-columns:300px 1fr 300px;min-height:0;')}>
-        {/* staged queue */}
+        {/* staged queue — the shared call queue (owners added from Properties) */}
         <div className="caller-queue" style={css('border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;')}>
-          <div style={css('flex:0 0 auto;padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;display:flex;justify-content:space-between;')}>Staged to dial <span style={css('font-family:var(--mono);color:var(--text3);font-weight:400;')}>{staged.length}</span></div>
+          <div style={css('flex:0 0 auto;padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:8px;')}>Staged to dial <span style={css('display:flex;align-items:center;gap:10px;')}>{queue.length > 0 && <button className="tap" onClick={clearQueue} style={css('background:none;border:none;color:var(--text3);font-size:11px;font-weight:400;cursor:pointer;')}>Clear</button>}<span style={css('font-family:var(--mono);color:var(--text3);font-weight:400;')}>{queue.length}</span></span></div>
           <div style={css('flex:1;overflow-y:auto;min-height:0;')}>
-            {CALL_QUEUE.map((q, i) => {
-              const done = pushed.some((p) => p.external_id === (q.addr || `q${i}`))
+            {queue.length === 0 && (
+              <div style={css('padding:20px 16px;font-size:11.5px;color:var(--text3);line-height:1.65;')}>No owners staged yet. Open a property in the <span style={css('color:var(--text2);')}>Properties</span> map or table and hit <span style={css('color:var(--text2);')}>“Add to call queue”</span> — or select rows and use the bulk bar.</div>
+            )}
+            {queue.map((q, i) => {
+              const done = pushed.some((p) => p.external_id === extId(q, i))
               return (
-                <div key={i} style={css('padding:11px 16px;border-bottom:1px solid var(--border);')}>
-                  <div style={css('display:flex;align-items:center;gap:8px;margin-bottom:3px;')}><span style={css(scDot(q.cat))} /><span style={css('font-weight:500;font-size:12.5px;')}>{q.addr}</span>{done && <Icon name="check" size={12} sw={2.4} stroke="var(--green)" style={css('margin-left:auto;')} />}</div>
+                <div key={q.id || q.addr || i} style={css('padding:11px 16px;border-bottom:1px solid var(--border);')}>
+                  <div style={css('display:flex;align-items:center;gap:8px;margin-bottom:3px;')}><span style={css(scDot(q.cat))} /><span style={css('font-weight:500;font-size:12.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{q.addr}</span>{done && <Icon name="check" size={12} sw={2.4} stroke="var(--green)" />}<button className="tap" onClick={() => removeFromQueue(q.id || q.addr)} aria-label={`Remove ${q.addr} from queue`} style={css('display:flex;align-items:center;background:none;border:none;color:var(--text3);padding:2px;cursor:pointer;')}><Icon name="x" size={13} /></button></div>
                   <div style={css('font-size:11px;color:var(--text2);')}>{q.owner}</div>
-                  <div style={css('display:flex;justify-content:space-between;margin-top:4px;')}><span style={css('font-family:var(--mono);font-size:11px;color:var(--text3);')}>{q.phone}</span><span style={css('font-size:10.5px;color:var(--text3);')}>{q.last}</span></div>
+                  <div style={css('display:flex;justify-content:space-between;margin-top:4px;')}><span style={css('font-family:var(--mono);font-size:11px;color:var(--text3);')}>{q.phone || '—'}</span><span style={css('font-size:10.5px;color:var(--text3);')}>{q.last}</span></div>
                 </div>
               )
             })}
