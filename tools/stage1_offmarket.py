@@ -1,9 +1,13 @@
 """Stage 1 FIND markets (Orlando, Raleigh) → sourcing-console off-market rows.
 
-Reads the kept-lists produced by the Off-Market OS Stage 1 scrapers
-(../off-market-operating-system/runs/*/stage1_find*.csv — also live on Railway,
-see off-market-operating-system/service/DEPLOY-NOTES.md) and emits rows in the
-same shape as build_real_data.load_offmarket().
+Source of truth is the LIVE Off-Market OS service (/results/{slug}.csv — the
+token-gated, auto-refreshing endpoint on Railway; see off-market-operating-
+system/service/DEPLOY-NOTES.md). Set RESULTS_TOKEN in the build env and each
+market's current kept-list is pulled fresh at build time. If the token or
+endpoint is unavailable the build falls back to the committed snapshots under
+../off-market-operating-system/runs/*/stage1_find*.csv so it never breaks
+offline. Either way the rows come out in the same shape as
+build_real_data.load_offmarket() (both CSVs are produced by dealbox.screen).
 
 These rows carry an honest PARTIAL score: only the components Stage 1 data can
 earn — hold_period, owner_profile, year_built_band (same thresholds as
@@ -22,7 +26,9 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import re
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +37,12 @@ import urllib.parse
 
 RUNS_GLOB = "off-market-operating-system/runs"
 CACHE = Path(__file__).resolve().parent / ".stage1_geocache.json"
+
+# Live Off-Market OS service — the auto-refreshing source of truth.
+SERVICE_URL = os.environ.get(
+    "OFFMARKET_SERVICE_URL",
+    "https://off-market-os-scrapers-production.up.railway.app").rstrip("/")
+SERVICE_SLUG = {"Orlando": "orlando-orange-fl", "Raleigh": "raleigh-wake-nc"}
 
 WAKE_QUERY = ("https://maps.wakegov.com/arcgis/rest/services/Property/Parcels/"
               "FeatureServer/0/query")
@@ -52,8 +64,37 @@ CLASS_DISPLAY = {"LLC": "LLC", "trust": "Trust", "partnership": "Partnership",
                  "government": "Gov", "unclassified": "—"}
 
 
+def _fetch_live_csvs() -> dict[str, Path]:
+    """Pull each market's latest kept-list from the live service /results
+    endpoint (the auto-refreshing source of truth) to temp files, keyed by
+    market display name. Returns {} when RESULTS_TOKEN is unset or every fetch
+    fails, so the caller can fall back to the committed runs/ snapshots. The
+    token goes in the Authorization header, never the URL (keeps it out of
+    server logs)."""
+    token = os.environ.get("RESULTS_TOKEN", "")
+    if not token:
+        return {}
+    tmp = Path(tempfile.mkdtemp(prefix="stage1_live_"))
+    out: dict[str, Path] = {}
+    for mkt, slug in SERVICE_SLUG.items():
+        req = urllib.request.Request(
+            f"{SERVICE_URL}/results/{slug}.csv",
+            headers={"Authorization": f"Bearer {token}"})
+        try:
+            with urllib.request.urlopen(req, timeout=90) as r:
+                body = r.read()
+        except Exception as e:  # noqa: BLE001 — any failure → fall back
+            print(f"  ! live fetch failed for {slug}: {e}", flush=True)
+            continue
+        p = tmp / f"stage1_find_{slug}.csv"
+        p.write_bytes(body)
+        out[mkt] = p
+    return out
+
+
 def _latest_csvs(workspace: Path) -> dict[str, Path]:
-    """Latest stage1_find CSV per market, keyed by market display name."""
+    """Latest stage1_find CSV per market, keyed by market display name.
+    Fallback source: the committed runs/ snapshots."""
     out: dict[str, tuple[str, Path]] = {}
     for p in sorted((workspace / RUNS_GLOB).glob("*/stage1_find*.csv")):
         run_dir = p.parent.name          # e.g. raleigh-wake-nc-2026-07-20
@@ -155,10 +196,15 @@ def _score(row: dict, hold: float | None, year: int | None,
 
 def load_stage1(workspace: Path, cat, title) -> list[dict]:
     """cat/title = build_real_data.offmarket_cat / smart_title (avoids a cycle)."""
-    csvs = _latest_csvs(workspace)
+    csvs = _fetch_live_csvs()
+    src = "live service /results"
     if not csvs:
-        print("  ! no Stage 1 FIND runs found", flush=True)
+        csvs = _latest_csvs(workspace)  # fallback: committed runs/ snapshots
+        src = "committed runs/ snapshots (live endpoint/token unavailable)"
+    if not csvs:
+        print("  ! no Stage 1 FIND source (live or runs/)", flush=True)
         return []
+    print(f"  Stage 1 source: {src} [{', '.join(sorted(csvs))}]", flush=True)
     cache = _load_cache()
     by_mkt = {m: list(csv.DictReader(open(p))) for m, p in csvs.items()}
 
