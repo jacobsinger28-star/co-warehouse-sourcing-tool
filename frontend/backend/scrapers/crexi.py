@@ -19,16 +19,31 @@ Endpoints (decoded from crexi.com's Angular bundle; no auth required)
     Market scoping is a lat/long bounding box (see scrapers.markets). The default
     scope is for-sale. Response: {data:[...], totalCount}.
 - BROKERS GET  https://api.crexi.com/assets/{id}/brokers
-    array of {firstName,lastName,brokerage:{name,location},publicProfileId,...}
+    array of {firstName,lastName,brokerage:{name,location,website},
+              publicProfileId,licenses,licenseDetails:[{brokerageLicensePhone}],...}
 - DETAIL  GET  https://api.crexi.com/assets/{id}
     has marketingDescription + subtypes → regex-enriched physical specs.
 
-Broker-contact limitation
--------------------------
-Crexi gates broker email/phone behind a lead form — the API returns them as
-null. So this scraper captures the broker's NAME + BROKERAGE (+ a clickable
-Crexi profile/listing URL), not a phone/email. That's still an actionable lead
-(the team contacts via the brokerage / Crexi). Cell/email enrichment is a
+Broker contact — what Crexi gives, and how we backfill it
+---------------------------------------------------------
+Crexi gates a broker's *direct* email/cell behind a lead form: the ``/brokers``
+payload carries NO ``email``/``phone`` field at all (so the old
+``primary.get("phone")`` was always None). But two contact signals Crexi does
+NOT gate are sitting right in that same payload, and we now capture them:
+
+  * PHONE  — ``licenseDetails[].brokerageLicensePhone`` (the brokerage's line from
+    state-license records) → ``broker_phone``. Present on a minority of listings.
+  * WEBSITE + office address + license — from ``brokerage.website`` /
+    ``brokerage.location`` / ``licenses`` → stashed in ``raw_data``. A website is
+    present on ~90% of listings.
+
+Then, when website enrichment is on (env ``CREXI_WEBSITE_ENRICH``, default on),
+scrapers.broker_contact fetches the brokerage site (once per domain per run) for
+a real office phone — backfilling ``broker_phone`` where the license phone was
+absent — and for the broker's email: a *verified* address (one actually published
+on the firm's site) goes to ``broker_email``; a pattern-derived guess goes to
+``raw_data.broker_email_guess`` (never the verified field — see the team's
+"never write a bare guess to the CRM" rule). Direct cell/personal email remains a
 separate, later step (Apollo / skip-trace).
 
 See the `crexi-api` reference note for the full schema recon.
@@ -37,14 +52,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import AsyncGenerator
 
 import httpx
 
 from .base import BaseScraper
+from .broker_contact import BrokerContactEnricher, format_phone as _fmt_phone
 from .markets import match_markets
 
 logger = logging.getLogger(__name__)
+
+# Fetch the brokerage's website for an office phone + email pattern. Best-effort
+# and per-domain cached; set CREXI_WEBSITE_ENRICH=0 to skip it (name/license-phone
+# capture from the API stays on regardless).
+_WEBSITE_ENRICH = os.environ.get("CREXI_WEBSITE_ENRICH", "1").strip().lower() \
+    not in ("0", "false", "no", "off")
 
 # ---------------------------------------------------------------------------
 # Endpoint config
@@ -98,6 +121,73 @@ def _broker_full_name(b: dict) -> str | None:
     return name or None
 
 
+def _broker_license_phone(b: dict) -> str | None:
+    """The brokerage's state-license phone for one broker, if published."""
+    for ld in b.get("licenseDetails") or []:
+        ph = _fmt_phone(ld.get("brokerageLicensePhone"))
+        if ph:
+            return ph
+    return None
+
+
+def _license_phone(brokers: list[dict]) -> str | None:
+    """First state-license brokerage phone across all brokers on the listing.
+    (Co-brokers on the same listing share the firm's line, so any hit is valid.)"""
+    for b in brokers:
+        ph = _broker_license_phone(b)
+        if ph:
+            return ph
+    return None
+
+
+def _primary_license(b: dict) -> tuple[str | None, str | None]:
+    """(license number, state code) for a broker — from ``licenses`` /
+    ``licenseDetails``."""
+    lic = None
+    lics = b.get("licenses") or []
+    if lics:
+        lic = _clean(str(lics[0]))
+    state = None
+    for ld in b.get("licenseDetails") or []:
+        if not lic:
+            lic = _clean(str(ld.get("number") or "")) or None
+        state = _clean(ld.get("licenseStateCode") or ld.get("brokerageStateCode"))
+        if state:
+            break
+    return lic, state
+
+
+def _brokerage_office_address(brokerage: dict) -> str | None:
+    """Format a brokerage's office location as 'Street, City, ST ZIP'."""
+    loc = (brokerage or {}).get("location") or {}
+    street = _clean(loc.get("address"))
+    city = _clean(loc.get("city"))
+    state = _clean(((loc.get("state") or {}) or {}).get("code"))
+    zip_ = _clean(loc.get("zip"))
+    tail = " ".join(filter(None, [state, zip_]))
+    parts = [p for p in (street, city, tail) if p]
+    return ", ".join(parts) or None
+
+
+def _broker_summary(b: dict) -> dict:
+    """Compact, per-broker contact record for raw_data.all_brokers — everything
+    the API hands us about one broker on the listing."""
+    brokerage = b.get("brokerage") or {}
+    profile_id = _clean(b.get("publicProfileId"))
+    lic, state = _primary_license(b)
+    return {
+        "name":          _broker_full_name(b),
+        "brokerage":     _clean(brokerage.get("name")),
+        "website":       _clean(brokerage.get("website")),
+        "office_address": _brokerage_office_address(brokerage),
+        "license_phone": _broker_license_phone(b),
+        "license":       lic,
+        "license_state": state,
+        "profile_url":   f"{_SITE}/profile/{profile_id}" if profile_id else None,
+        "broker_id":     b.get("id"),
+    }
+
+
 def _detail_sf(d: dict) -> float | None:
     """Building square footage from the asset detail. The search summary often
     omits SF; the detail carries it structurally in summaryDetails (key
@@ -133,16 +223,25 @@ class CrexiScraper(BaseScraper):
 
     SOURCE = "crexi"
 
-    def __init__(self, stop_event=None):
+    def __init__(self, stop_event=None, enrich_websites: bool | None = None):
         # Skip BaseScraper.__init__ — no browser needed.
         self._stop_event = stop_event
         self._client: httpx.AsyncClient | None = None
+        # Website enrichment (office phone + email pattern). Defaults to the env
+        # flag; callers/tests can force it on/off explicitly.
+        self._enrich_websites = _WEBSITE_ENRICH if enrich_websites is None else enrich_websites
+        self._enricher: BrokerContactEnricher | None = None
 
     async def __aenter__(self):
         self._client = httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=_HEADERS)
+        if self._enrich_websites:
+            self._enricher = BrokerContactEnricher(stop_event=self._stop_event)
+            await self._enricher.__aenter__()
         return self
 
-    async def __aexit__(self, *_):
+    async def __aexit__(self, *exc):
+        if self._enricher:
+            await self._enricher.__aexit__(*exc)
         if self._client:
             await self._client.aclose()
 
@@ -254,12 +353,40 @@ class CrexiScraper(BaseScraper):
 
         brokers = await self._fetch_brokers(asset_id)
         primary = brokers[0] if brokers else {}
+        brokerage = primary.get("brokerage") or {}
         broker_name = _broker_full_name(primary)
-        brokerage_name = _clean((primary.get("brokerage") or {}).get("name")) \
-            or _clean(a.get("brokerageName"))
+        brokerage_name = _clean(brokerage.get("name")) or _clean(a.get("brokerageName"))
+        website = _clean(brokerage.get("website"))
         profile_id = _clean(primary.get("publicProfileId"))
         profile_url = f"{_SITE}/profile/{profile_id}" if profile_id else None
-        all_brokers = [n for n in (_broker_full_name(b) for b in brokers) if n]
+        license_no, license_state = _primary_license(primary)
+        office_address = _brokerage_office_address(brokerage)
+        all_brokers = [_broker_summary(b) for b in brokers if _broker_full_name(b)]
+
+        # Phone from state-license records (any broker on the listing). This is a
+        # real, callable office line — Crexi's own API never returns broker phone.
+        broker_phone = _license_phone(brokers)
+
+        # Website enrichment (best-effort, per-domain cached): an office phone to
+        # backfill where the license phone is missing, plus a verified/guessed
+        # email. Never raises into the listing.
+        broker_email = None
+        email_guess = None
+        email_pattern = None
+        brokerage_email = None
+        office_phone = None
+        if self._enricher and website and not self._should_stop():
+            try:
+                contact = await self._enricher.enrich_broker(primary)
+            except Exception as exc:  # noqa: BLE001 — enrichment must never break a listing
+                logger.debug("[crexi] contact enrich failed for %s: %s", listing_url, exc)
+                contact = {}
+            office_phone = contact.get("office_phone")
+            broker_phone = broker_phone or office_phone  # prefer the license line
+            broker_email = contact.get("email_verified")  # published on the firm's site
+            email_guess = contact.get("email_guess")      # pattern-derived; unverified
+            email_pattern = contact.get("pattern")
+            brokerage_email = contact.get("brokerage_email")
 
         return {
             "source":            "crexi",
@@ -282,22 +409,36 @@ class CrexiScraper(BaseScraper):
             "truck_court_depth": specs.get("truck_court_depth"),
             "occupancy_pct":     specs.get("occupancy_pct"),
             "walt":              specs.get("walt"),
-            # Broker: name only — Crexi gates email/phone (see module docstring).
-            # pass-through in case the API ever returns them.
+            # Broker: NAME always; PHONE from the state license or the firm site;
+            # EMAIL only when verified on the firm's site (a guess lives in
+            # raw_data.broker_email_guess). See the module docstring.
             "broker_name":       broker_name,
-            "broker_email":      _clean(primary.get("email")),
-            "broker_phone":      _clean(primary.get("phone")),
+            "broker_email":      broker_email,
+            "broker_phone":      broker_phone,
             "status":            a.get("status"),
             "asset_subtype":     ", ".join(a.get("types") or []) or "Industrial",
             # Stashed in raw_data (persisted as JSON; no schema change). The
-            # Pipedrive importer reads brokerage/profile from here.
+            # console + Pipedrive importer read brokerage/contact from here.
             "raw_data": {
                 "site": "crexi",
                 "crexi_id": asset_id,
                 "market": mk["name"],
                 "broker_brokerage": brokerage_name,
+                "broker_brokerage_website": website,
+                "broker_office_address": office_address,
+                "broker_office_phone": office_phone,
+                "broker_license": license_no,
+                "broker_license_state": license_state,
+                "broker_id": primary.get("id"),
+                "broker_public_profile_id": profile_id,
                 "broker_profile_url": profile_url,
-                "all_broker_names": all_brokers,
+                # Email the team should VERIFY (open the firm page) before CRM use.
+                "broker_email_guess": email_guess,
+                "broker_email_pattern": email_pattern,
+                "brokerage_email": brokerage_email,
+                # Richer per-broker records (name may repeat across a co-listing).
+                "all_brokers": all_brokers,
+                "all_broker_names": [b["name"] for b in all_brokers],
                 "status": a.get("status"),
             },
         }
