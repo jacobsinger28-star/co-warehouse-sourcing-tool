@@ -51,6 +51,7 @@ from typing import Any, AsyncGenerator
 import httpx
 
 from .base import BaseScraper
+from .markets import match_markets, market_for_address
 
 logger = logging.getLogger(__name__)
 
@@ -328,9 +329,14 @@ class ColliersScraper(BaseScraper):
         if not self._client:
             raise RuntimeError("ColliersScraper used outside `async with` block")
 
-        market_patterns = [
-            re.compile(re.escape(m), re.I) for m in (markets or [])
-        ]
+        # Metro-aware market scoping. The naive approach — matching the bare
+        # metro name as a substring of the address — silently dropped every
+        # suburb listing (a Nashville deal in "Lebanon, TN", a Charlotte one in
+        # "Huntersville, NC", Columbus in "Gahanna, OH"), which is most of
+        # Colliers' modest target-market industrial inventory. Resolve the wanted
+        # metros once, then keep a card if its address maps to one of them (same
+        # cities/state logic /live/rows uses). Empty markets = no scoping.
+        wanted_metros = {m["name"] for m in match_markets(markets)} if markets else None
         known_urls = known_urls or set()
 
         pv = self._pv = await self._fetch_pv()
@@ -392,9 +398,11 @@ class ColliersScraper(BaseScraper):
                     logger.debug("[colliers] skip non-US: %s", parsed["address"])
                     continue
 
-                # Market substring filter (if user passed any)
-                if market_patterns and not any(p.search(parsed["address"]) for p in market_patterns):
-                    continue
+                # Market filter — metro-aware so suburbs map to their metro
+                if wanted_metros is not None:
+                    mk = market_for_address(parsed["address"])
+                    if not mk or mk["name"] not in wanted_metros:
+                        continue
 
                 # SF filter (early — same window the other scrapers use)
                 sf = parsed["total_sf"]
