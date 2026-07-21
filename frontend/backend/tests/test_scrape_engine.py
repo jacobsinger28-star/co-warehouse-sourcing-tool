@@ -14,7 +14,7 @@ import asyncio
 import threading
 import unittest
 
-from scrapers.brokerage import BrokerageScraper
+from scrapers.brokerage import BrokerageScraper, _re_sf
 
 
 def _build(n_sites, items_per_site, stop_event=None, item_delay=0.0, raiser=None):
@@ -129,6 +129,27 @@ class TestScrapeEngine(unittest.TestCase):
 
         leaked = asyncio.run(run())
         self.assertEqual(leaked, [], f"leaked tasks: {leaked}")
+
+
+class TestReSf(unittest.TestCase):
+    """Building-SF extraction (_re_sf). A lone/edge comma from the [\\d,]+ groups
+    used to hit float('') and crash the ENTIRE site's run — this killed JLL."""
+
+    def test_labeled(self):
+        self.assertEqual(_re_sf("Building Size: 150,000 SF"), 150000.0)
+
+    def test_lone_comma_does_not_crash(self):
+        self.assertIsNone(_re_sf(", SF"))
+        self.assertIsNone(_re_sf(""))
+        # labeled group captures a bare comma, then a real value follows
+        self.assertEqual(_re_sf("Size: , SF and 90,000 SF"), 90000.0)
+
+    def test_unlabeled_in_range(self):
+        self.assertEqual(_re_sf("this 120,000 SF warehouse"), 120000.0)
+
+    def test_prefers_building_over_portfolio(self):
+        # skip the "5,000,000 SF managed" portfolio stat, take the 85k building
+        self.assertEqual(_re_sf("5,000,000 SF managed; 85,000 SF building"), 85000.0)
 
 
 if __name__ == "__main__":

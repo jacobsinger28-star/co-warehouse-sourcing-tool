@@ -103,6 +103,13 @@ def _re_sf(text: str) -> float | None:
     """
     _SF_RE = re.compile(r"([\d,]+)\s*(?:SF|sq\.?\s*ft\.?|square\s+f(?:oot|eet))", re.I)
 
+    def _num(s):
+        # The [\d,]+ groups can capture a lone/edge comma ("," or ",500") — strip
+        # commas and only accept an all-digit remainder, else None. (float("")
+        # here used to crash the whole site's run — it killed JLL entirely.)
+        s = (s or "").replace(",", "").strip()
+        return float(s) if s.isdigit() else None
+
     # 1. Labeled field patterns — scan first 8,000 chars where property details live
     #    Two sub-patterns: same-line ("Building Size: 150,000 SF") and
     #    next-line ("Building Size\n150,000 SF") since HTML renders both ways.
@@ -128,15 +135,15 @@ def _re_sf(text: str) -> float | None:
             text[:8000], re.I,
         )
     if labeled:
-        val = float(labeled.group(1).replace(",", ""))
-        if 5_000 <= val <= 2_000_000:   # sanity range
+        val = _num(labeled.group(1))
+        if val is not None and 5_000 <= val <= 2_000_000:   # sanity range
             return val
 
     # 2. All unlabeled SF matches across the page
     matches = _SF_RE.findall(text)
-    if not matches:
+    values = [v for m in matches if (v := _num(m)) is not None]
+    if not values:
         return None
-    values = [float(m.replace(",", "")) for m in matches]
 
     # Prefer the FIRST value that falls in a typical industrial building range
     for v in values:
