@@ -38,6 +38,8 @@ import {
   oauthAuthorizeUrl, oauthExchange, recordCallEvent, recentCalls,
   isWarm, pushWarmDisposition,
 } from './phoneburner.mjs'
+import { resolveTenant, DEFAULT_TENANT } from './tenants.mjs'
+import { tenancyEnabled } from './db.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 8080
@@ -101,6 +103,9 @@ if (SUPABASE_ENABLED && ALLOWED_ENTRIES.length === 0)
   console.warn('[server] ⚠ Supabase configured but ALLOWED_EMAILS is empty — every Supabase login will be refused (fail closed). Set ALLOWED_EMAILS in Railway → Variables.')
 if (!SUPABASE_ENABLED && !PASSWORD)
   console.warn('[server] ⚠ no auth configured (SUPABASE_URL+SUPABASE_ANON_KEY or APP_PASSWORD) — /api/* will refuse every request (fail closed). Set them in Railway → Variables.')
+console.log(`[server] tenancy ${tenancyEnabled()
+  ? 'ENABLED — DB-backed tenants + members (email → tenant)'
+  : 'off — legacy global allowlist (set SUPABASE_SERVICE_ROLE_KEY to enable multi-tenant)'}`)
 
 // ── auth ─────────────────────────────────────────────────────────────────────
 // Verify a Supabase access token by asking Supabase who it belongs to, then
@@ -139,10 +144,22 @@ async function requireAuth(req, res, next) {
   const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '')?.[1]
   if (bearer && SUPABASE_ENABLED) {
     const email = await verifySupabaseToken(bearer)
-    if (email && emailAllowed(email)) return next()
-    return res.status(401).json({ error: email ? 'account not on the allowed list' : 'invalid or expired session — sign in again' })
+    if (!email) return res.status(401).json({ error: 'invalid or expired session — sign in again' })
+    // Membership decides entry AND which tenant's data/keys this request may touch.
+    // When tenancy is off (no service-role key), resolveTenant falls back to the
+    // legacy emailAllowed() check and returns the default tenant — byte-identical
+    // to the old global-allowlist behavior.
+    const tenant = await resolveTenant(email, { legacyAllowed: emailAllowed })
+    if (!tenant) return res.status(401).json({ error: 'account not on the allowed list' })
+    req.tenant = tenant
+    req.userEmail = email
+    return next()
   }
-  if (PASSWORD && (req.body?.password || '') === PASSWORD) return next()
+  if (PASSWORD && (req.body?.password || '') === PASSWORD) {
+    // Legacy shared password has no per-person identity → the default tenant.
+    req.tenant = { ...DEFAULT_TENANT }
+    return next()
+  }
   return res.status(401).json({ error: 'unauthorized' })
 }
 
