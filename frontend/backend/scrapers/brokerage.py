@@ -418,25 +418,10 @@ def _re_walt(text: str) -> float | None:
 _BUILTIN_SITES: list[dict] = [
     {
         "name": "cbre",
-        "cbre_mode": True,       # uses _scrape_cbre_cards (scroll-based collection)
-        "location_param": None,
-        "extraction": "regex",
-        # Candidate search URLs tried in order; first one that renders cards wins
-        "cbre_search_urls": [
-            "https://www.cbre.com/properties/properties-for-sale/industrial-space",
-            "https://www.cbre.com/properties/properties-for-sale?propertyType=industrial",
-            "https://www.cbre.com/properties/properties-for-sale",
-        ],
-        # Candidate link selectors tried in order after each scroll
-        "cbre_link_selectors": [
-            "a[href*='/properties/properties-for-sale/industrial-space/details/']",
-            "a[href*='/properties/properties-for-sale/']",
-            "a[href*='/properties/details/']",
-            "[class*='PropertyCard'] a[href*='properties']",
-            "[class*='property-card'] a[href*='properties']",
-            "[class*='listing-card'] a[href]",
-            "article a[href*='cbre.com/properties']",
-        ],
+        # Direct JSON API via scrapers/cbre.py. CBRE moved its HTML search URLs
+        # (they 404 now), so the old Playwright _scrape_cbre_cards path is dead;
+        # the API is stable, richer (coords + broker contacts), and browserless.
+        "cbre_mode": True,
     },
     {
         "name": "jll",
@@ -1622,7 +1607,7 @@ async () => {{
                     logger.info("[scrape] starting brokerage: %s", site_name)
                     # API-mode sites are browserless; the rest get their own page
                     # on the shared stealth context.
-                    api_mode = site.get("crexi_mode") or (
+                    api_mode = site.get("crexi_mode") or site.get("cbre_mode") or (
                         site.get("colliers_mode") and site.get("colliers_use_api", True)
                     )
                     if not api_mode:
@@ -1693,7 +1678,7 @@ async () => {{
         # Only launch Chromium when a selected site actually needs a browser —
         # a crexi/colliers-only run is pure httpx.
         needs_browser = any(
-            not (s.get("crexi_mode") or (s.get("colliers_mode") and s.get("colliers_use_api", True)))
+            not (s.get("crexi_mode") or s.get("cbre_mode") or (s.get("colliers_mode") and s.get("colliers_use_api", True)))
             for s in self._sites
         )
         if needs_browser:
@@ -1718,10 +1703,13 @@ async () => {{
         site_name = site.get("name", "unknown")
 
         if site.get("cbre_mode"):
-            async for listing in self._scrape_cbre_cards(
-                page, market_patterns, markets, market_rents, known_urls=known_urls
-            ):
-                yield listing
+            # Direct-API path — no browser. CBRE moved its HTML search URLs (they
+            # 404 now); the JSON API is stable and richer (coords + broker
+            # contacts). Self-contained httpx context, scoped to buy-box metros.
+            from .cbre import CbreScraper
+            async with CbreScraper(stop_event=self._stop_event) as cb:
+                async for listing in cb.scrape(markets, market_rents, known_urls=known_urls):
+                    yield listing
             return
 
         if site.get("colliers_mode"):
