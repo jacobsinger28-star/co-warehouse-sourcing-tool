@@ -104,3 +104,14 @@ button { cursor:pointer; }
 .ms-chip { transition: background .12s ease, border-color .12s ease, color .12s ease; cursor: pointer; }
 .ms-chip:hover { border-color: var(--accent-line)!important; color: var(--text)!important; }
 .ms-chip.on { background: var(--accent-dim)!important; border-color: var(--accent)!important; color: var(--text)!important; }
+
+/* Click-sortable brokers-table headers */
+.brok-th { cursor: pointer; user-select: none; transition: color .12s ease; }
+.brok-th:hover { color: var(--text)!important; }
+
+/* "Not synced" Pipedrive chip → click to sync; hover swaps the label to "Sync now" */
+.sync-chip { transition: background .12s ease, border-color .12s ease, color .12s ease; cursor: pointer; }
+.sync-chip:hover { background: var(--accent-dim)!important; border-color: var(--accent-line)!important; color: var(--accent)!important; }
+.sync-chip .on-hover { display: none; }
+.sync-chip:hover .on-hover { display: inline; }
+.sync-chip:hover .off-hover { display: none; }

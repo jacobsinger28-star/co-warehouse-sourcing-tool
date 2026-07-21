@@ -31,6 +31,18 @@ const viewTab = (active) =>
 const tabBtn = (active) =>
   `flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:transparent;color:${active ? 'var(--accent)' : 'var(--text2)'};font-size:10px;font-weight:${active ? '600' : '500'};cursor:pointer;`
 const th = (align = 'left', cls = '') => ({ cls, s: `text-align:${align};padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);` })
+// Brokers table columns — `key` is the sort field (null = not sortable, e.g. Actions).
+const BROK_COLS = [
+  { label: 'BROKER', key: 'name', align: 'left' },
+  { label: 'FIRM', key: 'firm', align: 'left' },
+  { label: 'PHONE', key: 'phone', align: 'left', cls: 'col-secondary' },
+  { label: 'CELL', key: 'cell', align: 'left' },
+  { label: 'EMAIL', key: 'email', align: 'left', cls: 'col-secondary' },
+  { label: 'MARKET(S)', key: 'mkts', align: 'left' },
+  { label: '# LIST', key: 'listings', align: 'right' },
+  { label: 'PIPEDRIVE', key: 'synced', align: 'left' },
+  { label: 'ACTIONS', key: null, align: 'left', cls: 'col-secondary' },
+]
 const railLabel = 'font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:9px;'
 const fieldLabel = 'font-size:11px;color:var(--text2);font-weight:500;'
 const selectStyle = 'height:32px;padding:0 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:12px;'
@@ -109,6 +121,13 @@ export default function App() {
   const [selProps, setSelProps] = useState([])
   const [selBrokers, setSelBrokers] = useState([])
   const [drawerId, setDrawerId] = useState(null)
+  // brokers view — click-sortable columns (key=null → default phone-first order)
+  const [brokSort, setBrokSort] = useState({ key: null, dir: 'asc' })
+  // brokers view — listings drawer + email composer, both open on the right (no routing)
+  const [listBrokId, setListBrokId] = useState(null)
+  const [emailBrokId, setEmailBrokId] = useState(null)
+  const [emailDraft, setEmailDraft] = useState({ subject: '', body: '' })
+  const [emailSent, setEmailSent] = useState(false)
   const [mapStyle, setMapStyle] = useState('sat')   // ← default basemap = Satellite
 
   const [sourcing, setSourcing] = useState(false)
@@ -149,7 +168,47 @@ export default function App() {
     setTotal(props.length)
   }, [realData, liveOn])
   const propsData = dataset.props
-  const brokersData = dataset.brokers
+  // Columns aren't click-sortable, so default the brokers list to the useful order:
+  // anyone we can actually call (a phone or cell on file) floats to the top. Digit-count
+  // guards against blanks / placeholder dashes in live data. Stable sort keeps the rest as-is.
+  const hasPhoneNum = (b) => ((b.cell || '').replace(/\D/g, '').length >= 7 || (b.phone || '').replace(/\D/g, '').length >= 7)
+  // sort value per column: phone/cell by digits, # LIST numeric, synced boolean, rest alpha
+  const brokSortVal = (b, key) => {
+    if (key === 'listings') return b.listings || 0
+    if (key === 'synced') return b.synced ? 1 : 0
+    if (key === 'phone' || key === 'cell') return (b[key] || '').replace(/\D/g, '')
+    return (b[key] || '').toString().toLowerCase()
+  }
+  // header click cycles: none → asc → desc → none (none = phone-first default)
+  const toggleBrokSort = (key) => setBrokSort((s) => (
+    s.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : { key: null, dir: 'asc' }
+  ))
+  const brokersData = (() => {
+    const base = [...dataset.brokers]
+    if (!brokSort.key) return base.sort((a, b) => (hasPhoneNum(b) ? 1 : 0) - (hasPhoneNum(a) ? 1 : 0))
+    const dir = brokSort.dir === 'desc' ? -1 : 1
+    return base.sort((a, b) => {
+      const av = brokSortVal(a, brokSort.key), bv = brokSortVal(b, brokSort.key)
+      return av < bv ? -dir : av > bv ? dir : 0
+    })
+  })()
+
+  // ── brokers view interactions: sync, listings drawer, email composer ──────
+  const listBroker = listBrokId != null ? brokersData.find((b) => b.id === listBrokId) : null
+  const brokerListings = listBroker ? propsData.filter((p) => p.channel === 'on' && p.broker === listBroker.name) : []
+  const emailBroker = emailBrokId != null ? brokersData.find((b) => b.id === emailBrokId) : null
+  const syncBroker = (id) => setDataset((d) => ({ ...d, brokers: d.brokers.map((x) => (x.id === id ? { ...x, synced: true } : x)) }))
+  const openEmail = (b) => {
+    const first = (b.name || '').trim().split(' ')[0] || 'there'
+    const n = b.listings || 0
+    setEmailDraft({
+      subject: `SimiCapital — active industrial buyer in ${b.mkts}`,
+      body: `Hi ${first},\n\nI'm with SimiCapital — we're an active buyer of infill industrial (roughly 100–200k SF, a fenced yard / IOS component a plus) in ${b.mkts}.\n\nI saw you're running ${n} listing${n === 1 ? '' : 's'} out of ${b.firm}. We close quickly with clean terms and would welcome a look at anything you have on- or off-market that fits the box.\n\nDo you have 15 minutes this week for a quick call?\n\nBest,\nSimiCapital Acquisitions`,
+    })
+    setEmailSent(false)
+    setEmailBrokId(b.id)
+  }
+  const sendEmail = () => setEmailSent(true)
 
   // mobile shell state
   const [railOpen, setRailOpen] = useState(false)
@@ -641,9 +700,19 @@ export default function App() {
                     <table style={css('width:100%;border-collapse:collapse;font-size:12.5px;')}>
                       <thead><tr style={css('position:sticky;top:0;z-index:2;background:var(--surface);')}>
                         <th style={css('width:34px;padding:9px 0 9px 14px;border-bottom:1px solid var(--border);')}><input type="checkbox" checked={allBrokSel} onChange={selAllBrok} aria-label="Select all brokers" style={css('accent-color:var(--accent);')} /></th>
-                        {[th('left'), th('left'), th('left', 'col-secondary'), th('left'), th('left', 'col-secondary'), th('left'), th('right'), th('left'), th('left', 'col-secondary')].map((c, i) => (
-                          <th key={i} className={c.cls} style={css(c.s)}>{['BROKER', 'FIRM', 'PHONE', 'CELL', 'EMAIL', 'MARKET(S)', '# LIST', 'PIPEDRIVE', 'ACTIONS'][i]}</th>
-                        ))}
+                        {BROK_COLS.map((c, i) => {
+                          const active = c.key && brokSort.key === c.key
+                          const t = th(c.align, c.cls || '')
+                          const cls = [t.cls, c.key ? 'brok-th' : ''].filter(Boolean).join(' ')
+                          return (
+                            <th key={i} className={cls} style={css(t.s)} aria-sort={active ? (brokSort.dir === 'desc' ? 'descending' : 'ascending') : 'none'} onClick={c.key ? () => toggleBrokSort(c.key) : undefined}>
+                              <span style={css(`display:inline-flex;align-items:center;gap:4px;${c.align === 'right' ? 'flex-direction:row-reverse;' : ''}`)}>
+                                <span style={css(active ? 'color:var(--text);' : '')}>{c.label}</span>
+                                {c.key && <span style={css(`font-size:9px;line-height:1;${active ? 'color:var(--accent);' : 'color:var(--text3);opacity:.45;'}`)}>{active ? (brokSort.dir === 'desc' ? '▼' : '▲') : '↕'}</span>}
+                              </span>
+                            </th>
+                          )
+                        })}
                       </tr></thead>
                       <tbody>
                         {brokersData.map((b) => (
@@ -653,11 +722,15 @@ export default function App() {
                             <td style={css('padding:10px 8px;color:var(--text2);white-space:nowrap;')}>{b.firm}</td>
                             <td className="col-secondary" style={css('padding:10px 8px;color:var(--text2);font-family:var(--mono);font-size:11.5px;')}>{b.phone}</td>
                             <td style={css('padding:10px 8px;font-family:var(--mono);font-size:11.5px;')}><span style={css('color:var(--accent);background:var(--accent-dim);padding:2px 6px;border-radius:4px;')}>{b.cell}</span></td>
-                            <td className="col-secondary" style={css('padding:10px 8px;color:var(--text2);font-size:11.5px;')}>{b.email}</td>
+                            <td className="col-secondary" style={css('padding:10px 8px;font-size:11.5px;')}><button className="tap hov" onClick={() => openEmail(b)} title={`Email ${b.name}`} style={css('display:inline-flex;align-items:center;gap:5px;max-width:190px;background:none;border:none;padding:0;color:var(--accent);font-size:11.5px;cursor:pointer;')}><Icon name="mail" size={12} sw={1.9} /><span style={css('overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{b.email}</span></button></td>
                             <td style={css('padding:10px 8px;color:var(--text2);white-space:nowrap;')}>{b.mkts}</td>
                             <td style={css('padding:10px 8px;text-align:right;font-family:var(--mono);')}>{b.listings}</td>
-                            <td style={css('padding:10px 8px;')}><span style={css(`display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:5px;border:1px solid var(--border);${b.synced ? 'color:var(--green);background:var(--green-tint);' : 'color:var(--text3);background:var(--surface2);'}`)}>{b.synced && <Icon name="check" size={11} sw={2.4} />}{b.synced ? 'Synced' : 'Not synced'}</span></td>
-                            <td className="col-secondary" style={css('padding:10px 14px 10px 8px;white-space:nowrap;')}><button className="tap hov" onClick={() => setView('table')} style={css('height:26px;padding:0 9px;background:var(--surface3);border:1px solid var(--border2);border-radius:5px;color:var(--text2);font-size:11px;')}>View listings</button></td>
+                            <td style={css('padding:10px 8px;')}>{b.synced ? (
+                              <span style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--green);background:var(--green-tint);')}><Icon name="check" size={11} sw={2.4} />Synced</span>
+                            ) : (
+                              <button className="tap sync-chip" onClick={() => syncBroker(b.id)} title={`Sync ${b.name} to Pipedrive`} style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--text3);background:var(--surface2);')}><Icon name="sync" size={11} sw={2.2} /><span className="off-hover">Not synced</span><span className="on-hover">Sync now</span></button>
+                            )}</td>
+                            <td className="col-secondary" style={css('padding:10px 14px 10px 8px;white-space:nowrap;')}><button className="tap hov" onClick={() => setListBrokId(b.id)} style={css('height:26px;padding:0 9px;background:var(--surface3);border:1px solid var(--border2);border-radius:5px;color:var(--text2);font-size:11px;')}>View listings</button></td>
                           </tr>
                         ))}
                       </tbody>
@@ -666,9 +739,13 @@ export default function App() {
                   <div className="card-list" style={css('flex-direction:column;flex:1;overflow-y:auto;min-height:0;')}>
                     {brokersData.map((b) => (
                       <div key={b.id} style={css('display:flex;flex-direction:column;gap:9px;padding:14px 16px;border-bottom:1px solid var(--border);')}>
-                        <div style={css('display:flex;align-items:center;gap:9px;')}><span style={css('font-weight:600;font-size:14.5px;flex:1;')}>{b.name}</span><span style={css(`display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:5px;border:1px solid var(--border);${b.synced ? 'color:var(--green);background:var(--green-tint);' : 'color:var(--text3);background:var(--surface2);'}`)}>{b.synced && <Icon name="check" size={11} sw={2.4} />}{b.synced ? 'Synced' : 'Not synced'}</span></div>
+                        <div style={css('display:flex;align-items:center;gap:9px;')}><span style={css('font-weight:600;font-size:14.5px;flex:1;')}>{b.name}</span>{b.synced ? (
+                          <span style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--green);background:var(--green-tint);')}><Icon name="check" size={11} sw={2.4} />Synced</span>
+                        ) : (
+                          <button className="tap sync-chip" onClick={() => syncBroker(b.id)} title={`Sync ${b.name} to Pipedrive`} style={css('display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--text3);background:var(--surface2);')}><Icon name="sync" size={11} sw={2.2} /><span className="off-hover">Not synced</span><span className="on-hover">Sync now</span></button>
+                        )}</div>
                         <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{b.firm}</span><span>{b.mkts}</span><span style={css('font-family:var(--mono);')}>{b.listings} listings</span></div>
-                        <div style={css('display:flex;align-items:center;gap:10px;')}><span style={css('font-family:var(--mono);font-size:11.5px;color:var(--accent);background:var(--accent-dim);padding:2px 7px;border-radius:4px;')}>{b.cell}</span><button className="tap hov" onClick={() => setView('table')} style={css('margin-left:auto;height:30px;padding:0 12px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;')}>View listings</button></div>
+                        <div style={css('display:flex;align-items:center;gap:8px;')}><span style={css('font-family:var(--mono);font-size:11.5px;color:var(--accent);background:var(--accent-dim);padding:2px 7px;border-radius:4px;')}>{b.cell}</span><button className="tap hov" onClick={() => openEmail(b)} aria-label={`Email ${b.name}`} style={css('margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;')}><Icon name="mail" size={13} sw={1.8} />Email</button><button className="tap hov" onClick={() => setListBrokId(b.id)} style={css('display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;background:var(--surface3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;')}>Listings</button></div>
                       </div>
                     ))}
                   </div>
@@ -808,6 +885,82 @@ export default function App() {
                     <div style={css('flex:0 0 auto;padding:13px 18px;border-top:1px solid var(--border);display:flex;gap:9px;')}>
                       <button className="tap hov" style={css('flex:1;height:38px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;')}>{drawerProp.channel === 'off' ? 'Push owner Lead to Pipedrive' : 'Push broker Deal to Pipedrive'}</button>
                       <button className="tap hov" style={css('height:38px;padding:0 14px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;')}>Add to call queue</button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* BROKER LISTINGS DRAWER — opens on the right, no route change */}
+              {listBroker && (
+                <>
+                  <div className="detail-scrim" onClick={() => setListBrokId(null)} style={css('position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:25;')} />
+                  <div className="detail-drawer" onClick={(e) => e.stopPropagation()} style={css('position:absolute;top:0;right:0;bottom:0;width:430px;max-width:100%;background:var(--surface);border-left:1px solid var(--border2);z-index:26;display:flex;flex-direction:column;animation:drawerin .18s ease;box-shadow:-14px 0 40px rgba(0,0,0,.35);')}>
+                    <div style={css('flex:0 0 auto;padding:16px 18px;border-bottom:1px solid var(--border);')}>
+                      <div style={css('display:flex;align-items:center;gap:9px;margin-bottom:6px;')}>
+                        <span style={css('display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;')}><Icon name="users" size={13} sw={1.9} />Broker listings</span>
+                        <button onClick={() => setListBrokId(null)} aria-label="Close listings" className="tap" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;background:none;border:none;color:var(--text3);width:30px;height:30px;')}><Icon name="x" size={17} /></button>
+                      </div>
+                      <div style={css('font-size:17px;font-weight:600;letter-spacing:-.01em;')}>{listBroker.name}</div>
+                      <div style={css('color:var(--text2);font-size:12.5px;margin-top:2px;')}>{listBroker.firm} · {listBroker.mkts}</div>
+                    </div>
+                    <div style={css('flex:1;overflow-y:auto;padding:16px 18px;')}>
+                      <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;')}>
+                        <span style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;')}>On-market listings</span>
+                        <span style={css('font-family:var(--mono);font-size:11.5px;color:var(--text3);')}>{brokerListings.length} shown{listBroker.listings > brokerListings.length ? ` · ${listBroker.listings} on source` : ''}</span>
+                      </div>
+                      {brokerListings.length > 0 ? (
+                        <div style={css('display:flex;flex-direction:column;gap:8px;')}>
+                          {brokerListings.map((p) => (
+                            <button key={p.id} className="tap hov" onClick={() => { setDrawerId(p.id); setListBrokId(null) }} style={css('display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;cursor:pointer;')}>
+                              <div style={css('display:flex;align-items:center;gap:8px;')}><span style={css('font-weight:600;font-size:13px;flex:1;')}>{p.addr}</span><span style={css('font-family:var(--mono);color:var(--accent);font-size:12.5px;')}>{fmtMoney2(p.ask)}/SF</span></div>
+                              <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--text2);')}><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span><span>{p.mkt}, {p.st}</span><span style={css('font-family:var(--mono);')}>{fmtSF(p.sf)} SF</span>{p.daysOn != null && <span>{p.daysOn}d on mkt</span>}</div>
+                              <div style={css('font-size:11px;color:var(--text3);')}>{p.signal}</div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={css('padding:24px 12px;text-align:center;color:var(--text3);font-size:12px;border:1px dashed var(--border2);border-radius:8px;line-height:1.6;')}>No on-market listings from {listBroker.name} in the current dataset.{listBroker.listings > 0 ? ` (${listBroker.listings} reported on source.)` : ''}</div>
+                      )}
+                    </div>
+                    <div style={css('flex:0 0 auto;padding:13px 18px;border-top:1px solid var(--border);display:flex;gap:9px;')}>
+                      <button className="tap hov" onClick={() => openEmail(listBroker)} style={css('flex:1;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;')}><Icon name="mail" size={14} sw={2} />Email {listBroker.name.split(' ')[0]}</button>
+                      {!listBroker.synced && <button className="tap hov" onClick={() => syncBroker(listBroker.id)} style={css('display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;')}><Icon name="sync" size={13} sw={2} />Sync</button>}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* BROKER EMAIL COMPOSER — pre-filled, editable, sends in-app */}
+              {emailBroker && (
+                <>
+                  <div className="detail-scrim" onClick={() => setEmailBrokId(null)} style={css('position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:27;')} />
+                  <div className="detail-drawer" onClick={(e) => e.stopPropagation()} style={css('position:absolute;top:0;right:0;bottom:0;width:460px;max-width:100%;background:var(--surface);border-left:1px solid var(--border2);z-index:28;display:flex;flex-direction:column;animation:drawerin .18s ease;box-shadow:-14px 0 40px rgba(0,0,0,.35);')}>
+                    <div style={css('flex:0 0 auto;padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px;')}>
+                      <span style={css('display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;')}><Icon name="mail" size={16} sw={1.9} />New email</span>
+                      <button onClick={() => setEmailBrokId(null)} aria-label="Close composer" className="tap" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;background:none;border:none;color:var(--text3);width:30px;height:30px;')}><Icon name="x" size={17} /></button>
+                    </div>
+                    <div style={css('flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px;')}>
+                      <div style={css('display:flex;align-items:center;gap:9px;')}>
+                        <span style={css('font-size:10.5px;color:var(--text3);width:52px;text-transform:uppercase;letter-spacing:.05em;')}>To</span>
+                        <div style={css('flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;font-size:12.5px;')}><span style={css('font-weight:600;white-space:nowrap;')}>{emailBroker.name}</span><span style={css('color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{emailBroker.email}</span></div>
+                      </div>
+                      <div style={css('display:flex;align-items:center;gap:9px;')}>
+                        <span style={css('font-size:10.5px;color:var(--text3);width:52px;text-transform:uppercase;letter-spacing:.05em;')}>Subject</span>
+                        <input value={emailDraft.subject} onChange={(e) => setEmailDraft((d) => ({ ...d, subject: e.target.value }))} disabled={emailSent} aria-label="Email subject" style={css('flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--text);font-size:12.5px;outline:none;')} />
+                      </div>
+                      <textarea value={emailDraft.body} onChange={(e) => setEmailDraft((d) => ({ ...d, body: e.target.value }))} disabled={emailSent} aria-label="Email body" style={css('flex:1;min-height:270px;resize:vertical;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 13px;color:var(--text);font-size:12.5px;line-height:1.6;outline:none;font-family:inherit;')} />
+                      {emailSent && <div style={css('display:flex;align-items:center;gap:8px;font-size:12px;color:var(--green);background:var(--green-tint);border:1px solid var(--border);border-radius:7px;padding:9px 12px;')}><Icon name="check" size={14} sw={2.2} />Sent to {emailBroker.name} · {emailBroker.email}</div>}
+                    </div>
+                    <div style={css('flex:0 0 auto;padding:13px 18px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px;')}>
+                      {!emailSent ? (
+                        <>
+                          <button className="tap hov" onClick={sendEmail} disabled={!emailDraft.subject.trim() && !emailDraft.body.trim()} style={css('display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 16px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;')}><Icon name="send" size={14} sw={2} />Send email</button>
+                          <a href={`mailto:${emailBroker.email}?subject=${encodeURIComponent(emailDraft.subject)}&body=${encodeURIComponent(emailDraft.body)}`} className="tap hov" style={css('display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 13px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;text-decoration:none;')}>Open in mail app</a>
+                          <button onClick={() => setEmailBrokId(null)} className="tap hov" style={css('margin-left:auto;height:38px;padding:0 13px;background:none;border:1px solid var(--border2);border-radius:7px;color:var(--text2);font-size:12px;')}>Cancel</button>
+                        </>
+                      ) : (
+                        <button onClick={() => setEmailBrokId(null)} className="tap hov" style={css('margin-left:auto;height:38px;padding:0 16px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12.5px;')}>Done</button>
+                      )}
                     </div>
                   </div>
                 </>
