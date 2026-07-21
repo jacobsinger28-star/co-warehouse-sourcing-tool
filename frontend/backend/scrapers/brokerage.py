@@ -440,22 +440,16 @@ _BUILTIN_SITES: list[dict] = [
         "extraction": "regex",
         "location_param": None,
     },
-    {
-        "name": "cushman",
-        # Cushman's US property search uses ?page=N for pagination
-        # (verified via probe — #first, ?first, ?from are all ignored).
-        # 12 per page × ~54 pages for ~649 industrial-for-sale listings.
-        "search_url": (
-            "https://www.cushmanwakefield.com/en/united-states/properties/invest/search"
-            "?type=industrial,manufacturing,warehouse_sdistribution"
-        ),
-        "listing_links": "a[href*='/for-sale/']",
-        "pagination_param": "page",
-        "max_pages": 25,
-        "wait_for_js": True,
-        "extraction": "regex",
-        "location_param": None,
-    },
+    # ── cushman: REMOVED 2026-07-21 (audit) ──────────────────────────────────
+    # Cushman server-renders its listings (no JSON API) and its old config waited
+    # for `networkidle`, which never settles because Google ad/analytics beacons
+    # keep the network busy → every run timed out at 0. It IS revivable headless:
+    # load with wait_until="domcontentloaded" + scroll, then collect
+    # a[href*='/for-sale/'] and fetch details (verified: 3/3 detail pages parse an
+    # address+SF). Dropped rather than fixed because it's fragile Playwright HTML
+    # scraping with NO broker contacts, for a modest coverage bump over the strong
+    # API sources (crexi/cbre/colliers). Re-add this dict + the domcontentloaded
+    # fix if maximum coverage is ever wanted.
     {
         "name": "colliers",
         # Try main Colliers property search first; fall back to legacy RCM platform
@@ -510,17 +504,15 @@ _BUILTIN_SITES: list[dict] = [
         "location_param": None,
         "extraction": "regex",
     },
-    {
-        "name": "nai",
-        "search_url": (
-            "https://buildout.com/plugins/4fc4c741a2b49384c474ebc81ede3d108d02ca1c"
-            "/www.naiglobal.com/inventory/"
-            "?pluginId=0&iframe=true&embedded=true&cacheSearch=true&=undefined"
-        ),
-        "nai_mode": True,
-        "location_param": None,
-        "extraction": "regex",
-    },
+    # ── nai: REMOVED 2026-07-21 (audit, incl. real-browser test) ─────────────
+    # NAI's inventory lives on a BuildOut plugin. In a REAL browser it renders
+    # fine (11,439 listings via POST buildout.com/plugins/{id}/inventory), but
+    # that POST needs the browser's session/CSRF, which the headless server-side
+    # scraper cannot reproduce — it gets HTML instead of JSON every time ("CSRF
+    # appears broken"). Confirmed with the Chrome extension: the data is only
+    # reachable from a real logged-in browser, and production is headless with no
+    # extension, so NAI cannot work in prod. Dropped. Reviving it would mean
+    # reverse-engineering BuildOut's CSRF/session handshake headlessly (uncertain).
 ]
 
 

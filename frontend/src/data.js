@@ -9,13 +9,16 @@ export const SOURCES = ['County GIS', 'Crexi', 'Colliers', 'CBRE', 'JLL', 'Cushm
 // live "Keep Sourcing" per-source progress strip — the real brokerage scrapers.
 // `key` matches the scrape backend's source names (/live/status source_counts);
 // p (relative bar fill) and c (listing count) are filled in from live status.
+// Live scrape sources shown in the sourcing strip. Cushman + NAI were removed
+// 2026-07-21 after an audit: both yielded 0 in production. NAI needs a real
+// browser session (BuildOut CSRF fails headless — confirmed via the Chrome
+// extension); Cushman is revivable headless but is fragile HTML scraping with no
+// broker contacts. See scrapers/brokerage.py _BUILTIN_SITES for the full note.
 export const SCRAPE_SOURCES = [
   { n: 'CBRE', short: 'CBRE', key: 'cbre', p: 0, c: 0 },
   { n: 'JLL', short: 'JLL', key: 'jll', p: 0, c: 0 },
-  { n: 'Cushman & Wakefield', short: 'Cush', key: 'cushman', p: 0, c: 0 },
   { n: 'Colliers', short: 'Coll', key: 'colliers', p: 0, c: 0 },
   { n: 'Newmark', short: 'Nmrk', key: 'newmark', p: 0, c: 0 },
-  { n: 'NAI Global', short: 'NAI', key: 'nai', p: 0, c: 0 },
   { n: 'Crexi', short: 'Crexi', key: 'crexi', p: 0, c: 0 },
 ]
 
