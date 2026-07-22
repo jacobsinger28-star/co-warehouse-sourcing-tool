@@ -280,7 +280,6 @@ export default function App() {
           <button className="hov" onClick={() => goModule('caller')} style={css(seg(module === 'caller'))}>AI Caller{queueCount > 0 && <span style={css('display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 5px;background:var(--accent);color:#06120F;border-radius:9px;font-size:10px;font-weight:700;font-family:var(--mono);')}>{queueCount}</span>}</button>
           <button className="hov" onClick={() => goModule('deals')} style={css(seg(module === 'deals'))}>Deals DB</button>
           <button className="hov" onClick={() => goModule('supply')} style={css(seg(module === 'supply'))}>Supply Model</button>
-          <button className="hov" onClick={() => goModule('settings')} style={css(seg(module === 'settings'))}>Settings</button>
         </div>
         <span style={css('color:var(--text3);font-size:11.5px;')}>{MODULE_SUB[module]}</span>
         <div style={css('flex:1;')} />
@@ -314,7 +313,7 @@ export default function App() {
 
       {/* ===================== BOTTOM TAB BAR (phone) ===================== */}
       <div className="bottom-tabs" style={css('flex:0 0 auto;align-items:stretch;height:56px;border-top:1px solid var(--border);background:var(--surface);')}>
-        {[['properties', 'Properties', 'grid'], ['reuse', 'Reuse', 'recycle'], ['caller', 'Caller', 'phone'], ['deals', 'Deals', 'database'], ['supply', 'Supply', 'bars'], ['settings', 'Settings', 'users']].map(([k, label, icon]) => (
+        {[['properties', 'Properties', 'grid'], ['reuse', 'Reuse', 'recycle'], ['caller', 'Caller', 'phone'], ['deals', 'Deals', 'database'], ['supply', 'Supply', 'bars']].map(([k, label, icon]) => (
           <button key={k} onClick={() => goModule(k)} style={css(tabBtn(module === k))}><Icon name={icon} size={20} sw={1.8} />{label}</button>
         ))}
       </div>
@@ -372,6 +371,9 @@ export default function App() {
               <span style={css('font-size:11.5px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{me.sub}</span>
             </div>
             <div style={css('height:1px;background:var(--border);margin:0 4px 6px;')} />
+            {!DEMO && (
+              <button className="hov tap" onClick={() => goModule('settings')} style={css('display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 10px;background:transparent;border:none;border-radius:7px;color:var(--text2);font-size:13px;font-weight:500;text-align:left;')}><Icon name="users" size={16} sw={1.8} />Settings</button>
+            )}
             {DEMO
               ? <a href="/" className="hov tap" style={css('display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 10px;background:transparent;border:none;border-radius:7px;color:var(--text2);font-size:13px;font-weight:500;text-align:left;text-decoration:none;')}><Icon name="slashCircle" size={16} sw={1.8} />Exit demo</a>
               : <button className="hov tap" onClick={signOut} style={css('display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 10px;background:transparent;border:none;border-radius:7px;color:var(--red);font-size:13px;font-weight:500;text-align:left;')}><Icon name="slashCircle" size={16} sw={1.8} />Sign out</button>}
