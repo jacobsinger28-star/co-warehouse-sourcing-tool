@@ -1,5 +1,5 @@
 import { css } from '../css.js'
-import { fmtSF, fmtInt, fmtMoney2, fmtPhone, COMP_MAX, CAT_HEX, CAT_HEX_FALLBACK } from '../helpers.js'
+import { fmtSF, fmtInt, fmtMoney2, fmtPhone, fmtDate, COMP_MAX, CAT_HEX, CAT_HEX_FALLBACK } from '../helpers.js'
 
 // Full-detail map popup — parity with the off-market tool's map popup
 // (offmarket-scraping/tools/make_map.py): APN, score vs the market's *reachable*
@@ -29,6 +29,7 @@ function chip(text, color, strong = false) {
 // manual review, SF mismatch, violations, no-permits — same set as the old map
 export function sigChips(p) {
   const c = []
+  if (p.isNew) c.push(['new this run', '#0d9488'])
   const ot = (p.ownerType || '').toLowerCase()
   if (p.ownerType && p.ownerType !== '—') c.push([p.ownerType, ot === 'trust' || ot === 'individual' ? '#dc2626' : '#64748b'])
   if (p.oos) c.push(['out-of-state', '#7c6fd6'])
@@ -289,7 +290,7 @@ export default function PropPopup({ p, meta, onOpen }) {
       ) : (
         <>
           <div style={css('font-size:11px;color:#475569;margin-bottom:6px;line-height:1.5;')}>
-            {fmtSF(p.sf)} SF{p.clear != null ? ` · ${p.clear}′ clear` : ''}{p.year ? ` · built ${p.year}` : ''}{p.ask != null ? ` · ${fmtMoney2(p.ask)}/SF` : ''}{p.daysOn != null ? ` · ${p.daysOn} DOM` : ''}
+            {fmtSF(p.sf)} SF{p.clear != null ? ` · ${p.clear}′ clear` : ''}{p.year ? ` · built ${p.year}` : ''}{p.ask != null ? ` · ${fmtMoney2(p.ask)}/SF` : ''}{p.daysOn != null ? ` · ${p.daysOn} DOM` : ''}{p.firstSeen ? ` · added ${fmtDate(p.firstSeen)}` : ''}
           </div>
           <div style={css('font-size:11px;color:#475569;margin-bottom:7px;')}>
             {p.broker} · {p.firm}

@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS listings (
     lat               REAL,
     lng               REAL,
     scraped_at        TEXT,
+    -- first_seen: when this listing_url first entered the DB. Set on insert,
+    -- NEVER updated by re-scrapes — the console uses it to badge listings that
+    -- are genuinely new since the last "Keep Sourcing" run (scraped_at can't:
+    -- a force refresh touches every row).
+    first_seen        TEXT,
     raw_data          TEXT,
     -- cached=1 means restored from backup (not confirmed fresh in current run).
     -- Auto-flips to 0 the next time a scrape upserts this listing_url.
@@ -84,6 +89,7 @@ _MIGRATIONS = [
     "ALTER TABLE listings ADD COLUMN broker_email TEXT",
     "ALTER TABLE listings ADD COLUMN broker_phone TEXT",
     "ALTER TABLE listings ADD COLUMN broker_cell TEXT",
+    "ALTER TABLE listings ADD COLUMN first_seen TEXT",
 ]
 
 
@@ -111,19 +117,23 @@ def init_db():
     with _conn() as c:
         c.executescript(_SCHEMA)
         _migrate(c)
+        # Backfill rows that predate the first_seen column so they don't all
+        # get badged "new" — treat them as first seen when last scraped.
+        c.execute("UPDATE listings SET first_seen = scraped_at WHERE first_seen IS NULL")
 
 
 def upsert_listing(listing: dict):
     row = {f: listing.get(f) for f in _FIELDS}
     row["scraped_at"] = datetime.utcnow().isoformat()
+    row["first_seen"] = row["scraped_at"]
     row["raw_data"] = json.dumps(listing.get("raw_data") or {})
     cols = ", ".join(_FIELDS)
     placeholders = ", ".join(f":{f}" for f in _FIELDS)
     with _conn() as c:
         c.execute(
             f"""
-            INSERT INTO listings ({cols}, scraped_at, raw_data)
-            VALUES ({placeholders}, :scraped_at, :raw_data)
+            INSERT INTO listings ({cols}, scraped_at, first_seen, raw_data)
+            VALUES ({placeholders}, :scraped_at, :first_seen, :raw_data)
             ON CONFLICT(listing_url) DO UPDATE SET
                 total_sf          = excluded.total_sf,
                 clear_height      = excluded.clear_height,
@@ -148,6 +158,8 @@ def upsert_listing(listing: dict):
                 lat               = excluded.lat,
                 lng               = excluded.lng,
                 scraped_at        = excluded.scraped_at,
+                -- a re-scrape must not make an old listing look new
+                first_seen        = COALESCE(first_seen, excluded.first_seen),
                 -- Auto-clear cached flag: a fresh scrape confirms this listing
                 -- is still live, so it stops being "restored from backup".
                 cached            = 0

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { css } from '../css.js'
 import Icon from '../Icon.jsx'
-import { fmtSF, fmtInt, fmtMoney2, fmtPhone, scDot, scLabel, chDot, rowStyle } from '../helpers.js'
+import { fmtSF, fmtInt, fmtMoney2, fmtPhone, fmtDate, scDot, scLabel, chDot, rowStyle } from '../helpers.js'
 
 // Adjustable Properties table: show/hide + drag-to-resize columns, persisted to
 // localStorage. Extracted from App.jsx so the column machinery lives in one place.
@@ -21,7 +21,7 @@ const ownerOrBroker = (p) => (p.channel === 'off' ? p.owner : `${p.broker} · ${
 const COLUMNS = [
   { key: 'ch', label: 'CH', align: 'left', w: 44, min: 36, cell: (p) => <span style={css(chDot(p.channel))} /> },
   { key: 'addr', label: 'ADDRESS', align: 'left', w: 230, min: 130, cell: (p) => (
-    <>{p.addr}{p.lease && (
+    <>{p.isNew && <span title="First found by the latest sourcing run" style={css('display:inline-block;margin-right:7px;font-size:9.5px;font-weight:700;letter-spacing:.05em;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-line);padding:1px 6px;border-radius:4px;vertical-align:middle;')}>NEW</span>}{p.addr}{p.lease && (
       <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title={`${p.lease.note} — open on LoopNet`} style={css('display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:10px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 7px;border-radius:5px;text-decoration:none;vertical-align:middle;')}>For Lease<Icon name="chevronRight" size={9} sw={2.4} /></a>
     )}</>
   ) },
@@ -47,6 +47,9 @@ const COLUMNS = [
       ? <button className="tap hov" onClick={(e) => { e.stopPropagation(); ctx?.onEmail?.(p) }} title={`Prepare email — ${em}`} style={css('display:inline-flex;align-items:center;gap:5px;max-width:100%;background:none;border:none;padding:0;color:var(--accent);font-size:12px;cursor:pointer;')}><Icon name="mail" size={12} sw={1.9} /><span style={css('overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{em}</span></button>
       : '—'
   } },
+  // when the listing first entered the scrape DB (first_seen) — sample/off-market
+  // rows have no stamp and show '—'; NEW-badged rows are the latest run's cohort
+  { key: 'added', label: 'ADDED', align: 'right', w: 84, min: 60, mono: true, cell: (p) => fmtDate(p.firstSeen) },
   // ── extra columns: off by default (defOff), available in the Columns menu ──
   { key: 'st', label: 'ST', align: 'left', w: 52, min: 40, defOff: true, cell: (p) => p.st ?? '—' },
   { key: 'ownerType', label: 'OWNER TYPE', align: 'left', w: 108, min: 72, defOff: true, cell: (p) => p.ownerType ?? '—' },
@@ -91,6 +94,7 @@ const SORT_VAL = {
   ask: (p) => (p.channel === 'on' ? p.ask : null), year: (p) => p.year,
   clear: (p) => p.clear, dist: (p) => p.distMi, held: (p) => p.holdYears, contact: (p) => p.contact,
   email: (p) => p.emails?.[0] || null,
+  added: (p) => p.firstSeen || null, // ISO strings — lexicographic order is chronological
   st: (p) => p.st, ownerType: (p) => p.ownerType, oos: (p) => p.oos || null,
   lastSale: (p) => p.lastSale, lastPrice: (p) => p.lastPrice, assessed: (p) => p.assessed,
   viol: (p) => p.nViol, permit: (p) => p.nPermit, landUse: (p) => p.landUse,

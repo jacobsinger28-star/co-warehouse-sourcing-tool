@@ -13,7 +13,7 @@ import { addToQueue, removeFromQueue, isQueued } from '../callQueue.js'
 import { pdStatus, pdSyncBroker, pdPushLead, pdPushLeads } from '../pipedrive.js'
 import FilterChat from '../FilterChat.jsx'
 import {
-  fmtInt, fmtSF, fmtMoney2, scDot, scLabel, chDot, chTag, chLabel, scChip,
+  fmtInt, fmtSF, fmtMoney2, fmtDate, scDot, scLabel, chDot, chTag, chLabel, scChip,
   cardStyle, breakdownFor, catVar, fmtPhone, humanizeSig, seg, th,
 } from '../helpers.js'
 import DealMap from '../components/DealMap.jsx'
@@ -289,6 +289,7 @@ export default function Properties({
     // LoopNet / on-market price + aged-listing screens — null-inclusive
     if (filters.askMax && p.ask != null && p.ask > +filters.askMax) return false
     if (filters.domMin && p.daysOn != null && p.daysOn < +filters.domMin) return false
+    if (filters.newOnly && !p.isNew) return false
     if (filters.ownerTypes.length && !filters.ownerTypes.includes(p.ownerType)) return false
     if (filters.ownerLoc === 'out' && !p.oos) return false
     if (filters.ownerLoc === 'in' && (p.channel !== 'off' || p.oos)) return false
@@ -333,6 +334,7 @@ export default function Properties({
     ...(filters.salePsfMax ? [{ label: `Sale ≤ $${filters.salePsfMax}/SF`, onClear: () => setF('salePsfMax', '') }] : []),
     ...(filters.askMax ? [{ label: `Asking ≤ $${filters.askMax}/SF`, onClear: () => setF('askMax', '') }] : []),
     ...(filters.domMin ? [{ label: `On market ≥ ${filters.domMin} days`, onClear: () => setF('domMin', '') }] : []),
+    ...(filters.newOnly ? [{ label: 'New since last run', onClear: () => setF('newOnly', false) }] : []),
     ...filters.ownerTypes.map((o) => ({ label: `${o} owner`, onClear: () => setF('ownerTypes', filters.ownerTypes.filter((x) => x !== o)) })),
     ...(filters.ownerLoc !== 'all' ? [{ label: filters.ownerLoc === 'out' ? 'Out-of-state owner' : 'In-state owner', onClear: () => setF('ownerLoc', 'all') }] : []),
     ...(filters.bucket !== 'all' ? [{ label: filters.bucket === 'universe' ? 'Scored universe only' : 'Manual review only', onClear: () => setF('bucket', 'all') }] : []),
@@ -491,6 +493,7 @@ export default function Properties({
 
           <div style={css(railLabel + 'margin:20px 0 10px;')}>Signals</div>
           <div style={css('display:flex;flex-direction:column;gap:10px;font-size:12.5px;color:var(--text);')}>
+            <label style={css('display:flex;align-items:center;gap:9px;cursor:pointer;')}><input type="checkbox" checked={filters.newOnly} onChange={() => setF('newOnly', !filters.newOnly)} style={css('accent-color:var(--accent);width:15px;height:15px;')} />New since last sourcing run</label>
             {SIG_DEFS.map(([k, label]) => (
               <label key={k} style={css('display:flex;align-items:center;gap:9px;cursor:pointer;')}><input type="checkbox" checked={filters.sig[k]} onChange={() => toggleSig(k)} style={css('accent-color:var(--accent);width:15px;height:15px;')} />{label}</label>
             ))}
@@ -543,8 +546,8 @@ export default function Properties({
             {visibleProps.map((p) => (
               <div key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(cardStyle(p.cat))}>
                 <div style={css('display:flex;align-items:center;gap:9px;')}><span style={css(scDot(p.cat))} /><span style={css('font-weight:600;font-size:14.5px;flex:1;')}>{p.addr}</span><Icon name="chevronRight" size={16} stroke="var(--text3)" /></div>
-                <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}><span style={css(chTag(p.channel))}>{chLabel(p.channel)}</span><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span>{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={css('font-size:11px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 8px;border-radius:5px;text-decoration:none;')}>For Lease</a>}{propEmail(p) && <button className="tap hov" onClick={(e) => { e.stopPropagation(); openPropEmail(p) }} aria-label={`Email ${propEmailLabel(p)}`} style={css('display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-dim);border:1px solid var(--border);padding:2px 8px;border-radius:5px;')}><Icon name="mail" size={11} sw={2} />Email</button>}</div>
-                <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{p.mkt}</span><span style={css('font-family:var(--mono);')}>{fmtSF(p.sf)} SF</span><span>{cardSub(p)}</span></div>
+                <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}>{p.isNew && <span style={css('font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-line);padding:2px 7px;border-radius:5px;')}>NEW</span>}<span style={css(chTag(p.channel))}>{chLabel(p.channel)}</span><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span>{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={css('font-size:11px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 8px;border-radius:5px;text-decoration:none;')}>For Lease</a>}{propEmail(p) && <button className="tap hov" onClick={(e) => { e.stopPropagation(); openPropEmail(p) }} aria-label={`Email ${propEmailLabel(p)}`} style={css('display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-dim);border:1px solid var(--border);padding:2px 8px;border-radius:5px;')}><Icon name="mail" size={11} sw={2} />Email</button>}</div>
+                <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{p.mkt}</span><span style={css('font-family:var(--mono);')}>{fmtSF(p.sf)} SF</span><span>{cardSub(p)}</span>{p.firstSeen && <span style={css('color:var(--text3);')}>Added {fmtDate(p.firstSeen)}</span>}</div>
                 <div style={css('font-size:11.5px;color:var(--text3);')}>{p.signal}</div>
               </div>
             ))}
@@ -666,10 +669,11 @@ export default function Properties({
               <div style={css('flex:0 0 auto;padding:16px 18px;border-bottom:1px solid var(--border);')}>
                 <div style={css('display:flex;align-items:center;gap:9px;margin-bottom:6px;')}>
                   <span style={css(chDot(drawerProp.channel))} /><span style={css(chTag(drawerProp.channel))}>{chLabel(drawerProp.channel)}</span>
+                  {drawerProp.isNew && <span style={css('font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-line);padding:2px 7px;border-radius:5px;')}>NEW</span>}
                   <button onClick={() => setDrawerId(null)} aria-label="Close detail" className="tap" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;background:none;border:none;color:var(--text3);width:30px;height:30px;')}><Icon name="x" size={17} /></button>
                 </div>
                 <div style={css('font-size:17px;font-weight:600;letter-spacing:-.01em;')}>{drawerProp.addr}</div>
-                <div style={css('color:var(--text2);font-size:12.5px;margin-top:2px;')}>{drawerProp.mkt}, {drawerProp.st}{drawerProp.apn ? ` · APN ${drawerProp.apn}` : ''}</div>
+                <div style={css('color:var(--text2);font-size:12.5px;margin-top:2px;')}>{drawerProp.mkt}, {drawerProp.st}{drawerProp.apn ? ` · APN ${drawerProp.apn}` : ''}{drawerProp.firstSeen ? ` · Added ${fmtDate(drawerProp.firstSeen)}` : ''}</div>
                 {drawerProp.landUse && <div style={css('color:var(--text3);font-size:11px;margin-top:2px;')}>{drawerProp.landUse}</div>}
               </div>
               <div style={css('flex:1;overflow-y:auto;padding:16px 18px;')}>

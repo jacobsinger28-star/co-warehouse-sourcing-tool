@@ -15,13 +15,15 @@ import { CAT_HEX, CAT_HEX_FALLBACK } from '../helpers.js'
 // react-leaflet setIcon() every marker on every parent re-render, closing open popups
 const ICON_CACHE = {}
 function markerIcon(p) {
-  const key = `${p.channel}:${p.cat}`
+  const key = `${p.channel}:${p.cat}:${p.isNew ? 'new' : ''}`
   if (ICON_CACHE[key]) return ICON_CACHE[key]
   const color = CAT_HEX[p.cat] ?? CAT_HEX_FALLBACK
+  // listings first found by the latest sourcing run get an accent halo
+  const shadow = p.isNew ? 'box-shadow:0 0 0 4px var(--accent-dim),0 0 0 1.5px var(--accent),0 1px 4px rgba(0,0,0,.5)' : 'box-shadow:0 1px 4px rgba(0,0,0,.5)'
   const html =
     p.channel === 'off'
-      ? `<div style="width:15px;height:15px;border-radius:50%;background:transparent;border:2.5px solid ${color};box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`
-      : `<div style="width:14px;height:14px;border-radius:50% 50% 50% 0;background:${color};border:1.5px solid #fff;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`
+      ? `<div style="width:15px;height:15px;border-radius:50%;background:transparent;border:2.5px solid ${color};${shadow}"></div>`
+      : `<div style="width:14px;height:14px;border-radius:50% 50% 50% 0;background:${color};border:1.5px solid #fff;transform:rotate(-45deg);${shadow}"></div>`
   return (ICON_CACHE[key] = L.divIcon({ className: '', html, iconSize: [15, 15], iconAnchor: [8, 8], popupAnchor: [0, -10] }))
 }
 

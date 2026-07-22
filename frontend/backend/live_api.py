@@ -284,5 +284,8 @@ def live_rows():
             "year": None, "contact": "Broker contact" if broker else "Listing only",
             "daysOn": None, "lat": round(float(lat), 6), "lng": round(float(lng), 6),
             "listing_url": r.get("listing_url"),
+            # when this URL first entered the DB — the console compares it to the
+            # latest run's started_at to badge listings found by that run
+            "firstSeen": r.get("first_seen"),
         })
     return {"props": props, "brokers": list(brokers.values()), "total": len(props)}

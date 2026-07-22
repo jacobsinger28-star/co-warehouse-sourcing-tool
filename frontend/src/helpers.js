@@ -5,6 +5,16 @@ export const fmtSF = (n) => Number(n).toLocaleString('en-US')
 export const fmtMoney2 = (n) => (n == null || Number.isNaN(Number(n)) ? '—' : `$${Number(n).toFixed(2)}`)
 export const fmtPhone = (p) => { const d = String(p ?? '').replace(/\D/g, ''); return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : (p || '') }
 export const humanizeSig = (t) => { const s = String(t ?? '').replace(/_/g, ' ').trim(); return s ? s[0].toUpperCase() + s.slice(1) : 'Signal' }
+// short display date for backend UTC ISO stamps (no Z suffix — e.g. first_seen);
+// year shown only when it isn't the current one: "Jul 22" / "Jul 22, 2025"
+export const fmtDate = (iso) => {
+  if (!iso) return '—'
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
+  if (Number.isNaN(d.getTime())) return '—'
+  const opts = { month: 'short', day: 'numeric' }
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric'
+  return d.toLocaleDateString('en-US', opts)
+}
 
 export const catVar = (cat) => (cat === 'Actionable' ? '--green' : cat === 'Tentative' ? '--amber' : '--red')
 export const catTintVar = (cat) => (cat === 'Actionable' ? '--green-tint' : cat === 'Tentative' ? '--amber-tint' : '--red-tint')
