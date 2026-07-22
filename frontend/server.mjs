@@ -365,38 +365,53 @@ app.post('/api/phoneburner/hook/:secret/:event', (req, res) => {
 // { dryRun: true } to preview a payload without writing.
 app.use('/api/pipedrive', rateLimit(60))
 
-app.post('/api/pipedrive/status', requireAuth, async (_req, res) => {
-  try { res.json(await pdStatusInfo()) }
+// Per-tenant Pipedrive opts: legacy/default tenant → {} (provider uses the env
+// token, unchanged behavior); real tenant → { token } resolved from tenant_secrets
+// (null if unconfigured → pdConfigured() is false → the route 503s, never the env).
+async function pdTokenOpts(req) {
+  const tenant = req.tenant
+  if (!tenant || tenant.source === 'legacy') return {}
+  return { token: (await new SecretResolver(tenant).get('crm.pipedrive', 'api_token')) ?? null }
+}
+
+app.post('/api/pipedrive/status', requireAuth, async (req, res) => {
+  try { res.json(await pdStatusInfo(await pdTokenOpts(req))) }
   catch (e) { console.error('[pd status]', e); res.status(502).json({ error: e.message }) }
 })
 
 // Sync a broker as a Pipedrive Person. Body: { broker:{name,cell,phone,email,firm,...} }
 app.post('/api/pipedrive/broker', requireAuth, async (req, res) => {
-  if (!pdConfigured()) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN)' })
   const b = req.body?.broker
   if (!b || !(b.name || b.cell || b.phone || b.email)) return res.status(400).json({ error: 'broker with a name or contact required' })
-  try { res.json(await syncBroker(b, { dryRun: Boolean(req.body?.dryRun) })) }
-  catch (e) { console.error('[pd broker]', e); res.status(502).json({ error: e.message }) }
+  try {
+    const opts = await pdTokenOpts(req)
+    if (!pdConfigured(opts)) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN or connect it in Settings)' })
+    res.json(await syncBroker(b, { ...opts, dryRun: Boolean(req.body?.dryRun) }))
+  } catch (e) { console.error('[pd broker]', e); res.status(502).json({ error: e.message }) }
 })
 
 // Push one property as a lead (off-market) / deal (on-market). Body: { prop:{...} }
 app.post('/api/pipedrive/lead', requireAuth, async (req, res) => {
-  if (!pdConfigured()) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN)' })
   const p = req.body?.prop
   if (!p || !p.addr) return res.status(400).json({ error: 'prop with an address required' })
-  try { res.json(await pushLead(p, { dryRun: Boolean(req.body?.dryRun) })) }
-  catch (e) { console.error('[pd lead]', e); res.status(502).json({ error: e.message }) }
+  try {
+    const opts = await pdTokenOpts(req)
+    if (!pdConfigured(opts)) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN or connect it in Settings)' })
+    res.json(await pushLead(p, { ...opts, dryRun: Boolean(req.body?.dryRun) }))
+  } catch (e) { console.error('[pd lead]', e); res.status(502).json({ error: e.message }) }
 })
 
 // Bulk push. Body: { props:[...] } — sequential + best-effort, per-item results.
 app.post('/api/pipedrive/leads', requireAuth, async (req, res) => {
-  if (!pdConfigured()) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN)' })
   const props = Array.isArray(req.body?.props) ? req.body.props.slice(0, 100) : []
   if (!props.length) return res.status(400).json({ error: 'props[] required' })
+  let opts
+  try { opts = await pdTokenOpts(req) } catch (e) { return res.status(502).json({ error: e.message }) }
+  if (!pdConfigured(opts)) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN or connect it in Settings)' })
   const dryRun = Boolean(req.body?.dryRun)
   const results = []
   for (const p of props) {
-    try { results.push({ id: p.id, addr: p.addr, ...(await pushLead(p, { dryRun })) }) }
+    try { results.push({ id: p.id, addr: p.addr, ...(await pushLead(p, { ...opts, dryRun })) }) }
     catch (e) { results.push({ id: p.id, addr: p.addr, status: 'error', error: e.message }) }
   }
   res.json({ results, ok: results.filter((r) => r.status !== 'error').length, total: results.length })

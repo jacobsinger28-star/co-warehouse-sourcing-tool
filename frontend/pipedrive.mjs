@@ -1,8 +1,6 @@
 // Pipedrive WRITE client for the sourcing console — turns the "Sync / Push / Send
 // to Pipedrive" buttons into real CRM writes. Mirrors the proven Python writer
-// (tools/email_to_pipedrive/pipedrive_sync.py) and reuses PIPEDRIVE_API_TOKEN,
-// the same token dealsChat.mjs reads the deal book with and phoneburner.mjs logs
-// warm calls with.
+// (tools/email_to_pipedrive/pipedrive_sync.py).
 //
 //   syncBroker(b)  → upsert a Person (dedupe email→cell→phone), owned by the
 //                    token's user, firm/markets recorded in a source note.
@@ -12,6 +10,13 @@
 // Idempotent by design: persons dedupe by email/phone, deals by exact title, so
 // re-clicking never creates duplicates. dryRun previews the payloads and writes
 // nothing (used by the tests / a "preview" mode).
+//
+// MULTI-TENANT: every export takes an optional `token` (in opts). Pass it and the
+// call runs against THAT tenant's Pipedrive account, with its own owner + label
+// caches (a per-token client), so two tenants never cross. Omit it and the call
+// uses the process env token — today's single-tenant behavior. The resolver (via
+// req.tenant) supplies the per-tenant token; a real tenant with no token must be
+// caught by the caller (server.mjs), never silently fall back to the env token.
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -33,86 +38,20 @@ function envFromFile(path, key) {
     return line ? line.split('=').slice(1).join('=').trim().replace(/^["']|["']$/g, '') : ''
   } catch { return '' }
 }
-function token() {
+function envToken() {
   return process.env.PIPEDRIVE_API_TOKEN
     || envFromFile(join(__dirname, '../../general-scraping/backend/.env'), 'PIPEDRIVE_API_TOKEN')
 }
-export const pdConfigured = () => Boolean(token())
+// opts.token present (from req.tenant) → use it strictly, so a real tenant with no
+// token never borrows the env token. opts.token absent → the env fallback (legacy).
+const tokenFrom = (opts) => (opts && 'token' in opts ? opts.token : envToken()) || null
 
-async function pd(path, { method = 'GET', body } = {}) {
-  const tok = token()
-  if (!tok) throw new Error('PIPEDRIVE_API_TOKEN not configured')
-  const sep = path.includes('?') ? '&' : '?'
-  const r = await fetch(`${PD_BASE}${path}${sep}api_token=${tok}`, {
-    method,
-    ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}),
-  })
-  const j = await r.json().catch(() => ({}))
-  if (!r.ok || j.success === false) {
-    throw new Error(`pipedrive ${method} ${path.split('?')[0]} → ${r.status} ${String(j.error || '').slice(0, 160)}`)
-  }
-  return j
-}
-
+// ── pure payload/formatting helpers (no token) ───────────────────────────────
 const digits = (s) => String(s || '').replace(/\D/g, '')
 const personUrl = (id) => `https://app.pipedrive.com/person/${id}`
 const dealUrl = (id) => `https://app.pipedrive.com/deal/${id}`
 const htmlEscape = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-
-// owner (the token's Pipedrive user) — resolved once and cached
-let _ownerId
-async function ownerId() {
-  if (_ownerId !== undefined) return _ownerId
-  const env = process.env.PIPEDRIVE_OWNER_USER_ID
-  if (env && /^\d+$/.test(env)) { _ownerId = Number(env); return _ownerId }
-  try { _ownerId = (await pd('/users/me')).data?.id ?? null } catch { _ownerId = null }
-  return _ownerId
-}
-
-// get-or-create the "sourcing-console" label option on a field set, cached
-const _labelCache = {}
-async function labelId(fieldset, create) {
-  if (_labelCache[fieldset] !== undefined) return _labelCache[fieldset]
-  try {
-    const field = ((await pd(`/${fieldset}`)).data || []).find((f) => f.key === 'label')
-    if (!field) { _labelCache[fieldset] = null; return null }
-    const opts = field.options || []
-    const hit = opts.find((o) => (o.label || '').toLowerCase() === LABEL)
-    if (hit) { _labelCache[fieldset] = hit.id; return hit.id }
-    if (!create) return null
-    const next = opts.map((o) => ({ id: o.id, label: o.label })).concat([{ label: LABEL }])
-    await pd(`/${fieldset}/${field.id}`, { method: 'PUT', body: { options: next } })
-    const field2 = ((await pd(`/${fieldset}`)).data || []).find((f) => f.key === 'label')
-    _labelCache[fieldset] = (field2?.options || []).find((o) => (o.label || '').toLowerCase() === LABEL)?.id ?? null
-  } catch { _labelCache[fieldset] = null }
-  return _labelCache[fieldset]
-}
-
-async function searchPersonId({ email, phone }) {
-  const tryTerm = async (term, field) => {
-    if (!term) return null
-    const q = new URLSearchParams({ term, fields: field, exact_match: field === 'email' ? 'true' : 'false', limit: '1' })
-    try { return (await pd(`/persons/search?${q}`)).data?.items?.[0]?.item?.id || null }
-    catch { return null }
-  }
-  return (await tryTerm(email, 'email')) || (await tryTerm(phone, 'phone'))
-}
-
-async function searchDealIdByTitle(title) {
-  if (!title) return null
-  const q = new URLSearchParams({ term: title, fields: 'title', limit: '5' })
-  try {
-    const items = (await pd(`/deals/search?${q}`)).data?.items || []
-    return items.find((it) => (it.item?.title || '').trim().toLowerCase() === title.trim().toLowerCase())?.item?.id || null
-  } catch { return null }
-}
-
-async function addNote(content, link) {
-  if (!content) return
-  try { await pd('/notes', { method: 'POST', body: { content, ...link } }) }
-  catch (e) { console.error('[pd note]', e.message) }
-}
 
 function personPayload({ name, cell, phone, email, ownerId: oid }) {
   const phones = []
@@ -125,21 +64,6 @@ function personPayload({ name, cell, phone, email, ownerId: oid }) {
   return p
 }
 
-// upsert a person → { personId, url, status: 'created'|'exists'|'dry_run' }
-async function upsertPerson({ name, cell, phone, email, note, dryRun }) {
-  const existing = await searchPersonId({ email, phone: cell || phone })
-  if (existing) return { personId: existing, url: personUrl(existing), status: 'exists' }
-  const oid = await ownerId()
-  const payload = personPayload({ name, cell, phone, email, ownerId: oid })
-  if (dryRun) return { status: 'dry_run', would_create: payload, note }
-  const lid = await labelId('personFields', true); if (lid) payload.label = lid
-  const created = await pd('/persons', { method: 'POST', body: payload })
-  const id = created.data.id
-  await addNote(note, { person_id: id })
-  return { personId: id, url: personUrl(id), status: 'created' }
-}
-
-// ── broker sync ─────────────────────────────────────────────────────────────
 function brokerNote(b) {
   const bits = ['<b>Broker synced from the SimiCapital sourcing console</b>']
   if (b.firm) bits.push(`Firm: ${htmlEscape(b.firm)}`)
@@ -149,11 +73,7 @@ function brokerNote(b) {
   if (b.source) bits.push(`Source: ${htmlEscape(b.source)}`)
   return bits.join('<br>')
 }
-export async function syncBroker(b = {}, { dryRun = false } = {}) {
-  return upsertPerson({ name: b.name, cell: b.cell, phone: b.phone, email: b.email, note: brokerNote(b), dryRun })
-}
 
-// ── push a property lead (off-market owner) / deal (on-market listing) ────────
 const dealTitle = (p) => `${p.addr}${p.mkt ? ` · ${p.mkt}` : ''}${p.st ? `, ${p.st}` : ''}`.slice(0, 250)
 
 function leadNote(p) {
@@ -179,7 +99,105 @@ function leadNote(p) {
   return bits.join('<br>')
 }
 
-export async function pushLead(p = {}, { dryRun = false } = {}) {
+// ── per-tenant client: binds one token + its own owner/label caches ──────────
+// A Pipedrive owner id and the "sourcing-console" label id are per-account, so
+// these MUST NOT be shared across tenants — they live inside the client.
+function pdClient(tok) {
+  if (!tok) throw new Error('PIPEDRIVE_API_TOKEN not configured')
+
+  async function pd(path, { method = 'GET', body } = {}) {
+    const sep = path.includes('?') ? '&' : '?'
+    const r = await fetch(`${PD_BASE}${path}${sep}api_token=${tok}`, {
+      method,
+      ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok || j.success === false) {
+      throw new Error(`pipedrive ${method} ${path.split('?')[0]} → ${r.status} ${String(j.error || '').slice(0, 160)}`)
+    }
+    return j
+  }
+
+  let _ownerId
+  async function ownerId() {
+    if (_ownerId !== undefined) return _ownerId
+    const env = process.env.PIPEDRIVE_OWNER_USER_ID
+    if (env && /^\d+$/.test(env)) { _ownerId = Number(env); return _ownerId }
+    try { _ownerId = (await pd('/users/me')).data?.id ?? null } catch { _ownerId = null }
+    return _ownerId
+  }
+
+  const _labelCache = {}
+  async function labelId(fieldset, create) {
+    if (_labelCache[fieldset] !== undefined) return _labelCache[fieldset]
+    try {
+      const field = ((await pd(`/${fieldset}`)).data || []).find((f) => f.key === 'label')
+      if (!field) { _labelCache[fieldset] = null; return null }
+      const opts = field.options || []
+      const hit = opts.find((o) => (o.label || '').toLowerCase() === LABEL)
+      if (hit) { _labelCache[fieldset] = hit.id; return hit.id }
+      if (!create) return null
+      const next = opts.map((o) => ({ id: o.id, label: o.label })).concat([{ label: LABEL }])
+      await pd(`/${fieldset}/${field.id}`, { method: 'PUT', body: { options: next } })
+      const field2 = ((await pd(`/${fieldset}`)).data || []).find((f) => f.key === 'label')
+      _labelCache[fieldset] = (field2?.options || []).find((o) => (o.label || '').toLowerCase() === LABEL)?.id ?? null
+    } catch { _labelCache[fieldset] = null }
+    return _labelCache[fieldset]
+  }
+
+  async function searchPersonId({ email, phone }) {
+    const tryTerm = async (term, field) => {
+      if (!term) return null
+      const q = new URLSearchParams({ term, fields: field, exact_match: field === 'email' ? 'true' : 'false', limit: '1' })
+      try { return (await pd(`/persons/search?${q}`)).data?.items?.[0]?.item?.id || null }
+      catch { return null }
+    }
+    return (await tryTerm(email, 'email')) || (await tryTerm(phone, 'phone'))
+  }
+
+  async function searchDealIdByTitle(title) {
+    if (!title) return null
+    const q = new URLSearchParams({ term: title, fields: 'title', limit: '5' })
+    try {
+      const items = (await pd(`/deals/search?${q}`)).data?.items || []
+      return items.find((it) => (it.item?.title || '').trim().toLowerCase() === title.trim().toLowerCase())?.item?.id || null
+    } catch { return null }
+  }
+
+  async function addNote(content, link) {
+    if (!content) return
+    try { await pd('/notes', { method: 'POST', body: { content, ...link } }) }
+    catch (e) { console.error('[pd note]', e.message) }
+  }
+
+  // upsert a person → { personId, url, status: 'created'|'exists'|'dry_run' }
+  async function upsertPerson({ name, cell, phone, email, note, dryRun }) {
+    const existing = await searchPersonId({ email, phone: cell || phone })
+    if (existing) return { personId: existing, url: personUrl(existing), status: 'exists' }
+    const oid = await ownerId()
+    const payload = personPayload({ name, cell, phone, email, ownerId: oid })
+    if (dryRun) return { status: 'dry_run', would_create: payload, note }
+    const lid = await labelId('personFields', true); if (lid) payload.label = lid
+    const created = await pd('/persons', { method: 'POST', body: payload })
+    const id = created.data.id
+    await addNote(note, { person_id: id })
+    return { personId: id, url: personUrl(id), status: 'created' }
+  }
+
+  return { pd, ownerId, labelId, searchDealIdByTitle, addNote, upsertPerson }
+}
+
+// ── exports ──────────────────────────────────────────────────────────────────
+export const pdConfigured = (opts) => Boolean(tokenFrom(opts))
+
+export async function syncBroker(b = {}, opts = {}) {
+  const c = pdClient(tokenFrom(opts))
+  return c.upsertPerson({ name: b.name, cell: b.cell, phone: b.phone, email: b.email, note: brokerNote(b), dryRun: opts.dryRun })
+}
+
+export async function pushLead(p = {}, opts = {}) {
+  const c = pdClient(tokenFrom(opts))
+  const dryRun = Boolean(opts.dryRun)
   const onMkt = p.channel === 'on'
   const contactPhone = Array.isArray(p.phones) ? p.phones[0] : p.phone
   const contactEmail = Array.isArray(p.emails) ? p.emails[0] : p.email
@@ -187,33 +205,35 @@ export async function pushLead(p = {}, { dryRun = false } = {}) {
   // Only make a Person when we have something to reach them by (name/phone/email).
   let person = null
   if (contactName || contactPhone || contactEmail) {
-    person = await upsertPerson({
+    person = await c.upsertPerson({
       name: contactName || (onMkt ? 'Listing broker' : (p.owner || 'Property owner')),
       phone: contactPhone, email: contactEmail, note: leadNote(p), dryRun,
     })
   }
   const title = dealTitle(p)
-  const existing = await searchDealIdByTitle(title)
+  const existing = await c.searchDealIdByTitle(title)
   if (existing) return { dealId: existing, url: dealUrl(existing), status: 'exists', personId: person?.personId }
-  const oid = await ownerId()
+  const oid = await c.ownerId()
   const payload = { title, stage_id: SOURCING_STAGE_ID, status: 'open' }
   if (oid) payload.user_id = oid
   if (person?.personId) payload.person_id = person.personId
   if (dryRun) return { status: 'dry_run', would_create: payload, note: leadNote(p), person }
-  const lid = await labelId('dealFields', true); if (lid) payload.label = lid
-  const created = await pd('/deals', { method: 'POST', body: payload })
+  const lid = await c.labelId('dealFields', true); if (lid) payload.label = lid
+  const created = await c.pd('/deals', { method: 'POST', body: payload })
   const id = created.data.id
-  await addNote(leadNote(p), { deal_id: id })
+  await c.addNote(leadNote(p), { deal_id: id })
   return { dealId: id, url: dealUrl(id), status: 'created', personId: person?.personId }
 }
 
 // status for the UI: configured? owner? where do leads land?
-export async function pdStatusInfo() {
-  if (!pdConfigured()) return { configured: false }
+export async function pdStatusInfo(opts) {
+  const tok = tokenFrom(opts)
+  if (!tok) return { configured: false }
+  const c = pdClient(tok)
   try {
-    const me = (await pd('/users/me')).data || {}
+    const me = (await c.pd('/users/me')).data || {}
     let stageName = ''
-    try { stageName = (((await pd('/stages')).data || []).find((s) => s.id === SOURCING_STAGE_ID))?.name?.trim() || '' }
+    try { stageName = (((await c.pd('/stages')).data || []).find((s) => s.id === SOURCING_STAGE_ID))?.name?.trim() || '' }
     catch { /* stage name is cosmetic */ }
     return { configured: true, owner: { id: me.id, name: me.name }, stageId: SOURCING_STAGE_ID, stageName }
   } catch (e) {
