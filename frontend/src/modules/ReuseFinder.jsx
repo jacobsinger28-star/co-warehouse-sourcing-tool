@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { css } from '../css.js'
 import Icon from '../Icon.jsx'
-import { REUSE_CANDIDATES, REUSE_AREAS, BUYBOX_CANDIDATES, BUYBOX_TARGET, SEED_LISTINGS } from '../data.js'
-import { catVar, catTintVar, scDot, scLabel, fmtSF } from '../helpers.js'
+import { REUSE_CANDIDATES, REUSE_AREAS, BUYBOX_CANDIDATES, BUYBOX_TARGET, SEED_LISTINGS } from '../reuseData.js'
+import { catVar, catTintVar, scDot, scLabel, fmtSF, seg, th, cardBox as card, kpiLabel, kpiNum } from '../helpers.js'
 
 // likelihood → the shared score category (drives the green/amber/red coloring)
 const catOf = (l) => (l >= 0.5 ? 'Actionable' : l > 0.15 ? 'Tentative' : 'Pass')
@@ -30,12 +30,6 @@ function ProvTag({ source, ml = true }) {
     </span>
   )
 }
-const seg = (active) =>
-  `display:flex;align-items:center;gap:6px;height:28px;padding:0 12px;border:none;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;${active ? 'background:var(--surface3);color:var(--text);box-shadow:inset 0 0 0 1px var(--border2);' : 'background:transparent;color:var(--text2);'}`
-const card = 'background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;'
-const kpiLabel = 'font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);'
-const kpiNum = 'font-family:var(--mono);font-size:26px;font-weight:500;margin-top:7px;'
-const th = (align = 'left', cls = '') => ({ cls, s: `text-align:${align};padding:9px 10px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);` })
 const sectionLabel = 'font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text2);font-weight:600;margin-bottom:8px;'
 const sectionHead = 'display:flex;align-items:center;gap:10px;margin:28px 0 4px;flex-wrap:wrap;'
 const sectionH3 = 'margin:0;font-size:15px;font-weight:600;letter-spacing:-.01em;'

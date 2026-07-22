@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { css } from '../css.js'
 import Icon from '../Icon.jsx'
 import { DEALS, PROPS } from '../data.js'
-import { authBody, authHeaders } from '../session.js'
+import { postJson } from '../api.js'
 
 // Known questions — each maps to a deterministic Pipedrive query on the server
 // (see PRESETS in frontend/dealsChat.mjs). No LLM involved.
@@ -41,29 +41,12 @@ function checkDedupe(q, liveDeals) {
   return { verdict: 'No prior contact', ok: true, detail: 'Clear to add to the outreach queue.' }
 }
 
-async function queryDeals(body) {
-  const r = await fetch(`${import.meta.env.BASE_URL}api/deals`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ ...authBody(), ...body }),
-  })
-  const d = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(d.error || `request failed (${r.status})`)
-  return d
-}
+const dealsErr = (status) => `request failed (${status})`
+const queryDeals = (body) => postJson('deals', body, dealsErr)
 
 // RAG chat over the deal book (server: /api/deals-chat → Claude with Pipedrive
 // context). history = [{role:'user'|'assistant', content}] for follow-ups.
-async function queryDealsChat(question, history) {
-  const r = await fetch(`${import.meta.env.BASE_URL}api/deals-chat`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ ...authBody(), question, history }),
-  })
-  const d = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(d.error || `request failed (${r.status})`)
-  return d
-}
+const queryDealsChat = (question, history) => postJson('deals-chat', { question, history }, dealsErr)
 
 export default function DealsDB() {
   const [query, setQuery] = useState('')

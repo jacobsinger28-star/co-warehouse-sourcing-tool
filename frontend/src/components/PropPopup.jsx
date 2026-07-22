@@ -1,5 +1,5 @@
 import { css } from '../css.js'
-import { fmtSF, fmtInt, fmtMoney2, fmtPhone, COMP_MAX } from '../helpers.js'
+import { fmtSF, fmtInt, fmtMoney2, fmtPhone, COMP_MAX, CAT_HEX, CAT_HEX_FALLBACK } from '../helpers.js'
 
 // Full-detail map popup — parity with the off-market tool's map popup
 // (offmarket-scraping/tools/make_map.py): APN, score vs the market's *reachable*
@@ -7,7 +7,6 @@ import { fmtSF, fmtInt, fmtMoney2, fmtPhone, COMP_MAX } from '../helpers.js'
 // with bulk / non-arm's-length handling, per-component score breakdown, the
 // imagery/VLM site assessment and the distress-evidence list.
 
-const CAT_HEX = { Actionable: '#22c55e', Tentative: '#f59e0b', Pass: '#ef4444' }
 const COMP_LABEL = {
   proximity_score: 'Proximity', vacancy_evidence: 'Vacancy', tax_delinquency: 'Tax delinq.',
   physical_fit: 'Physical fit', code_violations: 'Violations', hold_period: 'Hold period',
@@ -154,7 +153,7 @@ function Breakdown({ p, meta }) {
   const liveKeys = meta?.cityLive?.[p.mkt] || Object.keys(cmax).filter((k) => Object.keys(comp).includes(k))
   const live = Object.keys(cmax).filter((k) => liveKeys.includes(k)).map((k) => [k, comp[k] || 0, cmax[k]]).sort((a, b) => b[1] - a[1])
   const dormant = Object.keys(cmax).filter((k) => !liveKeys.includes(k))
-  const barColor = CAT_HEX[p.cat] ?? '#94a3b8'
+  const barColor = CAT_HEX[p.cat] ?? CAT_HEX_FALLBACK
   return (
     <div style={css('margin:7px 0 4px;')}>
       <div style={css('font-size:10.5px;font-weight:600;color:#475569;margin-bottom:5px;')}>
@@ -253,7 +252,7 @@ function Evidence({ p }) {
 
 export default function PropPopup({ p, meta, onOpen }) {
   const qy = encodeURIComponent(`${p.addr}, ${p.mkt || ''}${p.st ? ` ${p.st}` : ''}`)
-  const catColor = CAT_HEX[p.cat] ?? '#94a3b8'
+  const catColor = CAT_HEX[p.cat] ?? CAT_HEX_FALLBACK
   const scored = p.comp && Object.keys(p.comp).length > 0
   const ceil = ceilFor(p, meta)
 

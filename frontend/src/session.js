@@ -14,9 +14,7 @@ let authCfg = null // Supabase {url, anonKey}, set on entry so signOut can revok
 let user = null    // Supabase user object ({ email, user_metadata }), null in legacy mode
 
 export const setSessionPassword = (pw) => { password = pw }
-export const getSessionPassword = () => password
 export const setSessionToken = (t) => { token = t }
-export const getSessionToken = () => token
 export const setAuthCfg = (c) => { authCfg = c }
 export const setCurrentUser = (u) => { user = u }
 

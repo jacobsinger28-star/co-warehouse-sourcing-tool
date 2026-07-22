@@ -30,16 +30,6 @@ export const scChip = (cat) =>
 export const rowStyle = (cat) => `cursor:pointer;border-bottom:1px solid var(--border);background:var(${catTintVar(cat)});`
 export const cardStyle = (cat) => `display:flex;flex-direction:column;gap:9px;padding:14px 16px;border-bottom:1px solid var(--border);background:var(${catTintVar(cat)});cursor:pointer;`
 
-// map pin: off = ring, on = teardrop; colored by score; positioned at p.x/p.y
-export const pinStyle = (p, hovered = false) => {
-  const color = `var(${catVar(p.cat)})`
-  const base = `position:absolute;left:${p.x}%;top:${p.y}%;width:15px;height:15px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.5);z-index:${hovered ? 9 : 5};`
-  const scale = hovered ? ' scale(1.3)' : ''
-  return p.channel === 'off'
-    ? `${base}border-radius:50%;background:transparent;border:2.5px solid ${color};transform:translate(-50%,-50%)${scale};`
-    : `${base}border-radius:50% 50% 50% 0;background:${color};border:1.5px solid var(--bg);transform:translate(-50%,-50%) rotate(-45deg)${scale};`
-}
-
 // real off-market scoring weights (0–100-capped model); lets the drawer render
 // a genuine per-component breakdown from each row's `comp` dict.
 export const COMP_MAX = { vacancy_evidence: 22, tax_delinquency: 15, proximity_score: 15, physical_fit: 12, code_violations: 12, hold_period: 8, owner_profile: 7, condition_distress: 6, permit_anomaly: 5, year_built_band: 5, truck_access_inverse: 4 }
@@ -71,10 +61,20 @@ export const breakdownFor = (p) => {
   })
 }
 
-// a few city labels for the faux basemap (positioned to sit near their pins)
-export const MAP_LABELS = [
-  { name: 'Columbus', x: 58, y: 16 },
-  { name: 'Charlotte', x: 44, y: 28 },
-  { name: 'Charleston', x: 74, y: 50 },
-  { name: 'Miami', x: 80, y: 84 },
-]
+// Hex palette for contexts that can't read CSS vars (Leaflet marker HTML, the
+// fixed-white map popup). The hex sibling of catVar; fallback = neutral slate.
+export const CAT_HEX = { Actionable: '#22c55e', Tentative: '#f59e0b', Pass: '#ef4444' }
+export const CAT_HEX_FALLBACK = '#94a3b8'
+
+// segmented-control style builder — module switcher (shell), map basemap toggle
+// (Properties), and the Reuse Finder view segments.
+export const seg = (active) =>
+  `display:flex;align-items:center;gap:7px;height:28px;padding:0 12px;border:none;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;${active ? 'background:var(--surface3);color:var(--text);box-shadow:inset 0 0 0 1px var(--border2);' : 'background:transparent;color:var(--text2);'}`
+
+// table header cell style builder — Properties brokers table + Reuse Finder tables.
+export const th = (align = 'left', cls = '') => ({ cls, s: `text-align:${align};padding:9px 8px;font-weight:600;color:var(--text2);font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid var(--border);` })
+
+// surface card + KPI fragments shared by SupplyModel and ReuseFinder.
+export const cardBox = 'background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;'
+export const kpiLabel = 'font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);'
+export const kpiNum = 'font-family:var(--mono);font-size:26px;font-weight:500;margin-top:7px;'

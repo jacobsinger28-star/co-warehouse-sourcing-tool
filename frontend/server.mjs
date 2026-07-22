@@ -40,6 +40,7 @@ import {
 } from './phoneburner.mjs'
 import { resolveTenant, DEFAULT_TENANT } from './tenants.mjs'
 import { tenancyEnabled } from './db.mjs'
+import { demoRouter, demoLoaded } from './demo.mjs'
 import { installRedaction, secretsEnabled } from './secrets.mjs'
 
 // Route all console output through the secret redactor before anything can log —
@@ -114,6 +115,7 @@ console.log(`[server] tenancy ${tenancyEnabled()
 console.log(`[server] BYOK secrets ${secretsEnabled()
   ? 'ENABLED — envelope-encrypted per-tenant keys'
   : 'off — providers use process env vars (set SECRETS_KEK + tenancy to enable)'}`)
+console.log(`[server] public demo ${demoLoaded() ? 'ENABLED — /demo + /api/demo/* serve synthetic data only' : 'off — demo-data.json absent (run tools/build_demo_data.mjs)'}`)
 
 // ── auth ─────────────────────────────────────────────────────────────────────
 // Verify a Supabase access token by asking Supabase who it belongs to, then
@@ -335,6 +337,11 @@ app.post('/api/phoneburner/hook/:secret/:event', (req, res) => {
   } catch (e) { console.error('[pb hook]', e) }
   res.json({ ok: true })
 })
+
+// Public demo surface: fake-only data + simulated integrations, NO auth. Kept in
+// its own module with no path to real data/keys (see demo.mjs). Mounted after the
+// real /api/* routes (which stay behind requireAuth) and before the SPA fallback.
+app.use('/api/demo', demoRouter)
 
 // static SPA + client-side routing fallback
 app.use(express.static(DIST))
