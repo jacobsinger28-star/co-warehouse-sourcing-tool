@@ -40,7 +40,7 @@ import {
 } from './phoneburner.mjs'
 import { resolveTenant, DEFAULT_TENANT, resolveTenantByWebhookSecret, getTenantWebhookSecret } from './tenants.mjs'
 import { tenancyEnabled } from './db.mjs'
-import { pdConfigured, pdStatusInfo, syncBroker, pushLead } from './pipedrive.mjs'
+import { resolveTenantCrm, legacyCrm } from './crm/registry.mjs'
 import { demoRouter, demoLoaded } from './demo.mjs'
 import { installRedaction, secretsEnabled, SecretResolver, writeSecret } from './secrets.mjs'
 import { parseLeaseRate, leaseRepRate } from './leaseRate.mjs'
@@ -242,6 +242,12 @@ const CONNECTORS = [
     note: 'Your Gemini API key (Google AI Studio → Get API key). Stored for model routing — the Deals AI runs on Claude today.' },
   { provider: 'crm.pipedrive', label: 'Pipedrive', category: 'CRM', authModel: 'static', fields: ['api_token'],
     note: 'Your API token (Pipedrive → Personal preferences → API). Syncs brokers + pushes leads.' },
+  { provider: 'crm.followupboss', label: 'Follow Up Boss', category: 'CRM', authModel: 'static', fields: ['api_key'],
+    note: 'Your FUB API key (Admin → API). Syncs brokers as people + pushes sourced leads with a note.' },
+  { provider: 'crm.gohighlevel', label: 'GoHighLevel', category: 'CRM', authModel: 'static', fields: ['api_key'],
+    note: 'A GoHighLevel v1 Location API key (Settings → Business Info → API Key). Syncs contacts + leads.' },
+  { provider: 'crm.webhook', label: 'Webhook / Zapier', category: 'CRM', authModel: 'static', fields: ['url'],
+    note: 'A webhook URL (Zapier/Make/your endpoint). Sourced brokers + leads POST here as JSON — for CRMs without an API.' },
   { provider: 'crm.hubspot', label: 'HubSpot', category: 'CRM', authModel: 'static', fields: ['access_token'],
     note: 'A private-app access token (HubSpot → Settings → Integrations → Private apps). CRM sync lands here next.' },
   { provider: 'crm.close', label: 'Close', category: 'CRM', authModel: 'static', fields: ['api_key'],
@@ -582,53 +588,60 @@ app.post('/api/phoneburner/hook/:secret/:event', async (req, res) => {
 // { dryRun: true } to preview a payload without writing.
 app.use('/api/pipedrive', rateLimit(60))
 
-// Per-tenant Pipedrive opts: legacy/default tenant → {} (provider uses the env
-// token, unchanged behavior); real tenant → { token } resolved from tenant_secrets
-// (null if unconfigured → pdConfigured() is false → the route 503s, never the env).
-async function pdTokenOpts(req) {
+// The CRM adapter for this request's workspace (Phase 3 — pluggable CRM).
+// Legacy/default tenant → Pipedrive on the env token (unchanged behavior); a real
+// tenant → its first-configured CRM from tenant_secrets, or null (no CRM connected
+// → the route 503s, never the env token — the BYOK isolation guarantee).
+async function tenantCrm(req) {
   const tenant = req.tenant
-  if (!tenant || tenant.source === 'legacy') return {}
-  return { token: (await new SecretResolver(tenant).get('crm.pipedrive', 'api_token')) ?? null }
+  if (!tenant || tenant.source === 'legacy') return legacyCrm()
+  return await resolveTenantCrm(new SecretResolver(tenant))
 }
+const NO_CRM = 'No CRM connected for this workspace — add one (Pipedrive, Follow Up Boss, GoHighLevel, or a webhook) in Settings.'
 
+// NOTE: routes keep the /api/pipedrive/* paths for frontend back-compat, but now
+// dispatch to whatever CRM the workspace configured; the response carries `provider`.
 app.post('/api/pipedrive/status', requireAuth, async (req, res) => {
-  try { res.json(await pdStatusInfo(await pdTokenOpts(req))) }
-  catch (e) { console.error('[pd status]', e); res.status(502).json({ error: e.message }) }
+  try {
+    const crm = await tenantCrm(req)
+    if (!crm || !crm.adapter.configured()) return res.json({ configured: false })
+    res.json({ provider: crm.provider, ...(await crm.adapter.status()) })
+  } catch (e) { console.error('[crm status]', e); res.status(502).json({ error: e.message }) }
 })
 
-// Sync a broker as a Pipedrive Person. Body: { broker:{name,cell,phone,email,firm,...} }
+// Sync a broker as a contact in the workspace's CRM. Body: { broker:{name,cell,phone,email,firm,...} }
 app.post('/api/pipedrive/broker', requireAuth, async (req, res) => {
   const b = req.body?.broker
   if (!b || !(b.name || b.cell || b.phone || b.email)) return res.status(400).json({ error: 'broker with a name or contact required' })
   try {
-    const opts = await pdTokenOpts(req)
-    if (!pdConfigured(opts)) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN or connect it in Settings)' })
-    res.json(await syncBroker(b, { ...opts, dryRun: Boolean(req.body?.dryRun) }))
-  } catch (e) { console.error('[pd broker]', e); res.status(502).json({ error: e.message }) }
+    const crm = await tenantCrm(req)
+    if (!crm || !crm.adapter.configured()) return res.status(503).json({ error: NO_CRM })
+    res.json({ provider: crm.provider, ...(await crm.adapter.syncBroker(b, { dryRun: Boolean(req.body?.dryRun) })) })
+  } catch (e) { console.error('[crm broker]', e); res.status(502).json({ error: e.message }) }
 })
 
-// Push one property as a lead (off-market) / deal (on-market). Body: { prop:{...} }
+// Push one property as a lead/deal into the workspace's CRM. Body: { prop:{...} }
 app.post('/api/pipedrive/lead', requireAuth, async (req, res) => {
   const p = req.body?.prop
   if (!p || !p.addr) return res.status(400).json({ error: 'prop with an address required' })
   try {
-    const opts = await pdTokenOpts(req)
-    if (!pdConfigured(opts)) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN or connect it in Settings)' })
-    res.json(await pushLead(p, { ...opts, dryRun: Boolean(req.body?.dryRun) }))
-  } catch (e) { console.error('[pd lead]', e); res.status(502).json({ error: e.message }) }
+    const crm = await tenantCrm(req)
+    if (!crm || !crm.adapter.configured()) return res.status(503).json({ error: NO_CRM })
+    res.json({ provider: crm.provider, ...(await crm.adapter.pushLead(p, { dryRun: Boolean(req.body?.dryRun) })) })
+  } catch (e) { console.error('[crm lead]', e); res.status(502).json({ error: e.message }) }
 })
 
 // Bulk push. Body: { props:[...] } — sequential + best-effort, per-item results.
 app.post('/api/pipedrive/leads', requireAuth, async (req, res) => {
   const props = Array.isArray(req.body?.props) ? req.body.props.slice(0, 100) : []
   if (!props.length) return res.status(400).json({ error: 'props[] required' })
-  let opts
-  try { opts = await pdTokenOpts(req) } catch (e) { return res.status(502).json({ error: e.message }) }
-  if (!pdConfigured(opts)) return res.status(503).json({ error: 'Pipedrive not configured (set PIPEDRIVE_API_TOKEN or connect it in Settings)' })
+  let crm
+  try { crm = await tenantCrm(req) } catch (e) { return res.status(502).json({ error: e.message }) }
+  if (!crm || !crm.adapter.configured()) return res.status(503).json({ error: NO_CRM })
   const dryRun = Boolean(req.body?.dryRun)
   const results = []
   for (const p of props) {
-    try { results.push({ id: p.id, addr: p.addr, ...(await pushLead(p, { ...opts, dryRun })) }) }
+    try { results.push({ id: p.id, addr: p.addr, ...(await crm.adapter.pushLead(p, { dryRun })) }) }
     catch (e) { results.push({ id: p.id, addr: p.addr, status: 'error', error: e.message }) }
   }
   res.json({ results, ok: results.filter((r) => r.status !== 'error').length, total: results.length })

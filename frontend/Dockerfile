@@ -31,6 +31,7 @@ COPY --from=build /app/dist ./dist
 # crashed at boot on ERR_MODULE_NOT_FOUND, and the site went down at healthcheck.
 # A glob can never leave a sibling behind. Tests live in test/ and are excluded.
 COPY --from=build /app/*.mjs ./
+COPY --from=build /app/crm ./crm
 COPY --from=build /app/tools/check-imports.mjs ./tools/check-imports.mjs
 COPY --from=build /app/data.real.json ./data.real.json
 COPY --from=build /app/lease-overlay.json ./lease-overlay.json
