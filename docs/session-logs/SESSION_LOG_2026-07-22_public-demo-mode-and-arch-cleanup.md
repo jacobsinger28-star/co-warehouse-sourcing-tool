@@ -117,3 +117,11 @@ Fixed on `main` (follow-up commit):
   demo broker sync → simulated toast; the real `/api/pipedrive/*` stays behind `requireAuth`
   and a demo visitor can't reach it).
 - Verified: build clean, 22 tests pass, demo broker-sync toast works, no console errors.
+
+Final trunk state: `origin/main` @ `e11bf76` holds the demo mode + App decomposition +
+arch cleanup + the Pipedrive fix, all unified. Branch cleanup: deleted the fully-merged
+local `feat/byok-phase2`; `phoneburner-integration` kept (genuinely unmerged — the
+PhoneBurner dialer work, deliberately "left as-is"). Remote `origin/feat/byok-secret-layer`
++ `origin/feat/multitenant-byok` are fully merged into main and deletable, but left in
+place — remote-branch deletion on the shared repo is left for an explicit go-ahead. No
+deploy run.
