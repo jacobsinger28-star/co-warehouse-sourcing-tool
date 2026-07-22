@@ -42,10 +42,11 @@ Wired all three above to real CRM writes, mirroring the proven Python writer
   exact deal title), records tagged with a **`sourcing-console`** label, facts go in
   a human-readable note (no fragile custom-field writes). `dryRun` previews payloads.
 - **`frontend/server.mjs`** — `POST /api/pipedrive/{status,broker,lead,leads}`
-  (auth-gated, rate-limited). Added to the runtime **Dockerfile COPY list is NOT
-  needed** here since server.mjs is copied whole — but note the recurring `.mjs`-copy
-  gotcha for any *new* imported module; `pipedrive.mjs` is imported by server.mjs, so
-  confirm it lands in the runtime image on deploy.
+  (auth-gated, rate-limited).
+- **`frontend/Dockerfile`** — the runtime stage copies each `.mjs` individually, so
+  added `COPY --from=build /app/pipedrive.mjs ./pipedrive.mjs`. Without it the deploy
+  crashloops `ERR_MODULE_NOT_FOUND` (the recurring gotcha that took prod down for
+  filterChat.mjs and phoneburner.mjs before).
 - **New `frontend/src/pipedrive.js`** — client (mirrors `phoneBurner.js`).
 - **`App.jsx`** — real handlers (`syncBroker` async, `pushPropToPd`, `pushSelectionToPd`);
   buttons show busy state + a toast with a link to the created record; when no token
