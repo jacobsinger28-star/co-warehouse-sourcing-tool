@@ -7,6 +7,7 @@ import { createHmac } from 'node:crypto'
 import {
   PLANS, billingEnabled, summarizeUsage, monthStartIso,
   verifyStripeSignature, handleStripeEvent, getBillingSummary, recordUsage,
+  entitlementsFor, shouldDegradeAi, createPortalSession,
 } from '../billing.mjs'
 
 const WHSEC = 'whsec_testsecret'
@@ -121,4 +122,65 @@ test('recordUsage refuses the legacy/default tenant', async () => {
   await recordUsage('default', 'llm.deals_chat', 1)
   await recordUsage(null, 'llm.deals_chat', 1)
   assert.equal(usage.length, 0)
+})
+
+test('entitlementsFor + shouldDegradeAi: trial caps at quota, paid never blocks', () => {
+  const under = entitlementsFor({ plan: 'trial', billing_status: 'trialing' }, { 'llm.deals_chat': 10 })
+  assert.equal(under.aiCalls.included, PLANS.trial.meteredAiCalls)
+  assert.equal(under.aiCalls.remaining, PLANS.trial.meteredAiCalls - 10)
+  assert.equal(under.aiCalls.over, false)
+  assert.equal(shouldDegradeAi(under), false)
+
+  const over = entitlementsFor({ plan: 'trial', billing_status: 'trialing' }, { 'llm.deals_chat': PLANS.trial.meteredAiCalls })
+  assert.equal(over.aiCalls.over, true)
+  assert.equal(over.aiCalls.remaining, 0)
+  assert.equal(shouldDegradeAi(over), true)          // free trial degrades at its cap
+
+  const paid = entitlementsFor({ plan: 'starter', billing_status: 'active' }, { 'llm.deals_chat': 99999 })
+  assert.equal(paid.paid, true)
+  assert.equal(shouldDegradeAi(paid), false)         // paid plans meter-and-bill, never cut off
+
+  const dunning = entitlementsFor({ plan: 'pro', billing_status: 'past_due' }, { 'llm.deals_chat': 99999 })
+  assert.equal(shouldDegradeAi(dunning), false)      // in dunning is still a live sub
+
+  const missing = entitlementsFor(null, {})          // no row → trial defaults, unmetered so far
+  assert.equal(missing.plan, 'trial')
+  assert.equal(shouldDegradeAi(missing), false)
+  assert.equal(shouldDegradeAi(null), false)
+})
+
+test('createPortalSession: enabled + customer → portal url; guards otherwise', async () => {
+  // Billing off → refuses before any network call.
+  await assert.rejects(
+    () => createPortalSession({ id: 'T1', stripe_customer_id: 'cus_1' }, { returnUrl: 'https://app/back' }),
+    (e) => e.code === 'not_enabled')
+
+  process.env.STRIPE_SECRET_KEY = 'sk_test_x'
+  let captured = null
+  globalThis.fetch = async (url, opts = {}) => {
+    captured = { url: String(url), body: opts.body?.toString() || '' }
+    return { ok: true, status: 200, json: async () => ({ url: 'https://billing.stripe.com/session/xyz' }) }
+  }
+  const out = await createPortalSession({ id: 'T1', stripe_customer_id: 'cus_1' }, { returnUrl: 'https://app/back' })
+  assert.equal(out.url, 'https://billing.stripe.com/session/xyz')
+  assert.match(captured.url, /billing_portal\/sessions/)
+  assert.match(captured.body, /customer=cus_1/)
+  assert.match(captured.body, /return_url=https/)
+
+  // No customer id on the tenant, and the DB lookup finds none → no_customer.
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/rest/v1/tenants')) return { ok: true, status: 200, json: async () => [{ stripe_customer_id: null }] }
+    throw new Error(`unexpected fetch ${url}`)
+  }
+  await assert.rejects(
+    () => createPortalSession({ id: 'T1' }, { returnUrl: 'https://app/back' }),
+    (e) => e.code === 'no_customer')
+})
+
+test('getBillingSummary exposes entitlements + canManage', async () => {
+  installMockDb()
+  const s = await getBillingSummary({ id: 'T1', source: 'db' })
+  assert.equal(s.canManage, false)                   // no stripe_customer_id + billing disabled
+  assert.ok(s.entitlements && s.entitlements.plan === 'trial')
+  assert.equal(s.usage.aiCallsRemaining, PLANS.trial.meteredAiCalls)
 })

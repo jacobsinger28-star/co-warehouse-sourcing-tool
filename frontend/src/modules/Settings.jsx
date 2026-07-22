@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import { css } from '../css.js'
 import Icon from '../Icon.jsx'
-import { getConnections, saveConnection, getBilling, startCheckout } from '../settingsApi.js'
+import { getConnections, saveConnection, getBilling, startCheckout, openBillingPortal } from '../settingsApi.js'
 
 const FIELD_LABEL = {
   api_key: 'API key', api_token: 'API token', access_token: 'Access token',
@@ -61,11 +61,29 @@ function FieldRow({ provider, field, writable, onSaved }) {
 // Plan & billing skeleton: reads /api/tenant/billing (plan, status, metered
 // usage) and offers checkout. Until Stripe is live the server 501s checkout and
 // this degrades to a preview of the plan catalog.
+const RETURN_NOTICE = {
+  success: { ok: true, text: 'Subscription active — thanks! Your plan is updated.' },
+  canceled: { ok: false, text: 'Checkout canceled — no charge was made.' },
+  managed: { ok: true, text: 'Billing updated.' },
+}
+
 function BillingSection() {
   const [b, setB] = useState(null)
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState('')
+  const [notice, setNotice] = useState(null)
   useEffect(() => { getBilling().then(setB).catch(() => setB({ error: true })) }, [])
+  // Returning from Stripe checkout/portal (?billing=success|canceled|managed):
+  // show a one-time notice and strip the param so a refresh doesn't repeat it.
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const r = url.searchParams.get('billing')
+    if (r && RETURN_NOTICE[r]) {
+      setNotice(RETURN_NOTICE[r])
+      url.searchParams.delete('billing')
+      window.history.replaceState({}, '', url)
+    }
+  }, [])
 
   if (!b || b.error) return null // billing surface is optional — never block integrations
   const head = (
@@ -90,6 +108,14 @@ function BillingSection() {
     } catch (e) { setMsg(e.message) }
     finally { setBusy('') }
   }
+  const manage = async () => {
+    setBusy('__portal__'); setMsg('')
+    try {
+      const { url } = await openBillingPortal()
+      if (url) window.location.assign(url)
+    } catch (e) { setMsg(e.message) }
+    finally { setBusy('') }
+  }
   const { aiCalls = 0, aiCallsIncluded = 0 } = b.usage || {}
   const pct = aiCallsIncluded ? Math.min(100, Math.round((aiCalls / aiCallsIncluded) * 100)) : 0
   const statusColor = b.status === 'active' ? 'var(--accent)' : b.status === 'past_due' ? '#ffb454' : 'var(--text3)'
@@ -97,6 +123,11 @@ function BillingSection() {
   return (
     <section style={css('margin-top:22px;')}>
       {head}
+      {notice && (
+        <div style={css(`display:flex;gap:8px;align-items:center;margin-bottom:10px;padding:10px 14px;border-radius:9px;font-size:12.5px;background:${notice.ok ? 'rgba(52,199,123,.1)' : 'rgba(240,180,60,.1)'};border:1px solid ${notice.ok ? 'rgba(52,199,123,.3)' : 'rgba(240,180,60,.3)'};color:var(--text2);`)}>
+          {notice.text}
+        </div>
+      )}
       <div style={css('padding:14px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:11px;')}>
         <div style={css('display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;')}>
           <div style={css('font-size:14px;font-weight:600;color:var(--text);')}>
@@ -120,6 +151,12 @@ function BillingSection() {
           <div style={css('font-size:11px;color:var(--text3);margin-top:5px;')}>Bring your own LLM key below to go unmetered.</div>
         </div>
         <div style={css('display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;')}>
+          {b.canManage && (
+            <button className="hov" disabled={busy !== ''} onClick={manage}
+              style={css('height:32px;padding:0 14px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-weight:600;background:var(--surface);color:var(--text);')}>
+              {busy === '__portal__' ? 'Opening…' : 'Manage billing'}
+            </button>
+          )}
           {Object.values(b.plans || {}).filter((p) => p.priceMonthly > 0).map((p) => (
             <button key={p.id} className="hov" disabled={p.id === b.plan || busy !== ''} onClick={() => upgrade(p.id)}
               style={css('height:32px;padding:0 14px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-weight:600;background:var(--surface);color:var(--text);'

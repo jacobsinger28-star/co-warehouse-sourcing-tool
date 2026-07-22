@@ -58,6 +58,58 @@ export function summarizeUsage(rows) {
   return out
 }
 
+// ── entitlements — turn the plan catalog into concrete this-cycle limits ──────
+// The one place plan limits are interpreted, so the server (enforcement), the
+// Settings summary, and the tests all agree on what a plan actually grants.
+
+/**
+ * Pure: the entitlement snapshot for a tenant row + its folded usage. No I/O.
+ * `paid` = a live subscription (active, or past_due while Stripe dunning runs) —
+ * those meter-and-bill and are never blocked; the free trial has no card, so its
+ * included AI calls are a hard cap, not just a soft meter.
+ */
+export function entitlementsFor(row, usage = {}) {
+  const plan = PLANS[row?.plan] || PLANS.trial
+  const status = row?.billing_status || 'trialing'
+  const paid = status === 'active' || status === 'past_due'
+  const used = Number(usage['llm.deals_chat'] || 0)
+  const included = plan.meteredAiCalls
+  return {
+    plan: plan.id, seats: plan.seats, status, paid,
+    aiCalls: { used, included, remaining: Math.max(0, included - used), over: used >= included },
+  }
+}
+
+/**
+ * Whether a metered tenant must stop riding SimiCapital's Anthropic key. Only the
+ * unpaid free trial degrades once its included calls are spent (no card on file to
+ * bill overage to); paid plans meter-and-bill and are never cut off. This single
+ * line is the block-vs-bill policy lever.
+ */
+export const shouldDegradeAi = (ent) => Boolean(ent && !ent.paid && ent.aiCalls.over)
+
+// Shared read: a tenant's billing row + this month's folded usage.
+async function loadTenantBilling(tenantId) {
+  const rows = await dbSelect('tenants',
+    `select=plan,billing_status,current_period_end,stripe_customer_id&id=eq.${enc(tenantId)}&limit=1`)
+  const usage = summarizeUsage(await dbSelect('usage_events',
+    `select=kind,qty&tenant_id=eq.${enc(tenantId)}&created_at=gte.${enc(monthStartIso())}&limit=10000`))
+  return { row: rows[0] || null, usage }
+}
+
+/**
+ * Live entitlement snapshot for server-side enforcement. Returns null for the
+ * legacy/default house workspace and when tenancy is off (both unmetered), and
+ * fails OPEN on a lookup error — a metering hiccup must never deny a user their AI.
+ */
+export async function aiEntitlement(tenant) {
+  if (!tenancyEnabled() || !tenant || tenant.source === 'legacy' || tenant.id === 'default') return null
+  try {
+    const { row, usage } = await loadTenantBilling(tenant.id)
+    return entitlementsFor(row, usage)
+  } catch (e) { console.error('[billing] entitlement lookup failed', e.message); return null }
+}
+
 /**
  * The billing state the Settings UI renders for req.tenant. The legacy/default
  * tenant is the house workspace — billing does not apply to it.
@@ -68,25 +120,25 @@ export async function getBillingSummary(tenant) {
   if (legacy) return { enabled: billingEnabled(), internal: true, plans: PLANS }
   let row = null, usage = {}
   if (tenancyEnabled()) {
-    try {
-      const rows = await dbSelect('tenants',
-        `select=plan,billing_status,current_period_end,stripe_customer_id&id=eq.${enc(tenant.id)}&limit=1`)
-      row = rows[0] || null
-      usage = summarizeUsage(await dbSelect('usage_events',
-        `select=kind,qty&tenant_id=eq.${enc(tenant.id)}&created_at=gte.${enc(monthStartIso())}&limit=10000`))
-    } catch (e) {
-      console.error('[billing] summary lookup failed', e.message)
-    }
+    try { ({ row, usage } = await loadTenantBilling(tenant.id)) }
+    catch (e) { console.error('[billing] summary lookup failed', e.message) }
   }
-  const plan = PLANS[row?.plan] || PLANS.trial
+  const ent = entitlementsFor(row, usage)
   return {
     enabled: billingEnabled(),
     internal: false,
-    plan: plan.id,
-    status: row?.billing_status || 'trialing',
+    plan: ent.plan,
+    status: ent.status,
     renewsAt: row?.current_period_end || null,
     hasPaymentMethod: Boolean(row?.stripe_customer_id),
-    usage: { period: monthStartIso(), aiCalls: usage['llm.deals_chat'] || 0, aiCallsIncluded: plan.meteredAiCalls },
+    canManage: billingEnabled() && Boolean(row?.stripe_customer_id),
+    usage: {
+      period: monthStartIso(),
+      aiCalls: ent.aiCalls.used,
+      aiCallsIncluded: ent.aiCalls.included,
+      aiCallsRemaining: ent.aiCalls.remaining,
+    },
+    entitlements: ent,
     plans: PLANS,
   }
 }
@@ -130,6 +182,25 @@ export async function createCheckout(tenant, planId, { successUrl, cancelUrl }) 
     success_url: successUrl,
     cancel_url: cancelUrl,
   })
+  return { url: session.url }
+}
+
+/**
+ * Deep-link to Stripe's hosted Customer Portal so a subscribed tenant can update
+ * its payment method, download invoices, or cancel — the "Manage billing" button.
+ * We store only the customer id; Stripe hosts the rest, so no card data ever
+ * touches this server. Throws {code:'not_enabled'} until Stripe is wired, and
+ * {code:'no_customer'} for a tenant that hasn't completed a checkout yet.
+ */
+export async function createPortalSession(tenant, { returnUrl }) {
+  if (!billingEnabled()) { const e = new Error('billing is not enabled on this server'); e.code = 'not_enabled'; throw e }
+  let customerId = tenant?.stripe_customer_id || null
+  if (!customerId && tenancyEnabled()) {
+    const rows = await dbSelect('tenants', `select=stripe_customer_id&id=eq.${enc(tenant.id)}&limit=1`)
+    customerId = rows[0]?.stripe_customer_id || null
+  }
+  if (!customerId) { const e = new Error('no active subscription to manage yet'); e.code = 'no_customer'; throw e }
+  const session = await stripePost('billing_portal/sessions', { customer: customerId, return_url: returnUrl })
   return { url: session.url }
 }
 

@@ -43,8 +43,10 @@ import { tenancyEnabled } from './db.mjs'
 import { pdConfigured, pdStatusInfo, syncBroker, pushLead } from './pipedrive.mjs'
 import { demoRouter, demoLoaded } from './demo.mjs'
 import { installRedaction, secretsEnabled, SecretResolver, writeSecret } from './secrets.mjs'
+import { parseLeaseRate, leaseRepRate } from './leaseRate.mjs'
 import {
-  billingEnabled, getBillingSummary, createCheckout, recordUsage,
+  billingEnabled, getBillingSummary, createCheckout, createPortalSession,
+  recordUsage, aiEntitlement, shouldDegradeAi,
   verifyStripeSignature, handleStripeEvent,
 } from './billing.mjs'
 
@@ -101,14 +103,25 @@ console.log(`[server] data ${hasData(DATA) ? `loaded (${DATA.props.length} props
 // GitHub auto-deploys (which carry no dataset) still flag lease-listed props
 // once the baked/volume dataset loads. Refresh: rerun the LoopNet sweep and
 // regenerate lease-overlay.json.
+//
+// The overlay note carries the asking rate only as free text ("… $8.50 SF/YR").
+// We parse it into a clean numeric $/SF/YR here — the single point where p.lease
+// is attached — so the field survives any overlay regen without a generator step:
+//   l.rate       = per-listing asking rate (null when Price Upon Request)
+//   p.lease.rate = representative = MIN asking across the property's listings
+//                  (cheapest available space); omitted when nothing states a rate.
 const LEASE_OVERLAY = readJson(join(__dirname, 'lease-overlay.json'))
 if (hasData(DATA) && LEASE_OVERLAY?.props) {
-  let leaseN = 0
+  let leaseN = 0, rateN = 0
   for (const p of DATA.props) {
     const l = LEASE_OVERLAY.props[p.id]
-    if (l) { p.lease = l; leaseN++ }
+    if (!l) continue
+    if (Array.isArray(l.listings)) for (const li of l.listings) li.rate = parseLeaseRate(li.note)
+    const rate = leaseRepRate(l)
+    if (rate !== undefined) { l.rate = rate; rateN++ }
+    p.lease = l; leaseN++
   }
-  console.log(`[server] lease overlay: ${leaseN} of ${Object.keys(LEASE_OVERLAY.props).length} flagged props present in dataset`)
+  console.log(`[server] lease overlay: ${leaseN} of ${Object.keys(LEASE_OVERLAY.props).length} flagged props present in dataset (${rateN} with a parsed $/SF/YR rate)`)
 }
 if (SUPABASE_ENABLED && ALLOWED_ENTRIES.length === 0)
   console.warn('[server] ⚠ Supabase configured but ALLOWED_EMAILS is empty — every Supabase login will be refused (fail closed). Set ALLOWED_EMAILS in Railway → Variables.')
@@ -316,6 +329,24 @@ app.post('/api/tenant/billing/checkout', requireAuth, async (req, res) => {
   }
 })
 
+// Deep-link to Stripe's hosted Customer Portal (manage card / invoices / cancel).
+// Mirrors checkout: 501 until Stripe is live, 409 for a tenant that hasn't
+// subscribed yet (no customer to manage), else { url } to redirect the browser to.
+app.post('/api/tenant/billing/portal', requireAuth, async (req, res) => {
+  const tenant = req.tenant
+  if (!isRealTenant(tenant))
+    return res.status(400).json({ error: 'The shared workspace is not billable.' })
+  const origin = req.headers.origin || `https://${req.headers.host}`
+  try {
+    res.json(await createPortalSession(tenant, { returnUrl: `${origin}/?billing=managed` }))
+  } catch (e) {
+    if (e.code === 'not_enabled') return res.status(501).json({ error: e.message })
+    if (e.code === 'no_customer') return res.status(409).json({ error: e.message })
+    console.error('[billing/portal]', e)
+    res.status(502).json({ error: e.message })
+  }
+})
+
 // Stripe → server. No requireAuth (Stripe can't log in) — the HMAC signature over
 // the RAW body is the authentication. Always 200 on verified events (even ignored
 // ones) so Stripe stops retrying; 400/501 only when verification itself fails.
@@ -374,6 +405,19 @@ app.post('/api/deals-chat', requireAuth, async (req, res) => {
   const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : []
   try {
     const creds = await dealsCreds(req)
+    if (creds?.meteredLLM) {
+      // Riding on SimiCapital's Anthropic key → the plan's included AI calls apply.
+      // A spent-out free trial must bring its own key or upgrade (no card on file to
+      // bill overage to); paid plans meter-and-bill and pass straight through. Dormant
+      // today: aiEntitlement() is null for the legacy/default workspace and when
+      // tenancy is off, so this can only fire for a provisioned tenant over quota.
+      const ent = await aiEntitlement(req.tenant)
+      if (shouldDegradeAi(ent))
+        return res.status(402).json({
+          error: 'Monthly trial AI limit reached. Add your own Anthropic key in Settings to continue, or upgrade your plan.',
+          code: 'ai_quota_exceeded', entitlements: ent,
+        })
+    }
     const answer = await answerDealsQuestion(question, history, creds)
     if (creds?.meteredLLM) recordUsage(req.tenant.id, 'llm.deals_chat', 1, { route: 'deals-chat' }) // fire-and-forget
     res.json(answer)
