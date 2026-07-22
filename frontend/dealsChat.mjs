@@ -86,11 +86,12 @@ function buildDoc(deal, notesByDeal, stageName, pipelineName) {
   return lines.join('\n')
 }
 
-let corpus = null      // { deals: [{id, title, status, stage, pipeline, value, currency, updated, doc, url}], syncedAt }
-let syncing = null
+// Per-tenant deal-book cache: cacheKey ('default' = legacy tenant, else tenant id)
+// -> { corpus, syncing }. Keeps one tenant's Pipedrive deal book from ever being
+// served to another.
+const corpora = new Map()
 
-async function syncCorpus() {
-  const token = pipedriveToken()
+async function syncCorpus(token, cacheKey) {
   if (!token) throw new Error('PIPEDRIVE_API_TOKEN not configured')
   const [deals, notes, stages, pipelines] = await Promise.all([
     pdPaged('/deals?status=all_not_deleted', token),
@@ -106,7 +107,7 @@ async function syncCorpus() {
     if (!notesByDeal.has(n.deal_id)) notesByDeal.set(n.deal_id, [])
     notesByDeal.get(n.deal_id).push(n)
   }
-  corpus = {
+  const corpus = {
     syncedAt: Date.now(),
     deals: deals.map((d) => ({
       id: d.id,
@@ -125,17 +126,31 @@ async function syncCorpus() {
       doc: buildDoc(d, notesByDeal, stageName, pipelineName),
     })),
   }
-  console.log(`[deals-chat] synced ${corpus.deals.length} deals, ${notes.length} notes from Pipedrive`)
+  const slot = corpora.get(cacheKey) || {}
+  slot.corpus = corpus
+  corpora.set(cacheKey, slot)
+  console.log(`[deals-chat] synced ${corpus.deals.length} deals, ${notes.length} notes from Pipedrive (tenant ${cacheKey})`)
   return corpus
 }
 
-async function getCorpus() {
-  if (corpus && Date.now() - corpus.syncedAt < SYNC_TTL_MS) return corpus
-  if (!syncing) syncing = syncCorpus().finally(() => { syncing = null })
-  // if we have a stale corpus, serve it while the refresh runs; else wait
-  if (corpus) { syncing.catch(() => {}); return corpus }
-  return syncing
+// Per-tenant corpus fetch: token + cacheKey come from the caller (SecretResolver
+// via req.tenant, or the env fallback for the legacy tenant).
+async function getCorpus(token, cacheKey) {
+  const slot = corpora.get(cacheKey) || {}
+  corpora.set(cacheKey, slot)
+  if (slot.corpus && Date.now() - slot.corpus.syncedAt < SYNC_TTL_MS) return slot.corpus
+  if (!slot.syncing) slot.syncing = syncCorpus(token, cacheKey).finally(() => { slot.syncing = null })
+  // serve a stale corpus while the refresh runs; else wait
+  if (slot.corpus) { slot.syncing.catch(() => {}); return slot.corpus }
+  return slot.syncing
 }
+
+// creds present (from req.tenant) → strict use, so a real tenant with no key never
+// falls back to the platform env token. creds absent (legacy tenant / local dev /
+// tests) → the env + sibling-.env fallback, i.e. today's single-tenant behavior.
+const pdTokenFrom = (creds) => (creds ? creds.pipedriveToken : pipedriveToken()) || null
+const anthropicKeyFrom = (creds) => (creds ? creds.anthropicKey : anthropicKey()) || null
+const cacheKeyFrom = (creds) => (creds && creds.cacheKey) || 'default'
 
 // ---------------------------------------------------------------- retrieval
 const tokenize = (s) => (s.toLowerCase().match(/[a-z0-9]{2,}/g) || [])
@@ -192,8 +207,8 @@ function snippetsFor(deal, terms) {
 
 // Search the deal book: `preset` runs a known query; `q` is keyword search over
 // titles + notes. No `q`/`preset` returns the whole book (for the live table).
-export async function searchDeals({ q = '', preset = '' } = {}) {
-  const c = await getCorpus()
+export async function searchDeals({ q = '', preset = '' } = {}, creds) {
+  const c = await getCorpus(pdTokenFrom(creds), cacheKeyFrom(creds))
   const base = { dealCount: c.deals.length, syncedAt: c.syncedAt }
 
   if (preset && PRESETS[preset]) {
@@ -235,10 +250,10 @@ function buildContext(question, c) {
 }
 
 // history: [{role: 'user'|'assistant', content: string}, ...] (prior turns, text only)
-export async function answerDealsQuestion(question, history = []) {
-  const key = anthropicKey()
+export async function answerDealsQuestion(question, history = [], creds) {
+  const key = anthropicKeyFrom(creds)
   if (!key) throw new Error('ANTHROPIC_API_KEY not configured')
-  const c = await getCorpus()
+  const c = await getCorpus(pdTokenFrom(creds), cacheKeyFrom(creds))
   const { top, context } = buildContext(question, c)
 
   const client = new Anthropic({ apiKey: key })

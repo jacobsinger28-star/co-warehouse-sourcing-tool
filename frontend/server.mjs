@@ -42,7 +42,7 @@ import { resolveTenant, DEFAULT_TENANT } from './tenants.mjs'
 import { tenancyEnabled } from './db.mjs'
 import { pdConfigured, pdStatusInfo, syncBroker, pushLead } from './pipedrive.mjs'
 import { demoRouter, demoLoaded } from './demo.mjs'
-import { installRedaction, secretsEnabled } from './secrets.mjs'
+import { installRedaction, secretsEnabled, SecretResolver } from './secrets.mjs'
 
 // Route all console output through the secret redactor before anything can log —
 // so a decrypted key can never reach the logs, a traceback, or summary output.
@@ -211,6 +211,21 @@ app.post('/api/data', requireAuth, (req, res) => {
   res.json(DATA)
 })
 
+// Build per-tenant deal-book credentials (Pipedrive token + Anthropic key) from
+// req.tenant. The legacy/default tenant returns undefined → dealsChat keeps using
+// today's env fallback. A real tenant resolves its own keys; a missing Pipedrive
+// token throws 'not_configured' (→ 503, never the platform key), and the Anthropic
+// key falls back to the platform key ("use ours") when the tenant hasn't BYO'd one.
+async function dealsCreds(req) {
+  const tenant = req.tenant
+  if (!tenant || tenant.source === 'legacy') return undefined
+  const resolver = new SecretResolver(tenant)
+  const pipedriveToken = await resolver.get('crm.pipedrive', 'api_token')
+  if (!pipedriveToken) { const e = new Error('Pipedrive not configured for this workspace'); e.code = 'not_configured'; throw e }
+  const anthropicKey = (await resolver.get('llm.anthropic', 'api_key')) || process.env.ANTHROPIC_API_KEY || ''
+  return { pipedriveToken, anthropicKey, cacheKey: tenant.id }
+}
+
 // Deals DB, no-LLM path: the live deal book + keyword search + known-question
 // presets, straight from Pipedrive. Same password gate as /api/data.
 //   {password}                    -> every deal (for the table)
@@ -218,11 +233,13 @@ app.post('/api/data', requireAuth, (req, res) => {
 //   {password, preset: "tracking"}-> a known question (tracking/open/won/lost/recent/noted)
 app.post('/api/deals', requireAuth, async (req, res) => {
   try {
+    const creds = await dealsCreds(req)
     res.json(await searchDeals({
       q: String(req.body?.q || '').slice(0, 500),
       preset: String(req.body?.preset || ''),
-    }))
+    }, creds))
   } catch (e) {
+    if (e.code === 'not_configured') return res.status(503).json({ error: e.message })
     console.error('[deals]', e)
     res.status(502).json({ error: e?.message || 'deals lookup failed' })
   }
@@ -235,8 +252,10 @@ app.post('/api/deals-chat', requireAuth, async (req, res) => {
   if (!question) return res.status(400).json({ error: 'question required' })
   const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : []
   try {
-    res.json(await answerDealsQuestion(question, history))
+    const creds = await dealsCreds(req)
+    res.json(await answerDealsQuestion(question, history, creds))
   } catch (e) {
+    if (e.code === 'not_configured') return res.status(503).json({ error: e.message })
     console.error('[deals-chat]', e)
     res.status(502).json({ error: e?.message || 'deals chat failed' })
   }
