@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { css } from './css.js'
 import { RealDataContext } from './RealDataContext.js'
 import Icon from './Icon.jsx'
@@ -14,7 +14,7 @@ import DealsDB from './modules/DealsDB.jsx'
 import ReuseFinder from './modules/ReuseFinder.jsx'
 import Properties from './modules/Properties.jsx'
 import Settings from './modules/Settings.jsx'
-import { ALLOWED_MARKETS, onlyAllowed, EMPTY_FILTERS } from './modules/propertiesShared.js'
+import { marketOptions, EMPTY_FILTERS } from './modules/propertiesShared.js'
 
 const TOTAL_UNIVERSE = 1847
 
@@ -58,7 +58,10 @@ export default function App() {
   // the live scrape DB (/api/live/rows) whenever it has listings.
   const realData = useContext(RealDataContext)
   const [liveOn, setLiveOn] = useState(null)
-  const [dataset, setDataset] = useState({ props: onlyAllowed(PROPS), brokers: BROKERS, isReal: false, counts: null })
+  // Full universe is kept in the dataset (nationwide on-market + off-market); the
+  // default-market scope is applied at view time (visibleProps), not here, so the
+  // picker + search can still reach every US market.
+  const [dataset, setDataset] = useState({ props: PROPS, brokers: BROKERS, isReal: false, counts: null })
   const refreshLiveRows = async () => {
     try {
       const d = await liveRows()
@@ -76,7 +79,9 @@ export default function App() {
     // from datetime.utcnow().isoformat(), so plain string compare is correct).
     const tagNew = (p) => (p.firstSeen && runStart && p.firstSeen >= runStart ? { ...p, isNew: true } : p)
     const merged = liveProps ? [...base.filter((p) => p.channel !== 'on'), ...liveProps.map(tagNew)] : base
-    const props = onlyAllowed(merged)
+    // Keep the full nationwide universe; the default-market scope is applied in
+    // visibleProps (Properties.jsx), so the picker + search can reach all US markets.
+    const props = merged
     const brokers = liveOn?.brokers?.length ? liveOn.brokers : (d?.brokers?.length ? d.brokers : BROKERS)
     setDataset({
       props, brokers, isReal: hasReal || Boolean(liveProps),
@@ -86,6 +91,9 @@ export default function App() {
     setTotal(props.length)
   }, [realData, liveOn, runStart])
   const propsData = dataset.props
+  // Market-picker options: target markets first, then every other US market in the
+  // data. Lets the header picker reach the full nationwide scrape (search is global).
+  const mktOpts = useMemo(() => marketOptions(propsData, MARKETS), [propsData])
   // Subscribe to the shared call queue so the "AI Caller" nav badge re-renders the
   // moment something is added or removed.
   const queueCount = useQueueCount()
@@ -194,14 +202,23 @@ export default function App() {
         <div className="sample-pill" title={DEMO ? 'Synthetic demo data — nothing here is real' : dataset.isReal ? `Live sourced data — ${fmtInt(dataset.counts?.props ?? propsData.length)} records (owner/broker PII · not committed)` : 'All records shown are sample data'} style={css(`display:flex;align-items:center;gap:6px;height:22px;padding:0 9px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text2);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;`)}><span style={css(`width:5px;height:5px;border-radius:50%;background:${dataset.isReal ? 'var(--accent)' : 'var(--text3)'};`)} />{DEMO ? `Demo data · ${fmtInt(dataset.counts?.props ?? propsData.length)}` : dataset.isReal ? `Live data · ${fmtInt(dataset.counts?.props ?? propsData.length)}` : 'Sample data'}</div>
         <div className="markets-btn" style={css('position:relative;')}>
           <button className="hov" aria-label="Select markets" aria-expanded={marketsMenu} onClick={() => setMarketsMenu((v) => !v)} style={css('display:flex;align-items:center;gap:8px;height:30px;padding:0 11px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:12.5px;')}>
-            <span style={css('width:6px;height:6px;border-radius:50%;background:var(--accent);')} />{filters.markets.length === 0 ? 'All markets' : filters.markets.length === 1 ? filters.markets[0] : `${filters.markets.length} markets`}<Icon name="chevronDown" size={11} sw={2} style={css('color:var(--text3);')} />
+            <span style={css('width:6px;height:6px;border-radius:50%;background:var(--accent);')} />{filters.markets.length === 0 ? 'Target markets' : filters.markets.length === 1 ? filters.markets[0] : `${filters.markets.length} markets`}<Icon name="chevronDown" size={11} sw={2} style={css('color:var(--text3);')} />
           </button>
           {marketsMenu && (
             <>
               <div onClick={() => setMarketsMenu(false)} style={css('position:fixed;inset:0;z-index:70;')} />
               <div style={css('position:absolute;top:36px;left:0;z-index:71;width:220px;max-height:340px;overflow-y:auto;background:var(--surface);border:1px solid var(--border2);border-radius:10px;box-shadow:0 18px 44px rgba(0,0,0,.5);padding:6px;animation:fadein .12s ease;')}>
-                <button className="hov" onClick={() => setF('markets', [])} style={css(`display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;background:${filters.markets.length === 0 ? 'var(--accent-dim)' : 'transparent'};border:none;border-radius:7px;color:var(--text);font-size:12.5px;`)}><span style={css(`width:14px;height:14px;border-radius:4px;border:1px solid ${filters.markets.length === 0 ? 'var(--accent)' : 'var(--border2)'};background:${filters.markets.length === 0 ? 'var(--accent)' : 'transparent'};flex:0 0 auto;`)} />All markets</button>
-                {MARKETS.filter((m) => ALLOWED_MARKETS.has(m)).map((m) => {
+                <button className="hov" onClick={() => setF('markets', [])} style={css(`display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;background:${filters.markets.length === 0 ? 'var(--accent-dim)' : 'transparent'};border:none;border-radius:7px;color:var(--text);font-size:12.5px;`)}><span style={css(`width:14px;height:14px;border-radius:4px;border:1px solid ${filters.markets.length === 0 ? 'var(--accent)' : 'var(--border2)'};background:${filters.markets.length === 0 ? 'var(--accent)' : 'transparent'};flex:0 0 auto;`)} />Target markets (default)</button>
+                {mktOpts.buy.map((m) => {
+                  const on = filters.markets.includes(m)
+                  return (
+                    <button key={m} className="hov" onClick={() => toggleInArr('markets', m)} style={css(`display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;background:${on ? 'var(--accent-dim)' : 'transparent'};border:none;border-radius:7px;color:var(--text);font-size:12.5px;`)}><span style={css(`display:flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:4px;border:1px solid ${on ? 'var(--accent)' : 'var(--border2)'};background:${on ? 'var(--accent)' : 'transparent'};flex:0 0 auto;color:#06120F;`)}>{on && <Icon name="check" size={10} sw={3} />}</span>{m}</button>
+                  )
+                })}
+                {mktOpts.rest.length > 0 && (
+                  <div style={css('padding:8px 10px 4px;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);')}>Other US markets · {mktOpts.rest.length}</div>
+                )}
+                {mktOpts.rest.map((m) => {
                   const on = filters.markets.includes(m)
                   return (
                     <button key={m} className="hov" onClick={() => toggleInArr('markets', m)} style={css(`display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;background:${on ? 'var(--accent-dim)' : 'transparent'};border:none;border-radius:7px;color:var(--text);font-size:12.5px;`)}><span style={css(`display:flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:4px;border:1px solid ${on ? 'var(--accent)' : 'var(--border2)'};background:${on ? 'var(--accent)' : 'transparent'};flex:0 0 auto;color:#06120F;`)}>{on && <Icon name="check" size={10} sw={3} />}</span>{m}</button>

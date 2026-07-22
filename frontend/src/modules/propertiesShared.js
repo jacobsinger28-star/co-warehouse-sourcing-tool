@@ -4,10 +4,25 @@
 // visibleProps (Properties) all read the same market allowlist / empty-filter
 // shape without duplicating it.
 
-// Markets shown for now — everything else (Cleveland + the national on-market
-// scrape noise) is hidden from the view. Widen this set to re-show a metro.
+// Buy-box "target markets" (the list Jake Diamond asked for). These are the
+// DEFAULT scope, NOT a hard cut: the nationwide on-market scrape is stored and
+// loaded in full, but with no market selected and no search the Properties view
+// shows only these. The market picker + global search still reach any US market
+// (see visibleProps in Properties.jsx and marketOptions below).
 export const ALLOWED_MARKETS = new Set(['Charlotte', 'Raleigh', 'Charleston', 'Columbus', 'Cleveland', 'Miami', 'Boca Raton', 'West Palm Beach', 'Nashville', 'Orlando'])
-export const onlyAllowed = (props) => props.filter((p) => ALLOWED_MARKETS.has(p.mkt))
+
+// Market-picker options from whatever data is loaded: target markets first (in
+// the caller's canonical order), then every other US market present in the data
+// (alphabetical) — so the picker can reach the full nationwide scrape while
+// keeping the target markets on top. Returns { buy, rest }.
+export const marketOptions = (props, canonicalOrder = []) => {
+  const present = new Set((props || []).map((p) => p.mkt).filter(Boolean))
+  const buy = canonicalOrder.filter((m) => ALLOWED_MARKETS.has(m) && present.has(m))
+  for (const m of [...present].filter((m) => ALLOWED_MARKETS.has(m)).sort())
+    if (!buy.includes(m)) buy.push(m)
+  const rest = [...present].filter((m) => !ALLOWED_MARKETS.has(m)).sort()
+  return { buy, rest }
+}
 
 // Full filter set — parity with the off-market tool's map/dashboard. Numeric
 // bounds are null-inclusive: a row with the field absent passes through, so
