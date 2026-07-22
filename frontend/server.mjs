@@ -42,7 +42,7 @@ import { resolveTenant, DEFAULT_TENANT } from './tenants.mjs'
 import { tenancyEnabled } from './db.mjs'
 import { pdConfigured, pdStatusInfo, syncBroker, pushLead } from './pipedrive.mjs'
 import { demoRouter, demoLoaded } from './demo.mjs'
-import { installRedaction, secretsEnabled, SecretResolver } from './secrets.mjs'
+import { installRedaction, secretsEnabled, SecretResolver, writeSecret } from './secrets.mjs'
 
 // Route all console output through the secret redactor before anything can log —
 // so a decrypted key can never reach the logs, a traceback, or summary output.
@@ -209,6 +209,64 @@ app.use('/api/deals', rateLimit(60))
 app.post('/api/data', requireAuth, (req, res) => {
   if (!hasData(DATA)) return res.status(404).json({ error: 'no real data on this server' })
   res.json(DATA)
+})
+
+// ── tenant integrations (BYOK) — the Settings surface ────────────────────────
+// This catalog drives the Settings UI and validates writes. Secret VALUES are
+// never returned by any route here — only masked configured/source status.
+const CONNECTORS = [
+  { provider: 'llm.anthropic', label: 'Anthropic', category: 'AI / LLM', authModel: 'static', fields: ['api_key'],
+    note: "Powers the Deals AI. Leave blank to use SimiCapital's key (metered)." },
+  { provider: 'crm.pipedrive', label: 'Pipedrive', category: 'CRM', authModel: 'static', fields: ['api_token'],
+    note: 'Your API token (Pipedrive → Personal preferences → API). Syncs brokers + pushes leads.' },
+  { provider: 'dialer.phoneburner', label: 'PhoneBurner', category: 'Outreach', authModel: 'oauth2',
+    fields: ['client_id', 'client_secret', 'redirect_uri'],
+    note: 'Your PhoneBurner OAuth app (Professional tier). Unlocks the power dialer.' },
+]
+const CONNECTOR_FIELD = new Set(CONNECTORS.flatMap((c) => c.fields.map((f) => `${c.provider}/${f}`)))
+const isRealTenant = (t) => Boolean(t && t.source !== 'legacy' && t.id !== 'default')
+
+app.use('/api/tenant', rateLimit(60))
+
+// Masked status of every connector for this tenant (never any value).
+app.post('/api/tenant/connections', requireAuth, async (req, res) => {
+  const tenant = req.tenant
+  const resolver = new SecretResolver(tenant)
+  const real = isRealTenant(tenant)
+  try {
+    const connectors = []
+    for (const c of CONNECTORS) {
+      const configured = await resolver.configured(c.provider)
+      connectors.push({
+        provider: c.provider, label: c.label, category: c.category, authModel: c.authModel,
+        fields: c.fields, note: c.note, configured, source: configured ? (real ? 'tenant' : 'env') : null,
+      })
+    }
+    res.json({
+      connectors,
+      writable: secretsEnabled() && real, // per-tenant writes need the KEK + a real tenant
+      tenant: { slug: tenant?.slug || null, name: tenant?.name || null, real },
+    })
+  } catch (e) { console.error('[connections]', e); res.status(502).json({ error: e.message }) }
+})
+
+// Store one connector field (write-only). Refuses the shared/legacy workspace.
+app.post('/api/tenant/connections/set', requireAuth, async (req, res) => {
+  const tenant = req.tenant
+  if (!isRealTenant(tenant))
+    return res.status(400).json({ error: 'The shared workspace uses server-managed keys — bring-your-own-keys needs a provisioned tenant.' })
+  if (!secretsEnabled())
+    return res.status(400).json({ error: 'Encrypted secrets are not enabled on this server (set SECRETS_KEK).' })
+  const provider = String(req.body?.provider || '')
+  const field = String(req.body?.field || '')
+  const value = String(req.body?.value || '')
+  if (!CONNECTOR_FIELD.has(`${provider}/${field}`)) return res.status(400).json({ error: 'unknown connector field' })
+  if (!value) return res.status(400).json({ error: 'a value is required' })
+  const conn = CONNECTORS.find((c) => c.provider === provider)
+  try {
+    await writeSecret(tenant.id, provider, field, value, { authModel: conn.authModel })
+    res.json({ ok: true, provider, field, configured: true }) // never echo the value
+  } catch (e) { console.error('[connections/set]', e); res.status(502).json({ error: e.message }) }
 })
 
 // Build per-tenant deal-book credentials (Pipedrive token + Anthropic key) from

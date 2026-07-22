@@ -13,6 +13,7 @@ import AICaller from './modules/AICaller.jsx'
 import DealsDB from './modules/DealsDB.jsx'
 import ReuseFinder from './modules/ReuseFinder.jsx'
 import Properties from './modules/Properties.jsx'
+import Settings from './modules/Settings.jsx'
 import { ALLOWED_MARKETS, onlyAllowed, EMPTY_FILTERS } from './modules/propertiesShared.js'
 
 const TOTAL_UNIVERSE = 1847
@@ -21,7 +22,7 @@ const TOTAL_UNIVERSE = 1847
 const tabBtn = (active) =>
   `flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:transparent;color:${active ? 'var(--accent)' : 'var(--text2)'};font-size:10px;font-weight:${active ? '600' : '500'};cursor:pointer;`
 
-const MODULE_SUB = { properties: 'Off-market + on-market universe', supply: 'CoStar market supply', caller: 'AI outreach cockpit', deals: 'Deal & LOI memory', reuse: 'Street View reuse sweep' }
+const MODULE_SUB = { properties: 'Off-market + on-market universe', supply: 'CoStar market supply', caller: 'AI outreach cockpit', deals: 'Deal & LOI memory', reuse: 'Street View reuse sweep', settings: 'API keys & integrations' }
 
 // App is the shell: top bar, module switcher, mobile sheets, account menu, and the
 // dataset + sourcing state the top bar shares with the Properties module. Each
@@ -45,6 +46,9 @@ export default function App() {
   const [stopping, setStopping] = useState(false)  // stop requested, waiting for the backend job to actually halt
   const [total, setTotal] = useState(TOTAL_UNIVERSE)
   const [newCount, setNewCount] = useState(0)
+  // started_at of the latest scrape job (running or finished) — rows whose
+  // firstSeen is at/after it were found by that run and get the NEW badge.
+  const [runStart, setRunStart] = useState(null)
   const [lastUpdated, setLastUpdated] = useState('2m ago')
   const [sources, setSources] = useState(SCRAPE_SOURCES.map((s) => ({ ...s })))
 
@@ -68,7 +72,10 @@ export default function App() {
     const liveProps = liveOn?.props?.length ? liveOn.props : null
     if (!hasReal && !liveProps) return
     const base = hasReal ? d.props : PROPS
-    const merged = liveProps ? [...base.filter((p) => p.channel !== 'on'), ...liveProps] : base
+    // Badge rows first seen during the latest run (ISO strings — both sides come
+    // from datetime.utcnow().isoformat(), so plain string compare is correct).
+    const tagNew = (p) => (p.firstSeen && runStart && p.firstSeen >= runStart ? { ...p, isNew: true } : p)
+    const merged = liveProps ? [...base.filter((p) => p.channel !== 'on'), ...liveProps.map(tagNew)] : base
     const props = onlyAllowed(merged)
     const brokers = liveOn?.brokers?.length ? liveOn.brokers : (d?.brokers?.length ? d.brokers : BROKERS)
     setDataset({
@@ -77,7 +84,7 @@ export default function App() {
       meta: hasReal ? { compMax: d.compMax, cityCeil: d.cityCeil, cityLive: d.cityLive } : undefined,
     })
     setTotal(props.length)
-  }, [realData, liveOn])
+  }, [realData, liveOn, runStart])
   const propsData = dataset.props
   // Subscribe to the shared call queue so the "AI Caller" nav badge re-renders the
   // moment something is added or removed.
@@ -110,6 +117,7 @@ export default function App() {
     // keep showing the widget so a stop-in-progress doesn't look like nothing
     // happened, and the poller can't flip us back to a live "Sourcing" label.
     if (!running) setStopping(false)
+    if (s.started_at) setRunStart(s.started_at)
     setNewCount(running ? Math.max(0, totalListings - runBase.current) : (s.listings_found || 0))
     const max = Math.max(1, ...Object.values(counts))
     // s.sites = per-site progress of the current/last run (status/found/error)
@@ -137,6 +145,10 @@ export default function App() {
   }, [sourcing, stopping])
 
   const aggP = sources.reduce((a, b) => a + b.p, 0) / sources.length
+  // rows currently badged NEW (found by the latest run) — drives the "+N new"
+  // pill next to Keep Sourcing, which filters the Properties views to just them
+  const freshCount = dataset.props.reduce((a, p) => a + (p.isNew ? 1 : 0), 0)
+  const toggleNewFilter = () => { setModule('properties'); setF('newOnly', !filters.newOnly) }
 
   // Start/stop the REAL scrape job on the server. Optimistic flip; the status
   // poller is the source of truth and corrects state within one tick.
@@ -204,6 +216,11 @@ export default function App() {
 
         {!sourcing ? (
           <>
+            {freshCount > 0 && (
+              <button className="sourcing-full hov tap" onClick={toggleNewFilter} aria-pressed={filters.newOnly} title={filters.newOnly ? 'Showing only listings found by the last sourcing run — click to show all' : 'Show only the listings found by the last sourcing run'} style={css(`display:flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:7px;font-size:12px;font-weight:600;font-family:var(--mono);${filters.newOnly ? 'background:var(--accent);border:none;color:#06120F;' : 'background:var(--accent-dim);border:1px solid var(--accent-line);color:var(--accent);'}`)}>
+                +{freshCount} new
+              </button>
+            )}
             <button className="sourcing-full hov tap" onClick={() => startSourcing()} style={css('display:flex;align-items:center;gap:8px;height:32px;padding:0 16px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;box-shadow:0 0 0 1px var(--accent-line);')}>
               <span style={css('width:7px;height:7px;border-radius:50%;background:#06120F;')} />Keep Sourcing
             </button>
@@ -263,6 +280,7 @@ export default function App() {
           <button className="hov" onClick={() => goModule('caller')} style={css(seg(module === 'caller'))}>AI Caller{queueCount > 0 && <span style={css('display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 5px;background:var(--accent);color:#06120F;border-radius:9px;font-size:10px;font-weight:700;font-family:var(--mono);')}>{queueCount}</span>}</button>
           <button className="hov" onClick={() => goModule('deals')} style={css(seg(module === 'deals'))}>Deals DB</button>
           <button className="hov" onClick={() => goModule('supply')} style={css(seg(module === 'supply'))}>Supply Model</button>
+          <button className="hov" onClick={() => goModule('settings')} style={css(seg(module === 'settings'))}>Settings</button>
         </div>
         <span style={css('color:var(--text3);font-size:11.5px;')}>{MODULE_SUB[module]}</span>
         <div style={css('flex:1;')} />
@@ -291,11 +309,12 @@ export default function App() {
         {module === 'caller' && <AICaller />}
         {module === 'deals' && <DealsDB />}
         {module === 'reuse' && <ReuseFinder />}
+        {module === 'settings' && <Settings />}
       </div>
 
       {/* ===================== BOTTOM TAB BAR (phone) ===================== */}
       <div className="bottom-tabs" style={css('flex:0 0 auto;align-items:stretch;height:56px;border-top:1px solid var(--border);background:var(--surface);')}>
-        {[['properties', 'Properties', 'grid'], ['reuse', 'Reuse', 'recycle'], ['caller', 'Caller', 'phone'], ['deals', 'Deals', 'database'], ['supply', 'Supply', 'bars']].map(([k, label, icon]) => (
+        {[['properties', 'Properties', 'grid'], ['reuse', 'Reuse', 'recycle'], ['caller', 'Caller', 'phone'], ['deals', 'Deals', 'database'], ['supply', 'Supply', 'bars'], ['settings', 'Settings', 'users']].map(([k, label, icon]) => (
           <button key={k} onClick={() => goModule(k)} style={css(tabBtn(module === k))}><Icon name={icon} size={20} sw={1.8} />{label}</button>
         ))}
       </div>
@@ -319,7 +338,7 @@ export default function App() {
             <div style={css('display:flex;align-items:center;gap:9px;margin-bottom:14px;')}><span style={css(`width:9px;height:9px;border-radius:50%;background:${sourcing && !stopping ? 'var(--accent)' : 'var(--text3)'};${sourcing && !stopping ? 'animation:pulse 1.1s infinite;' : ''}`)} /><span style={css('font-size:15px;font-weight:600;')}>{stopping ? 'Stopping…' : sourcing ? 'Sourcing live' : 'Sourcing paused'}</span><button className="tap" onClick={() => setStatusOpen(false)} aria-label="Close" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button></div>
             <div style={css('display:flex;gap:18px;margin-bottom:16px;')}>
               <div><div style={css('font-family:var(--mono);font-size:22px;font-weight:500;')}>{fmtInt(total)}</div><div style={css('font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;')}>scanned</div></div>
-              <div><div style={css('font-family:var(--mono);font-size:22px;font-weight:500;color:var(--accent);')}>+{newCount}</div><div style={css('font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;')}>new</div></div>
+              <div onClick={freshCount > 0 ? () => { setStatusOpen(false); toggleNewFilter() } : undefined} role={freshCount > 0 ? 'button' : undefined} style={css(freshCount > 0 ? 'cursor:pointer;' : '')}><div style={css('font-family:var(--mono);font-size:22px;font-weight:500;color:var(--accent);')}>+{newCount}</div><div style={css('font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;')}>new{freshCount > 0 ? ' · view' : ''}</div></div>
               <div style={css('margin-left:auto;text-align:right;')}><div style={css('font-size:11px;color:var(--text2);')}>Updated</div><div style={css('font-size:11px;color:var(--text3);')}>{lastUpdated}</div></div>
             </div>
             <div style={css('font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:10px;')}>Per-source</div>
