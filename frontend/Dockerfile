@@ -26,17 +26,19 @@ RUN npm install --omit=dev
 COPY backend/ ./backend/
 RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/server.mjs ./server.mjs
-COPY --from=build /app/dealsChat.mjs ./dealsChat.mjs
-COPY --from=build /app/phoneburner.mjs ./phoneburner.mjs
-COPY --from=build /app/pipedrive.mjs ./pipedrive.mjs
-COPY --from=build /app/db.mjs ./db.mjs
-COPY --from=build /app/tenants.mjs ./tenants.mjs
-COPY --from=build /app/secrets.mjs ./secrets.mjs
-COPY --from=build /app/demo.mjs ./demo.mjs
+# Copy ALL server modules as a group. Enumerating them by name once let a new
+# module (billing.mjs) ship without being copied — the build passed, the server
+# crashed at boot on ERR_MODULE_NOT_FOUND, and the site went down at healthcheck.
+# A glob can never leave a sibling behind. Tests live in test/ and are excluded.
+COPY --from=build /app/*.mjs ./
+COPY --from=build /app/tools/check-imports.mjs ./tools/check-imports.mjs
 COPY --from=build /app/data.real.json ./data.real.json
 COPY --from=build /app/lease-overlay.json ./lease-overlay.json
 COPY start.sh ./start.sh
 RUN chmod +x start.sh
+# Fail the BUILD (not the runtime healthcheck) if server.mjs imports a local
+# module that isn't in the image — so a broken image is rejected and Railway
+# keeps serving the last healthy deploy instead of taking the site down.
+RUN node tools/check-imports.mjs server.mjs
 EXPOSE 8080
 CMD ["./start.sh"]
