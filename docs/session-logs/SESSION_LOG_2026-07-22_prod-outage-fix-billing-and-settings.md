@@ -137,3 +137,26 @@ All three fail at BUILD time, so a broken image is rejected and the last healthy
 deploy keeps serving. Memory: `deploy-image-hardening` documents all three +
 warns that a merge silently reverted the hardening once — re-verify the Dockerfile
 after every merge into `main`.
+
+## Follow-up — billing consolidation decision
+
+Two parallel Stripe payments commits existed on divergent lines: `f745e99`
+(this session, on `origin/main`, deployed) and `f421bf1` ("Billing/license",
+Opus, on local `main`). **Decision: keep `origin/main`'s (`f745e99`).**
+
+Why it's a non-choice: the two are effectively the **same implementation** —
+`billing.mjs`, migration `0003_billing.sql`, `settingsApi.js`, and
+`billing.test.mjs` are **byte-identical** across both lines (both sessions built
+from the same skeleton `2040143`). The `server.mjs`/`Settings.jsx` deltas between
+the branches are **not billing**: PhoneBurner Phase 2c webhook-secrets on local
+`main`, and the Settings scroll-fix + client billing preview (`61ce027`) on
+`origin/main`. So `origin/main` is a strict superset on the billing/Settings
+surface, and it's already deployed healthy — zero migration risk.
+
+**Consequence for reconciliation:** merging local `main` into `origin/main` will
+NOT conflict on the billing files (identical). The real merge work is the
+NON-billing local-only features — PhoneBurner Phase 2c (`cb0af98` + migration
+`0004`) and the lease-rate filter (`b78cf4a`) — landing onto `origin/main` (which
+holds the deploy hardening + billing + Settings polish). Re-verify the Dockerfile
+hardening (glob + import guard + boot smoke test) survives that merge — a merge
+silently reverted it once.
