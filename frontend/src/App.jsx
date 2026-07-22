@@ -76,7 +76,15 @@ export default function App() {
     const hasReal = Boolean(d && Array.isArray(d.props) && d.props.length)
     const liveProps = liveOn?.props?.length ? liveOn.props : null
     if (!hasReal && !liveProps) return
-    const base = hasReal ? d.props : PROPS
+    // Existing rows predate first-seen tracking: the static export and the
+    // synthetic sample carry no firstSeen, so their ADDED column would read "—".
+    // Treat them as present since the 2026-07-01 backfill date (match the backend
+    // ISO shape so fmtDate parses it). Noon UTC, not midnight, so the local-time
+    // render stays on Jul 1 across US zones instead of slipping to Jun 30.
+    // Live-scraped rows keep their own firstSeen.
+    const ADDED_BACKFILL = '2026-07-01T12:00:00'
+    const withAdded = (p) => (p.firstSeen ? p : { ...p, firstSeen: ADDED_BACKFILL })
+    const base = (hasReal ? d.props : PROPS).map(withAdded)
     // Badge rows first seen during the latest run (ISO strings — both sides come
     // from datetime.utcnow().isoformat(), so plain string compare is correct).
     const tagNew = (p) => (p.firstSeen && runStart && p.firstSeen >= runStart ? { ...p, isNew: true } : p)
