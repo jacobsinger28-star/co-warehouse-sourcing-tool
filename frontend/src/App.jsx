@@ -134,8 +134,8 @@ export default function App() {
     if (!running) runBase.current = null
     setSourcing(running)
     // The backend job has actually halted (stopped/idle/completed) — clear the
-    // "stopping…" latch so the button returns to Keep Sourcing. Until then we
-    // keep showing the widget so a stop-in-progress doesn't look like nothing
+    // "stopping…" latch so the bar returns to the live-status indicator. Until then
+    // we keep showing the widget so a stop-in-progress doesn't look like nothing
     // happened, and the poller can't flip us back to a live "Sourcing" label.
     if (!running) setStopping(false)
     if (s.started_at) setRunStart(s.started_at)
@@ -167,7 +167,7 @@ export default function App() {
 
   const aggP = sources.reduce((a, b) => a + b.p, 0) / sources.length
   // rows currently badged NEW (found by the latest run) — drives the "+N new"
-  // pill next to Keep Sourcing, which filters the Properties views to just them
+  // pill next to the live-status indicator, which filters Properties to just them
   const freshCount = dataset.props.reduce((a, p) => a + (p.isNew ? 1 : 0), 0)
   const toggleNewFilter = () => { setModule('properties'); setF('newOnly', !filters.newOnly) }
 
@@ -251,10 +251,13 @@ export default function App() {
                 +{freshCount} new
               </button>
             )}
-            <button className="sourcing-full hov tap" onClick={() => startSourcing()} style={css('display:flex;align-items:center;gap:8px;height:32px;padding:0 16px;background:var(--accent);border:none;border-radius:7px;color:#06120F;font-weight:600;font-size:12.5px;box-shadow:0 0 0 1px var(--accent-line);')}>
-              <span style={css('width:7px;height:7px;border-radius:50%;background:#06120F;')} />Keep Sourcing
+            {/* Sourcing runs automatically in the background (autorun on the scraper
+                service), so this is a live-status indicator, not a start button.
+                Click for detail. New finds surface on their own via the +N pill. */}
+            <button className="sourcing-full hov tap" onClick={() => setStatusOpen(true)} title="Sourcing runs automatically in the background — new listings appear as they're found. Click for status." style={css('display:flex;align-items:center;gap:8px;height:32px;padding:0 14px;background:var(--surface2);border:1px solid var(--accent-line);border-radius:7px;color:var(--text);font-weight:600;font-size:12px;')}>
+              <span style={css('width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.6s infinite;')} />Sourcing · live<span style={css('font-weight:500;color:var(--text3);font-size:11px;')}>{lastUpdated}</span>
             </button>
-            <button className="sourcing-full hov tap" onClick={() => startSourcing({ force_refresh: true })} title="Re-scan every listing, ignoring the 14-day cache — slower, but re-verifies the whole inventory and prunes sold/removed deals" style={css('display:flex;align-items:center;gap:6px;height:32px;padding:0 11px;margin-left:-8px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:11.5px;')}>
+            <button className="sourcing-full hov tap" onClick={() => startSourcing({ force_refresh: true })} title="Re-scan every listing now, ignoring the 14-day cache — re-verifies the whole inventory and prunes sold/removed deals" style={css('display:flex;align-items:center;gap:6px;height:32px;padding:0 11px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:11.5px;')}>
               <Icon name="recycle" size={13} sw={1.8} />Full refresh
             </button>
           </>
@@ -364,7 +367,7 @@ export default function App() {
           <div onClick={() => setStatusOpen(false)} style={css('position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:120;animation:fadein .15s ease;')} />
           <div style={css('position:fixed;left:0;right:0;bottom:0;z-index:121;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--border2);padding:18px;animation:sheetup .24s ease;')}>
             <div style={css('width:38px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 14px;')} />
-            <div style={css('display:flex;align-items:center;gap:9px;margin-bottom:14px;')}><span style={css(`width:9px;height:9px;border-radius:50%;background:${sourcing && !stopping ? 'var(--accent)' : 'var(--text3)'};${sourcing && !stopping ? 'animation:pulse 1.1s infinite;' : ''}`)} /><span style={css('font-size:15px;font-weight:600;')}>{stopping ? 'Stopping…' : sourcing ? 'Sourcing live' : 'Sourcing paused'}</span><button className="tap" onClick={() => setStatusOpen(false)} aria-label="Close" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button></div>
+            <div style={css('display:flex;align-items:center;gap:9px;margin-bottom:14px;')}><span style={css(`width:9px;height:9px;border-radius:50%;background:${sourcing && !stopping ? 'var(--accent)' : 'var(--text3)'};${sourcing && !stopping ? 'animation:pulse 1.1s infinite;' : ''}`)} /><span style={css('font-size:15px;font-weight:600;')}>{stopping ? 'Stopping…' : sourcing ? 'Sourcing live' : 'Auto-sourcing on'}</span><button className="tap" onClick={() => setStatusOpen(false)} aria-label="Close" style={css('display:flex;align-items:center;justify-content:center;margin-left:auto;width:34px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);')}><Icon name="x" size={15} /></button></div>
             <div style={css('display:flex;gap:18px;margin-bottom:16px;')}>
               <div><div style={css('font-family:var(--mono);font-size:22px;font-weight:500;')}>{fmtInt(total)}</div><div style={css('font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;')}>scanned</div></div>
               <div onClick={freshCount > 0 ? () => { setStatusOpen(false); toggleNewFilter() } : undefined} role={freshCount > 0 ? 'button' : undefined} style={css(freshCount > 0 ? 'cursor:pointer;' : '')}><div style={css('font-family:var(--mono);font-size:22px;font-weight:500;color:var(--accent);')}>+{newCount}</div><div style={css('font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;')}>new{freshCount > 0 ? ' · view' : ''}</div></div>
@@ -382,9 +385,10 @@ export default function App() {
               </div>
             )}
             <div style={css('display:flex;gap:8px;')}>
-              <button className="tap" disabled={stopping} onClick={() => (sourcing ? stopSourcing() : startSourcing())} style={css(`flex:1;height:48px;border-radius:9px;font-size:13.5px;font-weight:600;${stopping ? 'opacity:.55;' : ''}${sourcing ? 'background:var(--surface2);border:1px solid var(--border2);color:var(--text);' : 'background:var(--accent);border:none;color:#06120F;'}`)}>{stopping ? 'Stopping…' : sourcing ? 'Stop sourcing' : 'Keep Sourcing'}</button>
-              {!sourcing && (
-                <button className="tap" onClick={() => { setStatusOpen(false); startSourcing({ force_refresh: true }) }} style={css('flex:0 0 auto;height:48px;padding:0 16px;border-radius:9px;font-size:13px;font-weight:500;background:var(--surface2);border:1px solid var(--border2);color:var(--text);')}>Full refresh</button>
+              {sourcing ? (
+                <button className="tap" disabled={stopping} onClick={stopSourcing} style={css(`flex:1;height:48px;border-radius:9px;font-size:13.5px;font-weight:600;${stopping ? 'opacity:.55;' : ''}background:var(--surface2);border:1px solid var(--border2);color:var(--text);`)}>{stopping ? 'Stopping…' : 'Stop sourcing'}</button>
+              ) : (
+                <button className="tap" onClick={() => { setStatusOpen(false); startSourcing({ force_refresh: true }) }} style={css('flex:1;height:48px;border-radius:9px;font-size:13.5px;font-weight:600;background:var(--accent);border:none;color:#06120F;')}>Full refresh now</button>
               )}
             </div>
           </div>
