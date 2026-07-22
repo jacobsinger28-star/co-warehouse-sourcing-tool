@@ -290,7 +290,7 @@ export default function PropPopup({ p, meta, onOpen }) {
       ) : (
         <>
           <div style={css('font-size:11px;color:#475569;margin-bottom:6px;line-height:1.5;')}>
-            {fmtSF(p.sf)} SF{p.clear != null ? ` · ${p.clear}′ clear` : ''}{p.year ? ` · built ${p.year}` : ''}{p.ask != null ? ` · ${fmtMoney2(p.ask)}/SF` : ''}{p.daysOn != null ? ` · ${p.daysOn} DOM` : ''}{p.firstSeen ? ` · added ${fmtDate(p.firstSeen)}` : ''}
+            {fmtSF(p.sf)} SF{p.clear != null ? ` · ${p.clear}′ clear` : ''}{p.year ? ` · built ${p.year}` : ''}{p.ask != null ? ` · ${fmtMoney2(p.ask)}/SF` : ''}{p.daysOn != null ? ` · ${p.daysOn} DOM` : ''}{p.firstSeen ? ` · added ${fmtDate(p.firstSeen)}` : ''}{p.updated && fmtDate(p.updated) !== fmtDate(p.firstSeen) ? ` · updated ${fmtDate(p.updated)}` : ''}
           </div>
           <div style={css('font-size:11px;color:#475569;margin-bottom:7px;')}>
             {p.broker} · {p.firm}

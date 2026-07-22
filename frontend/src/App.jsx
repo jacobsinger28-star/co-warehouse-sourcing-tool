@@ -255,7 +255,7 @@ export default function App() {
                 service), so this is a live-status indicator, not a start button.
                 Click for detail. New finds surface on their own via the +N pill. */}
             <button className="sourcing-full hov tap" onClick={() => setStatusOpen(true)} title="Sourcing runs automatically in the background — new listings appear as they're found. Click for status." style={css('display:flex;align-items:center;gap:8px;height:32px;padding:0 14px;background:var(--surface2);border:1px solid var(--accent-line);border-radius:7px;color:var(--text);font-weight:600;font-size:12px;')}>
-              <span style={css('width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.6s infinite;')} />Sourcing · live<span style={css('font-weight:500;color:var(--text3);font-size:11px;')}>{lastUpdated}</span>
+              <span style={css('width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.6s infinite;')} />Sourcing · live<span style={css('font-weight:500;color:var(--text3);font-size:11px;')}>· updated {lastUpdated}</span>
             </button>
             <button className="sourcing-full hov tap" onClick={() => startSourcing({ force_refresh: true })} title="Re-scan every listing now, ignoring the 14-day cache — re-verifies the whole inventory and prunes sold/removed deals" style={css('display:flex;align-items:center;gap:6px;height:32px;padding:0 11px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:11.5px;')}>
               <Icon name="recycle" size={13} sw={1.8} />Full refresh
