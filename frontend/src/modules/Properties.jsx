@@ -18,7 +18,7 @@ import {
 } from '../helpers.js'
 import DealMap from '../components/DealMap.jsx'
 import PropTable from '../components/PropTable.jsx'
-import { ALLOWED_MARKETS, EMPTY_FILTERS } from './propertiesShared.js'
+import { ALLOWED_MARKETS, marketOptions, EMPTY_FILTERS } from './propertiesShared.js'
 
 // ── style builders ──────────────────────────────────────────────────────────
 const chSeg = (active) =>
@@ -268,7 +268,14 @@ export default function Properties({
       const hay = `${p.addr} ${p.owner || ''} ${p.broker || ''} ${p.firm || ''} ${p.apn || ''} ${p.mkt || ''} ${p.person || ''} ${(p.phones || []).join(' ')} ${(p.emails || []).join(' ')}`.toLowerCase()
       if (!hay.includes(ql)) return false
     }
-    if (filters.markets.length && !filters.markets.includes(p.mkt)) return false
+    // Market scope: an explicit selection wins; a search is global (reaches any
+    // US market); otherwise default to the buy-box target markets so the default
+    // view stays focused (the full nationwide universe is still loaded + searchable).
+    if (filters.markets.length) {
+      if (!filters.markets.includes(p.mkt)) return false
+    } else if (!ql && !ALLOWED_MARKETS.has(p.mkt)) {
+      return false
+    }
     if (filters.sfMin && p.sf < +filters.sfMin) return false
     if (filters.sfMax && p.sf > +filters.sfMax) return false
     // clear height is a MAX (buy-box targets older, lower-clear stock) — null-inclusive
@@ -311,6 +318,8 @@ export default function Properties({
     if (sg.lease && !p.lease) return false
     return true
   }), [propsData, ql, channel, score, filters])
+  // Market chips: target markets first, then every other US market in the data.
+  const mktOpts = useMemo(() => marketOptions(propsData, MARKETS), [propsData])
   const matchShown = visibleProps.length
   const showEmpty = matchShown === 0 && (view === 'table' || view === 'map')
   const bulkCount = view === 'brokers' ? selBrokers.length : selProps.length
@@ -448,12 +457,23 @@ export default function Properties({
           <div style={css('display:flex;flex-direction:column;gap:11px;')}>
             <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Search</label><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Address · owner · APN · contact" aria-label="Search properties" style={css(numInput)} /></div>
             <div style={css('display:flex;flex-direction:column;gap:6px;')}>
-              <div style={css('display:flex;align-items:center;justify-content:space-between;')}><label style={css(fieldLabel)}>Markets{filters.markets.length ? ` · ${filters.markets.length}` : ''}</label>{filters.markets.length > 0 && <button className="hov" onClick={() => setF('markets', [])} style={css('background:none;border:none;color:var(--accent);font-size:10.5px;font-weight:500;')}>All markets</button>}</div>
+              <div style={css('display:flex;align-items:center;justify-content:space-between;')}><label style={css(fieldLabel)}>Markets{filters.markets.length ? ` · ${filters.markets.length}` : ''}</label>{filters.markets.length > 0 && <button className="hov" onClick={() => setF('markets', [])} style={css('background:none;border:none;color:var(--accent);font-size:10.5px;font-weight:500;')}>Target markets</button>}</div>
               <div style={css('display:flex;flex-wrap:wrap;gap:5px;')}>
-                {MARKETS.filter((m) => ALLOWED_MARKETS.has(m)).map((m) => {
+                {mktOpts.buy.map((m) => {
                   const on = filters.markets.includes(m)
                   return <button key={m} className={on ? 'ms-chip on' : 'ms-chip'} aria-pressed={on} onClick={() => toggleInArr('markets', m)} style={css('height:24px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text2);font-size:11px;')}>{m}</button>
                 })}
+                {mktOpts.rest.length > 0 && (
+                  <details style={css('width:100%;margin-top:2px;')}>
+                    <summary style={css('cursor:pointer;font-size:10.5px;color:var(--text3);list-style:none;')}>+ {mktOpts.rest.length} other US market{mktOpts.rest.length === 1 ? '' : 's'}</summary>
+                    <div style={css('display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;max-height:180px;overflow-y:auto;')}>
+                      {mktOpts.rest.map((m) => {
+                        const on = filters.markets.includes(m)
+                        return <button key={m} className={on ? 'ms-chip on' : 'ms-chip'} aria-pressed={on} onClick={() => toggleInArr('markets', m)} style={css('height:24px;padding:0 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text2);font-size:11px;')}>{m}</button>
+                      })}
+                    </div>
+                  </details>
+                )}
               </div>
             </div>
             <div style={css('display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Source</label><select style={css(selectStyle)} aria-label="Source"><option>All sources</option>{SOURCES.map((s) => <option key={s}>{s}</option>)}</select></div>
