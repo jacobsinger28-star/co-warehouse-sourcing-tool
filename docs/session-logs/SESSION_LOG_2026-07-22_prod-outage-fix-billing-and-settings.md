@@ -115,3 +115,25 @@ Starter/Pro prices in Stripe (test mode); set `STRIPE_SECRET_KEY`,
 register the webhook at `/api/billing/webhook` for `checkout.session.completed`,
 `customer.subscription.updated`, `customer.subscription.deleted`; test with card
 `4242 4242 4242 4242`.
+
+## Follow-up — third deploy-safety layer: boot smoke test (`6a85467`)
+
+The Dockerfile now has **three** layers against "builds but won't boot" images:
+1. **Glob copy** `COPY --from=build /app/*.mjs ./` — no server module left behind.
+2. **Static import guard** (`tools/check-imports.mjs`) — fails the build if a local
+   import is missing (fast, precise message).
+3. **Boot smoke test** (new) — a Dockerfile `RUN` step actually starts
+   `node server.mjs` and curls `/health`; **fails the build** if the server can't
+   boot at all. Catches what the static check can't: a missing npm dep (a runtime
+   dep left in `devDependencies`, dropped by `--omit=dev`), a syntax error, or any
+   import problem that only shows at runtime. `/health` needs no auth/DB;
+   `server.mjs` boots fail-closed without env. Exits ~1s on success, 15s timeout.
+
+Verified locally both directions: healthy server → passes; a process that never
+serves `/health` → exits 1 (build rejected). Real Railway build was delayed by a
+Railway platform incident ("deployments slow to progress"), then proceeded.
+
+All three fail at BUILD time, so a broken image is rejected and the last healthy
+deploy keeps serving. Memory: `deploy-image-hardening` documents all three +
+warns that a merge silently reverted the hardening once — re-verify the Dockerfile
+after every merge into `main`.
