@@ -10,6 +10,15 @@
       ],
       "port": 3001,
       "autoPort": true
+    },
+    {
+      "name": "sourcing-server",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/razkorteran/Desktop/code/SimiCapital/sourcing-platform/frontend && node server.mjs"
+      ],
+      "port": 8080
     }
   ]
 }

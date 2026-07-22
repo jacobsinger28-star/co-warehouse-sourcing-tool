@@ -6,11 +6,10 @@ import 'leaflet/dist/leaflet.css'
 import 'react-leaflet-cluster/lib/assets/MarkerCluster.css'
 import 'react-leaflet-cluster/lib/assets/MarkerCluster.Default.css'
 import PropPopup from './PropPopup.jsx'
+import { CAT_HEX, CAT_HEX_FALLBACK } from '../helpers.js'
 // Real Leaflet map (ported from the general-scraping sourcing tool, restyled to
 // this console's tokens). Markers are clustered and colored by score category;
 // off-market = ring, on-market = filled teardrop — matching the map legend.
-
-const CAT_HEX = { Actionable: '#22c55e', Tentative: '#f59e0b', Pass: '#ef4444' }
 
 // icons cached per (channel, category) — a fresh L.divIcon each render would make
 // react-leaflet setIcon() every marker on every parent re-render, closing open popups
@@ -18,7 +17,7 @@ const ICON_CACHE = {}
 function markerIcon(p) {
   const key = `${p.channel}:${p.cat}`
   if (ICON_CACHE[key]) return ICON_CACHE[key]
-  const color = CAT_HEX[p.cat] ?? '#94a3b8'
+  const color = CAT_HEX[p.cat] ?? CAT_HEX_FALLBACK
   const html =
     p.channel === 'off'
       ? `<div style="width:15px;height:15px;border-radius:50%;background:transparent;border:2.5px solid ${color};box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`

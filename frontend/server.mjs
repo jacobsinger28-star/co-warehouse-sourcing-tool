@@ -41,6 +41,12 @@ import {
 import { resolveTenant, DEFAULT_TENANT } from './tenants.mjs'
 import { tenancyEnabled } from './db.mjs'
 import { pdConfigured, pdStatusInfo, syncBroker, pushLead } from './pipedrive.mjs'
+import { demoRouter, demoLoaded } from './demo.mjs'
+import { installRedaction, secretsEnabled } from './secrets.mjs'
+
+// Route all console output through the secret redactor before anything can log —
+// so a decrypted key can never reach the logs, a traceback, or summary output.
+installRedaction()
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 8080
@@ -107,6 +113,10 @@ if (!SUPABASE_ENABLED && !PASSWORD)
 console.log(`[server] tenancy ${tenancyEnabled()
   ? 'ENABLED — DB-backed tenants + members (email → tenant)'
   : 'off — legacy global allowlist (set SUPABASE_SERVICE_ROLE_KEY to enable multi-tenant)'}`)
+console.log(`[server] BYOK secrets ${secretsEnabled()
+  ? 'ENABLED — envelope-encrypted per-tenant keys'
+  : 'off — providers use process env vars (set SECRETS_KEK + tenancy to enable)'}`)
+console.log(`[server] public demo ${demoLoaded() ? 'ENABLED — /demo + /api/demo/* serve synthetic data only' : 'off — demo-data.json absent (run tools/build_demo_data.mjs)'}`)
 
 // ── auth ─────────────────────────────────────────────────────────────────────
 // Verify a Supabase access token by asking Supabase who it belongs to, then
@@ -372,6 +382,11 @@ app.post('/api/pipedrive/leads', requireAuth, async (req, res) => {
   }
   res.json({ results, ok: results.filter((r) => r.status !== 'error').length, total: results.length })
 })
+
+// Public demo surface: fake-only data + simulated integrations, NO auth. Kept in
+// its own module with no path to real data/keys (see demo.mjs). Mounted after the
+// real /api/* routes (which stay behind requireAuth) and before the SPA fallback.
+app.use('/api/demo', demoRouter)
 
 // static SPA + client-side routing fallback
 app.use(express.static(DIST))

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { css } from '../css.js'
 import { SUBMARKETS, SUPPLY_TOTAL_SF } from '../data.js'
-import { fmtInt } from '../helpers.js'
+import { fmtInt, cardBox as card, kpiLabel, kpiNum } from '../helpers.js'
 
 const maxPct = Math.max(...SUBMARKETS.map((s) => s.pct))
 
@@ -12,10 +12,6 @@ export default function SupplyModel() {
   const sub = SUBMARKETS.find((s) => s.name === submarket) || SUBMARKETS[0]
   const metroPct = ((devSF / SUPPLY_TOTAL_SF) * 100).toFixed(1)
   const subPct = ((devSF / sub.sf) * 100).toFixed(1)
-
-  const card = 'background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;'
-  const kpiLabel = 'font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);'
-  const kpiNum = 'font-family:var(--mono);font-size:26px;font-weight:500;margin-top:7px;'
 
   return (
     <div className="content-pad" data-screen-label="Supply Model" style={css('flex:1;overflow-y:auto;min-height:0;padding:22px 26px;')}>

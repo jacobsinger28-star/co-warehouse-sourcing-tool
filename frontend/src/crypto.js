@@ -67,3 +67,20 @@ export async function loadRealData(cred, baseUrl = '/') {
   } catch { /* none */ }
   return null
 }
+
+// Load the PUBLIC DEMO dataset (100% synthetic) from the fake-only /api/demo/data
+// surface. No auth, no decryption — the /demo entry uses this instead of
+// loadRealData. Returns the parsed dataset, or null (→ app uses the committed
+// src/data.js sample) if the backend isn't reachable.
+export async function loadDemoData(baseUrl = '/') {
+  try {
+    const r = await fetch(`${baseUrl}api/demo/data`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+      cache: 'no-store',
+    })
+    if (r.ok) return await r.json()
+  } catch { /* static host without the demo backend → null → sample data */ }
+  return null
+}

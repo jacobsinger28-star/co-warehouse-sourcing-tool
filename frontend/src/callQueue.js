@@ -2,9 +2,9 @@
 //
 // Properties added from the Properties map/table — the detail-drawer "Add to call
 // queue" button or the table bulk bar — land here, and the Power Dialer (AICaller)
-// reads this as its live staging list. This closes the TODO in AICaller.jsx that
-// asked to "swap CALL_QUEUE (demo staging) for the operator's real selected owners
-// from the map/table."
+// reads this as its live staging list. This closed the old TODO in AICaller.jsx to
+// swap the static demo staging list for the operator's real selected owners from
+// the map/table.
 //
 // It's a tiny localStorage-backed store with a useSyncExternalStore hook so the
 // two screens stay in sync without prop-drilling through App, and the queue

@@ -47,6 +47,19 @@ export async function dbUpsert(table, rows, { onConflict } = {}) {
   return r.json()
 }
 
+/** PATCH (partial update) rows matching a raw PostgREST filter. `patch` is the
+ * column→value object to set. A filter is REQUIRED so a bug can't rewrite a table. */
+export async function dbPatch(table, filter, patch) {
+  if (!filter) throw new Error('dbPatch requires a filter (refusing to update an entire table)')
+  const r = await fetch(`${urlBase()}/rest/v1/${table}?${filter}`, {
+    method: 'PATCH',
+    headers: headers({ prefer: 'return=representation' }),
+    body: JSON.stringify(patch),
+  })
+  if (!r.ok) throw new Error(`db patch ${table} -> ${r.status} ${(await body(r)).slice(0, 200)}`)
+  return r.json()
+}
+
 /** DELETE rows matching a raw PostgREST filter (e.g. `tenant_id=eq.<uuid>`).
  * A filter is REQUIRED — refuse an unfiltered delete so a bug can't wipe a table. */
 export async function dbDelete(table, filter) {
