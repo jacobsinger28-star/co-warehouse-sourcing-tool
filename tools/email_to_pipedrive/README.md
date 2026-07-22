@@ -1,11 +1,39 @@
-# email → Pipedrive (broker intake pilot)
+# email → Pipedrive (intake pilot)
 
-Forward or flag a broker email with a **keyword**, and the broker lands in
-Pipedrive automatically — no manual data entry. Built for the off-market broker
-intros (the deal sheets brokers email over) that never show up on Crexi/Colliers, so the
+Tag or forward an email with a **hashtag**, and it lands in Pipedrive
+automatically — no manual data entry. Built for the off-market broker intros (the
+deal sheets brokers email over) that never show up on Crexi/Colliers, so the
 scrapers can't catch them.
 
-## How it works
+## Flows
+
+One hashtag per intake type. An Outlook rule on the simicap account matches the
+hashtag and moves the mail into a folder; the watcher (`graph_watch.py`) acts on
+the folder. Tag an email and it's in Pipedrive a couple of minutes later.
+
+| Hashtag     | Outlook folder   | Creates in Pipedrive                                       |
+|-------------|------------------|------------------------------------------------------------|
+| `#broker`   | To Pipedrive     | **Person** (broker contact) — deduped, owned by Raz        |
+| `#track`    | Tracked Deals    | **Deal** in the **Tracking** pipeline (passed, watching)   |
+| `#deal`     | Deals            | **Deal** in the **Tracking** pipeline — same as `#track`   |
+| `#pipeline` | Pipeline Deals   | **Deal** in the **main deal pipeline** (an active deal)     |
+
+Deals take the subject as the title, the first dollar amount as the value, and
+the whole email as the deal note (any attachments upload onto the record). Folder
+names are overridable via env (`GRAPH_FOLDER`, `TRACK_FOLDER`, `DEAL_FOLDER`,
+`PIPELINE_FOLDER`); pipeline/stage ids via `PIPELINE_ID` / `PIPELINE_STAGE_ID` /
+`TRACK_STAGE_ID`. The main-pipeline ids (pipeline 5, "Screened" stage 22) match
+what `general-scraping/backend/pipedrive.py` pushes scored deals into.
+
+**Turning the two new flows on** (one-time, in the raz@simicap.com Outlook — the
+watcher needs no redeploy, it picks up the folders on its next poll):
+1. Create two folders: **Deals** and **Pipeline Deals**.
+2. Add two "move to folder" rules mirroring the existing `#broker` / `#track`
+   ones: subject or body contains `#deal` → *Deals*; contains `#pipeline` →
+   *Pipeline Deals*. (`#deal` can instead point at the existing *Tracked Deals*
+   folder — both folders map to the same action.)
+
+## How it works (broker flow shown; deals follow the same path)
 
 ```
 email (contains KEYWORD) ─► extract broker (Claude, regex fallback)

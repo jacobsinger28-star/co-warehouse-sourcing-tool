@@ -208,10 +208,16 @@ def upsert_broker(broker: Broker, dry_run: bool = True) -> dict:
             "url": f"https://app.pipedrive.com/person/{new_id}"}
 
 
-# --------------------------- deals: "passed but tracking" ---------------------------
-# The dedicated "Tracking" pipeline/stage (created once via the Pipedrive API).
-# Non-secret ids, overridable via env if you rebuild the pipeline.
-_TRACK_STAGE_ID = int(os.getenv("TRACK_STAGE_ID", "33"))
+# --------------------------- deals ---------------------------
+# Two deal targets:
+#   * Tracking pipeline (stage 33) — "passed on, but watching" (#track / #deal).
+#   * Main deal pipeline (pipeline 5, "Screened" stage 22) — an active deal we're
+#     working (#pipeline). Same ids general-scraping/backend/pipedrive.py pushes
+#     scored deals into, so email intake lands beside the scraped deals.
+# Non-secret ids, overridable via env if you rebuild the pipelines.
+_TRACK_STAGE_ID    = int(os.getenv("TRACK_STAGE_ID", "33"))
+_PIPELINE_STAGE_ID = int(os.getenv("PIPELINE_STAGE_ID", "22"))
+_PIPELINE_ID       = int(os.getenv("PIPELINE_ID", "5"))
 _deal_label_id_cache: int | None = None
 
 
@@ -250,33 +256,50 @@ def _get_deal_label_id(token: str, create: bool = True) -> int | None:
     return _deal_label_id_cache
 
 
-def _search_deal_by_title(token: str, title: str) -> Optional[int]:
+def _search_deal_by_title(token: str, title: str, stage_id: Optional[int] = None) -> Optional[int]:
     """Return an existing deal id with this exact title (avoids duplicate deals
-    when the same email is re-read, e.g. after a Railway restart)."""
+    when the same email is re-read, e.g. after a Railway restart). When stage_id
+    is given, only a deal already in that stage counts as a duplicate — so the
+    same property can be both tracked (#track/#deal) and worked in the main
+    pipeline (#pipeline) without one flow silently swallowing the other."""
     if not title:
         return None
     q = urllib.parse.urlencode({"api_token": token, "term": title, "fields": "title", "limit": 5})
     try:
         items = ((_get(f"{_BASE}/deals/search?{q}").get("data") or {}).get("items")) or []
-        for it in items:
-            if (it["item"].get("title") or "").strip().lower() == title.strip().lower():
-                return it["item"]["id"]
+        matches = [it["item"]["id"] for it in items
+                   if (it["item"].get("title") or "").strip().lower() == title.strip().lower()]
+        if stage_id is None:
+            return matches[0] if matches else None
+        for did in matches:                               # dup only if already in this stage
+            try:
+                d = (_get(f"{_BASE}/deals/{did}?api_token={token}").get("data") or {})
+                if int(d.get("stage_id") or 0) == int(stage_id):
+                    return did
+            except Exception:  # noqa: BLE001 — on lookup failure, treat title match as the dup
+                return did
     except Exception as exc:  # noqa: BLE001 — search is best-effort
         print(f"  ! deal search failed ({title}): {exc}", file=sys.stderr)
     return None
 
 
-def create_deal(deal, dry_run: bool = True) -> dict:
-    """Create a Pipedrive Deal in the Tracking pipeline (a deal we passed on but
-    want to keep watching). Dedupes by title. `deal` is a broker_extract.Deal."""
+def create_deal(deal, dry_run: bool = True, *, stage_id: int = _TRACK_STAGE_ID,
+                pipeline_id: Optional[int] = None,
+                note_prefix: str = "Tracked via email-intake-tool (passed, watching)") -> dict:
+    """Create a Pipedrive Deal from a broker_extract.Deal. Defaults to the
+    Tracking pipeline (the #track / #deal flow — a deal we passed on but keep
+    watching); create_pipeline_deal() targets the main deal pipeline (#pipeline).
+    Dedupes by title within the target stage."""
     token = _token()
-    existing = _search_deal_by_title(token, deal.title)
+    existing = _search_deal_by_title(token, deal.title, stage_id)
     if existing:
         return {"status": "exists", "deal_id": existing,
                 "url": f"https://app.pipedrive.com/deal/{existing}"}
 
     owner_id = _owner_user_id(token)
-    payload: dict = {"title": deal.title, "stage_id": _TRACK_STAGE_ID, "status": "open"}
+    payload: dict = {"title": deal.title, "stage_id": stage_id, "status": "open"}
+    if pipeline_id:
+        payload["pipeline_id"] = pipeline_id
     if deal.value:
         payload["value"] = deal.value
         payload["currency"] = "USD"
@@ -298,13 +321,22 @@ def create_deal(deal, dry_run: bool = True) -> dict:
     try:  # save the email as the deal's note so the context is there
         import html
         _post(f"{_BASE}/notes?api_token={token}",
-              {"content": "<b>Tracked via email-intake-tool (passed, watching)</b><br>"
+              {"content": f"<b>{html.escape(note_prefix)}</b><br>"
                           + html.escape(deal.note).replace("\n", "<br>"),
                "deal_id": did})
     except Exception as exc:  # noqa: BLE001
         print(f"  ! deal note failed for {did}: {exc}", file=sys.stderr)
     return {"status": "created", "deal_id": did,
             "url": f"https://app.pipedrive.com/deal/{did}"}
+
+
+def create_pipeline_deal(deal, dry_run: bool = True) -> dict:
+    """The #pipeline flow: create a Deal in the MAIN deal pipeline (an active
+    deal we're working), as opposed to the Tracking pipeline create_deal() uses.
+    Forward an email tagged #pipeline and it lands as a live pipeline deal."""
+    return create_deal(deal, dry_run=dry_run, stage_id=_PIPELINE_STAGE_ID,
+                        pipeline_id=_PIPELINE_ID,
+                        note_prefix="Added to the pipeline via email-intake-tool")
 
 
 # --------------------------- attachments -> Pipedrive files ---------------------------

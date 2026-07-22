@@ -48,3 +48,11 @@ Watch it: `railway logs` — you'll see `[To Pipedrive] N message(s), M new` and
   else. Pipedrive writes go through your Pipedrive token.
 - **Change the keyword** anytime in the Outlook rule; the watcher is
   folder-driven and doesn't care what it is.
+- **Flows / folders** — the watcher polls four folders (see the README "Flows"
+  table): `#broker`→*To Pipedrive* (Person), `#track`→*Tracked Deals* and
+  `#deal`→*Deals* (Deal in the Tracking pipeline), `#pipeline`→*Pipeline Deals*
+  (Deal in the main pipeline). Adding a folder + Outlook rule needs **no
+  redeploy** — the running service picks it up on the next poll. A folder that
+  doesn't exist yet is skipped quietly. Override folder names or the pipeline ids
+  with env vars (`DEAL_FOLDER`, `PIPELINE_FOLDER`, `PIPELINE_ID`, …) on the
+  Railway service if you rename folders or rebuild a pipeline.

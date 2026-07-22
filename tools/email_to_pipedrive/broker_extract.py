@@ -284,10 +284,15 @@ _PRICE_RE = re.compile(r"\$\s*([\d,]+(?:\.\d+)?)\s*(mm|m|million|k)?\b", re.I)
 
 def extract_deal(subject: str = "", body: str = "", from_name: str = "", from_email: str = "") -> Deal:
     """Turn a forwarded email into a trackable Deal: a title (the subject, stripped
-    of Fw:/Re:/#track, else the first real body line), the first dollar value, and
-    the whole email saved as the note. Deterministic — runs anywhere, no Claude."""
+    of Fw:/Re:/ the intake tag, else the first real body line), the first dollar
+    value, and the whole email saved as the note. Deterministic — no Claude.
+    Shared by the #track, #deal and #pipeline flows (they differ only in which
+    Pipedrive pipeline pipedrive_sync puts the deal in)."""
     t = re.sub(r"(?i)^\s*(fw|fwd|re)\s*:\s*", "", subject or "").strip()
-    t = re.sub(r"(?i)#?track\b", "", t).strip(" -–|")
+    # Drop the intake tag: bare/hashed "track" (kept from the original #track
+    # flow), and the hashed forms of "deal"/"pipeline" (require the # so we don't
+    # strip those words from a real subject like "Warehouse deal in Orlando").
+    t = re.sub(r"(?i)#?track\b|#(?:deal|pipeline)\b", "", t).strip(" -–|")
     if not t or len(t) < 3:
         for line in (body or "").splitlines():
             line = line.strip()
