@@ -99,3 +99,21 @@ added; no `data.real.json` / `.env`.
   `phoneburner-integration` has unmerged commits (previously "left as-is"). No branches
   deleted this session, given the blocked merge + active out-of-band branch changes.
 - **No deploy run** (owner PII → Vercel needs explicit go-ahead).
+
+## Addendum — merge into `main` completed + regression fixed
+
+The merge into `main` was performed out-of-band (`1970e17` "Merge BYOK secret layer +
+public demo into main"), and it **silently reverted `cc67960`'s Pipedrive UI feature**:
+the `App.jsx` conflict was resolved by taking the decomposed version, but the Pipedrive
+sync/push wiring was never re-applied to `Properties.jsx` — so `pipedrive.mjs`/`pipedrive.js`
++ the `/api/pipedrive/*` routes remained, but every button went decorative again.
+
+Fixed on `main` (follow-up commit):
+- Re-applied `cc67960`'s Pipedrive wiring into `Properties.jsx` (import, `pdOk`/`pdBusy`/
+  `pdMsg` state, `syncBroker`/`pushPropToPd`/`pushSelectionToPd`, the 5 buttons, the toast).
+- Refactored `src/pipedrive.js` onto the shared `postJson` client (consistency + demo routing).
+- Added simulated `/api/demo/pipedrive/*` routes to `demo.mjs` so demo mode shows the
+  feature working **without any real CRM write** (verified: demo status → `configured:true`,
+  demo broker sync → simulated toast; the real `/api/pipedrive/*` stays behind `requireAuth`
+  and a demo visitor can't reach it).
+- Verified: build clean, 22 tests pass, demo broker-sync toast works, no console errors.

@@ -141,6 +141,20 @@ function demoPhoneburner(action, body) {
   }
 }
 
+// ── Pipedrive simulation (no real CRM write) ────────────────────────────────
+function demoPipedrive(action, body) {
+  switch (action) {
+    case 'status': return { configured: true, mode: 'demo' }
+    case 'broker': return { status: 'created', url: '#', name: body?.broker?.name }
+    case 'lead': return { status: 'created', url: '#' }
+    case 'leads': {
+      const props = Array.isArray(body?.props) ? body.props : []
+      return { results: props.map((p) => ({ id: p.id, addr: p.addr, status: 'created', url: '#' })), ok: props.length, total: props.length }
+    }
+    default: return null
+  }
+}
+
 // ── router ───────────────────────────────────────────────────────────────────
 // Public (no auth) on purpose — see the security note at the top of the file.
 export const demoRouter = express.Router()
@@ -165,3 +179,4 @@ demoRouter.post('/deals-chat', (req, res) => {
 })
 demoRouter.post('/live/:action', (req, res) => { const out = demoLive(req.params.action); out ? res.json(out) : res.status(404).json({ error: 'unknown live action' }) })
 demoRouter.post('/phoneburner/:action', (req, res) => { const out = demoPhoneburner(req.params.action, req.body || {}); out ? res.json(out) : res.status(404).json({ error: 'unknown action' }) })
+demoRouter.post('/pipedrive/:action', (req, res) => { const out = demoPipedrive(req.params.action, req.body || {}); out ? res.json(out) : res.status(404).json({ error: 'unknown action' }) })
