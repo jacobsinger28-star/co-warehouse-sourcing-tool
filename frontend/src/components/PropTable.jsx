@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { css } from '../css.js'
 import Icon from '../Icon.jsx'
-import { fmtSF, fmtInt, fmtMoney2, fmtPhone, fmtDate, scDot, scLabel, chDot, rowStyle } from '../helpers.js'
+import { fmtSF, fmtInt, fmtMoney2, fmtRate, fmtPhone, fmtDate, scDot, scLabel, chDot, rowStyle } from '../helpers.js'
 
 // Adjustable Properties table: show/hide + drag-to-resize columns, persisted to
 // localStorage. Extracted from App.jsx so the column machinery lives in one place.
@@ -22,7 +22,7 @@ const COLUMNS = [
   { key: 'ch', label: 'CH', align: 'left', w: 44, min: 36, cell: (p) => <span style={css(chDot(p.channel))} /> },
   { key: 'addr', label: 'ADDRESS', align: 'left', w: 230, min: 130, cell: (p) => (
     <>{p.isNew && <span title="First found by the latest sourcing run" style={css('display:inline-block;margin-right:7px;font-size:9.5px;font-weight:700;letter-spacing:.05em;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-line);padding:1px 6px;border-radius:4px;vertical-align:middle;')}>NEW</span>}{p.addr}{p.lease && (
-      <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title={`${p.lease.note} — open on LoopNet`} style={css('display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:10px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 7px;border-radius:5px;text-decoration:none;vertical-align:middle;')}>For Lease<Icon name="chevronRight" size={9} sw={2.4} /></a>
+      <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title={`${p.lease.note} — open on LoopNet`} style={css('display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:10px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 7px;border-radius:5px;text-decoration:none;vertical-align:middle;')}>For Lease{p.lease.rate != null ? ` · ${fmtRate(p.lease.rate)}` : ''}<Icon name="chevronRight" size={9} sw={2.4} /></a>
     )}</>
   ) },
   { key: 'mkt', label: 'MARKET', align: 'left', w: 104, min: 70, cell: (p) => p.mkt },
@@ -62,7 +62,7 @@ const COLUMNS = [
   { key: 'landUse', label: 'LAND USE', align: 'left', w: 160, min: 90, defOff: true, cell: (p) => p.landUse ?? '—' },
   { key: 'apn', label: 'APN', align: 'left', w: 132, min: 80, mono: true, defOff: true, cell: (p) => p.apn ?? '—' },
   { key: 'phone', label: 'PHONE', align: 'left', w: 132, min: 92, mono: true, defOff: true, cell: (p) => (p.phones?.[0] ? fmtPhone(p.phones[0]) : '—') },
-  { key: 'lease', label: 'LEASE', align: 'left', w: 96, min: 66, defOff: true, cell: (p) => (p.lease ? <span style={css('color:var(--green);font-weight:600;')}>For Lease</span> : '—') },
+  { key: 'lease', label: 'LEASE', align: 'left', w: 110, min: 72, defOff: true, cell: (p) => (p.lease ? <span style={css('color:var(--green);font-weight:600;')}>{p.lease.rate != null ? `${fmtRate(p.lease.rate)}/SF` : 'For Lease'}</span> : '—') },
 ]
 const COL_BY_KEY = Object.fromEntries(COLUMNS.map((c) => [c.key, c]))
 const ORDER = COLUMNS.map((c) => c.key)
@@ -98,7 +98,7 @@ const SORT_VAL = {
   st: (p) => p.st, ownerType: (p) => p.ownerType, oos: (p) => p.oos || null,
   lastSale: (p) => p.lastSale, lastPrice: (p) => p.lastPrice, assessed: (p) => p.assessed,
   viol: (p) => p.nViol, permit: (p) => p.nPermit, landUse: (p) => p.landUse,
-  apn: (p) => p.apn, phone: (p) => p.phones?.[0] || null, lease: (p) => (p.lease ? 1 : 0),
+  apn: (p) => p.apn, phone: (p) => p.phones?.[0] || null, lease: (p) => (p.lease ? (p.lease.rate ?? 0.5) : null),
 }
 // comparator: nulls/undefined always sort last; numbers numerically, else localeCompare
 const cmp = (a, b, dir) => {

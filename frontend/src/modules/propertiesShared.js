@@ -17,7 +17,7 @@ export const EMPTY_FILTERS = {
   clearMax: '', yearMin: '', yearMax: '', sfMin: '', sfMax: '',
   distMax: '', holdMin: '', heldSince: '',
   saleYearMin: '', salePriceMin: '', salePriceMax: '', salePsfMax: '',
-  askMax: '', domMin: '',
+  askMax: '', domMin: '', leaseRateMin: '', leaseRateMax: '',
   newOnly: false, // only listings first seen during the latest sourcing run
   sig: { oos: false, tax: false, code: false, permit: false, vacant: false, distress: false, contact: false, lease: false },
 }

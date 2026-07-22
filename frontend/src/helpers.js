@@ -3,6 +3,9 @@
 export const fmtInt = (n) => Number(n).toLocaleString('en-US')
 export const fmtSF = (n) => Number(n).toLocaleString('en-US')
 export const fmtMoney2 = (n) => (n == null || Number.isNaN(Number(n)) ? '—' : `$${Number(n).toFixed(2)}`)
+// asking lease rate ($/SF/yr) — whole dollars stay whole ($19), cents get two
+// places ($8.50), so the For Lease badges read cleanly. '' when there's no rate.
+export const fmtRate = (n) => (n == null || Number.isNaN(Number(n)) ? '' : `$${Number.isInteger(Number(n)) ? n : Number(n).toFixed(2)}`)
 export const fmtPhone = (p) => { const d = String(p ?? '').replace(/\D/g, ''); return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : (p || '') }
 export const humanizeSig = (t) => { const s = String(t ?? '').replace(/_/g, ' ').trim(); return s ? s[0].toUpperCase() + s.slice(1) : 'Signal' }
 // short display date for backend UTC ISO stamps (no Z suffix — e.g. first_seen);

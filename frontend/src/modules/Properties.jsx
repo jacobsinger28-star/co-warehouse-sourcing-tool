@@ -13,7 +13,7 @@ import { addToQueue, removeFromQueue, isQueued } from '../callQueue.js'
 import { pdStatus, pdSyncBroker, pdPushLead, pdPushLeads } from '../pipedrive.js'
 import FilterChat from '../FilterChat.jsx'
 import {
-  fmtInt, fmtSF, fmtMoney2, fmtDate, scDot, scLabel, chDot, chTag, chLabel, scChip,
+  fmtInt, fmtSF, fmtMoney2, fmtRate, fmtDate, scDot, scLabel, chDot, chTag, chLabel, scChip,
   cardStyle, breakdownFor, catVar, fmtPhone, humanizeSig, seg, th,
 } from '../helpers.js'
 import DealMap from '../components/DealMap.jsx'
@@ -289,6 +289,11 @@ export default function Properties({
     // LoopNet / on-market price + aged-listing screens — null-inclusive
     if (filters.askMax && p.ask != null && p.ask > +filters.askMax) return false
     if (filters.domMin && p.daysOn != null && p.daysOn < +filters.domMin) return false
+    // LoopNet asking lease rate ($/SF/yr) — parsed from the lease note. Unlike the
+    // other numeric bounds these are NOT null-inclusive: a min/max here is a
+    // "lease space at $X" question, so props with no parsed rate drop out when set.
+    if (filters.leaseRateMin && !(p.lease?.rate >= +filters.leaseRateMin)) return false
+    if (filters.leaseRateMax && !(p.lease?.rate <= +filters.leaseRateMax)) return false
     if (filters.newOnly && !p.isNew) return false
     if (filters.ownerTypes.length && !filters.ownerTypes.includes(p.ownerType)) return false
     if (filters.ownerLoc === 'out' && !p.oos) return false
@@ -333,6 +338,8 @@ export default function Properties({
     ...(filters.salePriceMax ? [{ label: `Sale ≤ $${fmtInt(+filters.salePriceMax)}`, onClear: () => setF('salePriceMax', '') }] : []),
     ...(filters.salePsfMax ? [{ label: `Sale ≤ $${filters.salePsfMax}/SF`, onClear: () => setF('salePsfMax', '') }] : []),
     ...(filters.askMax ? [{ label: `Asking ≤ $${filters.askMax}/SF`, onClear: () => setF('askMax', '') }] : []),
+    ...(filters.leaseRateMin ? [{ label: `Lease ≥ $${filters.leaseRateMin}/SF/yr`, onClear: () => setF('leaseRateMin', '') }] : []),
+    ...(filters.leaseRateMax ? [{ label: `Lease ≤ $${filters.leaseRateMax}/SF/yr`, onClear: () => setF('leaseRateMax', '') }] : []),
     ...(filters.domMin ? [{ label: `On market ≥ ${filters.domMin} days`, onClear: () => setF('domMin', '') }] : []),
     ...(filters.newOnly ? [{ label: 'New since last run', onClear: () => setF('newOnly', false) }] : []),
     ...filters.ownerTypes.map((o) => ({ label: `${o} owner`, onClear: () => setF('ownerTypes', filters.ownerTypes.filter((x) => x !== o)) })),
@@ -367,7 +374,7 @@ export default function Properties({
     return n.length ? `${n.join(' · ')}. Those filters narrow the markets that have the data and leave the rest unchanged.` : ''
   })()
   // Apply a validated patch from the filter chat (server whitelists every value).
-  const FILTER_KEYS = ['ownerLoc', 'bucket', 'clearMax', 'yearMin', 'yearMax', 'sfMin', 'sfMax', 'distMax', 'holdMin', 'heldSince', 'saleYearMin', 'salePriceMin', 'salePriceMax', 'salePsfMax', 'askMax', 'domMin']
+  const FILTER_KEYS = ['ownerLoc', 'bucket', 'clearMax', 'yearMin', 'yearMax', 'sfMin', 'sfMax', 'distMax', 'holdMin', 'heldSince', 'saleYearMin', 'salePriceMin', 'salePriceMax', 'salePsfMax', 'askMax', 'domMin', 'leaseRateMin', 'leaseRateMax']
   const applyChatPatch = (p) => {
     if (p.reset) {
       setScore({ Actionable: true, Tentative: true, Pass: true })
@@ -478,6 +485,10 @@ export default function Properties({
               <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max asking $/SF</label><input type="number" value={filters.askMax} onChange={(e) => setF('askMax', e.target.value)} placeholder="≤ 8 (on-market)" aria-label="Maximum asking price per SF" style={css(numInput)} /></div>
               <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Min days on market</label><input type="number" value={filters.domMin} onChange={(e) => setF('domMin', e.target.value)} placeholder="≥ 90 (aged)" aria-label="Minimum days on market" style={css(numInput)} /></div>
             </div>
+            <div style={css('display:flex;gap:8px;')}>
+              <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Min lease $/SF/yr</label><input type="number" value={filters.leaseRateMin} onChange={(e) => setF('leaseRateMin', e.target.value)} placeholder="≥ 6 (LoopNet)" aria-label="Minimum asking lease rate per SF per year" style={css(numInput)} /></div>
+              <div style={css('flex:1;display:flex;flex-direction:column;gap:5px;')}><label style={css(fieldLabel)}>Max lease $/SF/yr</label><input type="number" value={filters.leaseRateMax} onChange={(e) => setF('leaseRateMax', e.target.value)} placeholder="≤ 12 (LoopNet)" aria-label="Maximum asking lease rate per SF per year" style={css(numInput)} /></div>
+            </div>
             <div style={css('display:flex;flex-direction:column;gap:6px;')}>
               <div style={css('display:flex;align-items:center;justify-content:space-between;')}><label style={css(fieldLabel)}>Owner type{filters.ownerTypes.length ? ` · ${filters.ownerTypes.length}` : ''}</label>{filters.ownerTypes.length > 0 && <button className="hov" onClick={() => setF('ownerTypes', [])} style={css('background:none;border:none;color:var(--accent);font-size:10.5px;font-weight:500;')}>Any type</button>}</div>
               <div style={css('display:flex;flex-wrap:wrap;gap:5px;')}>
@@ -546,7 +557,7 @@ export default function Properties({
             {visibleProps.map((p) => (
               <div key={p.id} className="hov" tabIndex={0} role="button" onClick={() => setDrawerId(p.id)} style={css(cardStyle(p.cat))}>
                 <div style={css('display:flex;align-items:center;gap:9px;')}><span style={css(scDot(p.cat))} /><span style={css('font-weight:600;font-size:14.5px;flex:1;')}>{p.addr}</span><Icon name="chevronRight" size={16} stroke="var(--text3)" /></div>
-                <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}>{p.isNew && <span style={css('font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-line);padding:2px 7px;border-radius:5px;')}>NEW</span>}<span style={css(chTag(p.channel))}>{chLabel(p.channel)}</span><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span>{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={css('font-size:11px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 8px;border-radius:5px;text-decoration:none;')}>For Lease</a>}{propEmail(p) && <button className="tap hov" onClick={(e) => { e.stopPropagation(); openPropEmail(p) }} aria-label={`Email ${propEmailLabel(p)}`} style={css('display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-dim);border:1px solid var(--border);padding:2px 8px;border-radius:5px;')}><Icon name="mail" size={11} sw={2} />Email</button>}</div>
+                <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}>{p.isNew && <span style={css('font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-line);padding:2px 7px;border-radius:5px;')}>NEW</span>}<span style={css(chTag(p.channel))}>{chLabel(p.channel)}</span><span style={css(scChip(p.cat))}><span style={css(scDot(p.cat))} />{p.cat} · {p.score}</span>{p.lease && <a href={p.lease.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={css('font-size:11px;font-weight:600;color:var(--green);background:var(--green-tint);border:1px solid var(--border);padding:2px 8px;border-radius:5px;text-decoration:none;')}>For Lease{p.lease.rate != null ? ` · ${fmtRate(p.lease.rate)}/SF` : ''}</a>}{propEmail(p) && <button className="tap hov" onClick={(e) => { e.stopPropagation(); openPropEmail(p) }} aria-label={`Email ${propEmailLabel(p)}`} style={css('display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-dim);border:1px solid var(--border);padding:2px 8px;border-radius:5px;')}><Icon name="mail" size={11} sw={2} />Email</button>}</div>
                 <div style={css('display:flex;gap:16px;font-size:12px;color:var(--text2);flex-wrap:wrap;')}><span>{p.mkt}</span><span style={css('font-family:var(--mono);')}>{fmtSF(p.sf)} SF</span><span>{cardSub(p)}</span>{p.firstSeen && <span style={css('color:var(--text3);')}>Added {fmtDate(p.firstSeen)}</span>}</div>
                 <div style={css('font-size:11.5px;color:var(--text3);')}>{p.signal}</div>
               </div>
@@ -738,6 +749,12 @@ export default function Properties({
                   <>
                     <div style={css('font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--green);font-weight:600;margin-bottom:8px;')}>Listed for lease · LoopNet</div>
                     <div style={css('background:var(--green-tint);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:18px;')}>
+                      {drawerProp.lease.rate != null && (
+                        <div style={css('display:flex;align-items:baseline;gap:6px;margin-bottom:8px;')}>
+                          <span style={css('font-family:var(--mono);font-size:18px;font-weight:600;color:var(--green);')}>{fmtRate(drawerProp.lease.rate)}</span>
+                          <span style={css('font-size:11px;color:var(--text2);')}>/SF/yr asking{drawerProp.lease.n > 1 ? ' · from' : ''}</span>
+                        </div>
+                      )}
                       <div style={css('font-size:11.5px;color:var(--text2);line-height:1.55;margin-bottom:10px;')}>{drawerProp.lease.note}{drawerProp.lease.n > 1 ? ` · ${drawerProp.lease.n} active listings at this address` : ''}</div>
                       <div style={css('display:flex;flex-direction:column;gap:7px;')}>
                         {(drawerProp.lease.listings || [drawerProp.lease]).map((l, i) => (
