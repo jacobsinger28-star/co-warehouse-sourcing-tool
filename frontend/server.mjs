@@ -43,6 +43,10 @@ import { tenancyEnabled } from './db.mjs'
 import { pdConfigured, pdStatusInfo, syncBroker, pushLead } from './pipedrive.mjs'
 import { demoRouter, demoLoaded } from './demo.mjs'
 import { installRedaction, secretsEnabled, SecretResolver, writeSecret } from './secrets.mjs'
+import {
+  billingEnabled, getBillingSummary, createCheckout, recordUsage,
+  verifyStripeSignature, handleStripeEvent,
+} from './billing.mjs'
 
 // Route all console output through the secret redactor before anything can log —
 // so a decrypted key can never reach the logs, a traceback, or summary output.
@@ -175,7 +179,9 @@ async function requireAuth(req, res, next) {
 }
 
 const app = express()
-app.use(express.json({ limit: '256kb' }))
+// `verify` stashes the raw bytes so the Stripe webhook can check its HMAC
+// signature against exactly what was sent (re-serialized JSON would not match).
+app.use(express.json({ limit: '256kb', verify: (req, _res, buf) => { req.rawBody = buf } }))
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
@@ -217,8 +223,19 @@ app.post('/api/data', requireAuth, (req, res) => {
 const CONNECTORS = [
   { provider: 'llm.anthropic', label: 'Anthropic', category: 'AI / LLM', authModel: 'static', fields: ['api_key'],
     note: "Powers the Deals AI. Leave blank to use SimiCapital's key (metered)." },
+  { provider: 'llm.openai', label: 'OpenAI', category: 'AI / LLM', authModel: 'static', fields: ['api_key'],
+    note: 'Your OpenAI API key (platform.openai.com → API keys). Stored for model routing — the Deals AI runs on Claude today.' },
+  { provider: 'llm.gemini', label: 'Google Gemini', category: 'AI / LLM', authModel: 'static', fields: ['api_key'],
+    note: 'Your Gemini API key (Google AI Studio → Get API key). Stored for model routing — the Deals AI runs on Claude today.' },
   { provider: 'crm.pipedrive', label: 'Pipedrive', category: 'CRM', authModel: 'static', fields: ['api_token'],
     note: 'Your API token (Pipedrive → Personal preferences → API). Syncs brokers + pushes leads.' },
+  { provider: 'crm.hubspot', label: 'HubSpot', category: 'CRM', authModel: 'static', fields: ['access_token'],
+    note: 'A private-app access token (HubSpot → Settings → Integrations → Private apps). CRM sync lands here next.' },
+  { provider: 'crm.close', label: 'Close', category: 'CRM', authModel: 'static', fields: ['api_key'],
+    note: 'Your Close API key (Settings → API keys). CRM sync lands here next.' },
+  { provider: 'crm.zoho', label: 'Zoho CRM', category: 'CRM', authModel: 'oauth2',
+    fields: ['client_id', 'client_secret', 'refresh_token'],
+    note: 'A Zoho self-client (api-console.zoho.com): create it, then paste its credentials and a refresh token. CRM sync lands here next.' },
   { provider: 'dialer.phoneburner', label: 'PhoneBurner', category: 'Outreach', authModel: 'oauth2',
     fields: ['client_id', 'client_secret', 'redirect_uri'],
     note: 'Your PhoneBurner OAuth app (Professional tier). Unlocks the power dialer.' },
@@ -269,6 +286,49 @@ app.post('/api/tenant/connections/set', requireAuth, async (req, res) => {
   } catch (e) { console.error('[connections/set]', e); res.status(502).json({ error: e.message }) }
 })
 
+// ── billing (skeleton) — plan + usage read, checkout, Stripe webhook ─────────
+// Dormant until STRIPE_SECRET_KEY is set: the summary route always works (it
+// reports plan/usage so the Settings UI can render), checkout returns 501, and
+// the webhook refuses everything without a verifiable signature.
+
+// Plan, status, and this month's metered usage for the caller's workspace.
+app.post('/api/tenant/billing', requireAuth, async (req, res) => {
+  try { res.json(await getBillingSummary(req.tenant)) }
+  catch (e) { console.error('[billing]', e); res.status(502).json({ error: e.message }) }
+})
+
+// Start a Stripe subscription checkout; returns { url } to redirect the browser to.
+app.post('/api/tenant/billing/checkout', requireAuth, async (req, res) => {
+  const tenant = req.tenant
+  if (!isRealTenant(tenant))
+    return res.status(400).json({ error: 'The shared workspace is not billable — checkout needs a provisioned tenant.' })
+  const plan = String(req.body?.plan || '')
+  const origin = req.headers.origin || `https://${req.headers.host}`
+  try {
+    res.json(await createCheckout(tenant, plan, {
+      successUrl: `${origin}/?billing=success`,
+      cancelUrl: `${origin}/?billing=canceled`,
+    }))
+  } catch (e) {
+    if (e.code === 'not_enabled') return res.status(501).json({ error: e.message })
+    console.error('[billing/checkout]', e)
+    res.status(502).json({ error: e.message })
+  }
+})
+
+// Stripe → server. No requireAuth (Stripe can't log in) — the HMAC signature over
+// the RAW body is the authentication. Always 200 on verified events (even ignored
+// ones) so Stripe stops retrying; 400/501 only when verification itself fails.
+app.post('/api/billing/webhook', rateLimit(120), async (req, res) => {
+  const whsec = process.env.STRIPE_WEBHOOK_SECRET || ''
+  if (!whsec || !billingEnabled()) return res.status(501).json({ error: 'billing webhook not enabled' })
+  const raw = req.rawBody ? req.rawBody.toString('utf8') : ''
+  if (!verifyStripeSignature(raw, req.headers['stripe-signature'], whsec))
+    return res.status(400).json({ error: 'bad signature' })
+  try { res.json(await handleStripeEvent(req.body)) }
+  catch (e) { console.error('[billing/webhook]', e); res.status(500).json({ error: 'webhook handling failed' }) }
+})
+
 // Build per-tenant deal-book credentials (Pipedrive token + Anthropic key) from
 // req.tenant. The legacy/default tenant returns undefined → dealsChat keeps using
 // today's env fallback. A real tenant resolves its own keys; a missing Pipedrive
@@ -280,8 +340,11 @@ async function dealsCreds(req) {
   const resolver = new SecretResolver(tenant)
   const pipedriveToken = await resolver.get('crm.pipedrive', 'api_token')
   if (!pipedriveToken) { const e = new Error('Pipedrive not configured for this workspace'); e.code = 'not_configured'; throw e }
-  const anthropicKey = (await resolver.get('llm.anthropic', 'api_key')) || process.env.ANTHROPIC_API_KEY || ''
-  return { pipedriveToken, anthropicKey, cacheKey: tenant.id }
+  const tenantKey = await resolver.get('llm.anthropic', 'api_key')
+  const anthropicKey = tenantKey || process.env.ANTHROPIC_API_KEY || ''
+  // meteredLLM: the tenant is riding on the platform key → its AI calls are
+  // metered into usage_events (billing.mjs) instead of billed to their own key.
+  return { pipedriveToken, anthropicKey, cacheKey: tenant.id, meteredLLM: !tenantKey }
 }
 
 // Deals DB, no-LLM path: the live deal book + keyword search + known-question
@@ -311,7 +374,9 @@ app.post('/api/deals-chat', requireAuth, async (req, res) => {
   const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : []
   try {
     const creds = await dealsCreds(req)
-    res.json(await answerDealsQuestion(question, history, creds))
+    const answer = await answerDealsQuestion(question, history, creds)
+    if (creds?.meteredLLM) recordUsage(req.tenant.id, 'llm.deals_chat', 1, { route: 'deals-chat' }) // fire-and-forget
+    res.json(answer)
   } catch (e) {
     if (e.code === 'not_configured') return res.status(503).json({ error: e.message })
     console.error('[deals-chat]', e)

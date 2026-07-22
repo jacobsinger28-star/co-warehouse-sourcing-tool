@@ -58,6 +58,9 @@ export function redact(text) {
   for (const secret of liveSecrets) if (secret) s = s.split(secret).join('***REDACTED***')
   s = s.replace(/api_token=[^&\s"')]+/gi, 'api_token=***REDACTED***')      // Pipedrive query-string leak
   s = s.replace(/(sk-ant-[A-Za-z0-9_-]{6})[A-Za-z0-9_-]{6,}/g, '$1…REDACTED') // Anthropic keys
+  s = s.replace(/(sk-[A-Za-z0-9_-]{6})[A-Za-z0-9_-]{6,}/g, '$1…REDACTED')     // OpenAI keys (sk-…, sk-proj-…)
+  s = s.replace(/(AIza[0-9A-Za-z_-]{4})[0-9A-Za-z_-]{6,}/g, '$1…REDACTED')    // Google API keys
+  s = s.replace(/(pat-[a-z0-9]{2,4}-)[A-Za-z0-9-]{8,}/g, '$1…REDACTED')       // HubSpot private-app tokens
   s = s.replace(/(Bearer\s+[A-Za-z0-9._-]{6})[A-Za-z0-9._-]{6,}/gi, '$1…REDACTED')
   return s
 }

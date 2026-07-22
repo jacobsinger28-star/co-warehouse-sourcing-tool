@@ -5,11 +5,12 @@
 import { useEffect, useState } from 'react'
 import { css } from '../css.js'
 import Icon from '../Icon.jsx'
-import { getConnections, saveConnection } from '../settingsApi.js'
+import { getConnections, saveConnection, getBilling, startCheckout } from '../settingsApi.js'
 
 const FIELD_LABEL = {
-  api_key: 'API key', api_token: 'API token',
+  api_key: 'API key', api_token: 'API token', access_token: 'Access token',
   client_id: 'Client ID', client_secret: 'Client secret', redirect_uri: 'Redirect URI',
+  refresh_token: 'Refresh token',
 }
 
 function StatusChip({ connector }) {
@@ -57,6 +58,82 @@ function FieldRow({ provider, field, writable, onSaved }) {
   )
 }
 
+// Plan & billing skeleton: reads /api/tenant/billing (plan, status, metered
+// usage) and offers checkout. Until Stripe is live the server 501s checkout and
+// this degrades to a preview of the plan catalog.
+function BillingSection() {
+  const [b, setB] = useState(null)
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState('')
+  useEffect(() => { getBilling().then(setB).catch(() => setB({ error: true })) }, [])
+
+  if (!b || b.error) return null // billing surface is optional — never block integrations
+  const head = (
+    <div style={css('font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;')}>Plan &amp; billing</div>
+  )
+  if (b.internal) {
+    return (
+      <section style={css('margin-top:22px;')}>
+        {head}
+        <div style={css('padding:14px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:11px;font-size:12.5px;color:var(--text3);')}>
+          Internal workspace — billing does not apply here.
+        </div>
+      </section>
+    )
+  }
+
+  const upgrade = async (planId) => {
+    setBusy(planId); setMsg('')
+    try {
+      const { url } = await startCheckout(planId)
+      if (url) window.location.assign(url)
+    } catch (e) { setMsg(e.message) }
+    finally { setBusy('') }
+  }
+  const { aiCalls = 0, aiCallsIncluded = 0 } = b.usage || {}
+  const pct = aiCallsIncluded ? Math.min(100, Math.round((aiCalls / aiCallsIncluded) * 100)) : 0
+  const statusColor = b.status === 'active' ? 'var(--accent)' : b.status === 'past_due' ? '#ffb454' : 'var(--text3)'
+
+  return (
+    <section style={css('margin-top:22px;')}>
+      {head}
+      <div style={css('padding:14px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:11px;')}>
+        <div style={css('display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;')}>
+          <div style={css('font-size:14px;font-weight:600;color:var(--text);')}>
+            {(b.plans?.[b.plan]?.label || b.plan)} plan
+          </div>
+          <span style={css(`display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;background:var(--surface);color:${statusColor};`)}>
+            <span style={css(`width:6px;height:6px;border-radius:50%;background:${statusColor};`)} />{b.status}
+          </span>
+        </div>
+        {b.renewsAt && (
+          <div style={css('font-size:11.5px;color:var(--text3);margin-top:4px;')}>Renews {new Date(b.renewsAt).toLocaleDateString()}</div>
+        )}
+        <div style={css('margin-top:12px;')}>
+          <div style={css('display:flex;justify-content:space-between;font-size:11.5px;color:var(--text3);margin-bottom:5px;')}>
+            <span>Metered AI calls this month (on SimiCapital's key)</span>
+            <span style={css('font-family:var(--mono);')}>{aiCalls} / {aiCallsIncluded}</span>
+          </div>
+          <div style={css('height:6px;background:var(--surface);border-radius:4px;overflow:hidden;')}>
+            <div style={css(`height:100%;width:${pct}%;background:${pct >= 90 ? '#ffb454' : 'var(--accent)'};border-radius:4px;`)} />
+          </div>
+          <div style={css('font-size:11px;color:var(--text3);margin-top:5px;')}>Bring your own LLM key below to go unmetered.</div>
+        </div>
+        <div style={css('display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;')}>
+          {Object.values(b.plans || {}).filter((p) => p.priceMonthly > 0).map((p) => (
+            <button key={p.id} className="hov" disabled={p.id === b.plan || busy !== ''} onClick={() => upgrade(p.id)}
+              style={css('height:32px;padding:0 14px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-weight:600;background:var(--surface);color:var(--text);'
+                + (p.id === b.plan ? 'opacity:.5;cursor:default;' : ''))}>
+              {busy === p.id ? 'Opening checkout…' : p.id === b.plan ? `${p.label} · current` : `${p.label} · $${p.priceMonthly}/mo`}
+            </button>
+          ))}
+          {msg && <span style={css('font-size:11px;color:var(--text3);align-self:center;')}>{msg}</span>}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export default function Settings() {
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
@@ -73,6 +150,8 @@ export default function Settings() {
       <p style={css('font-size:12.5px;color:var(--text3);margin:0 0 4px;')}>
         Connect this workspace to your own tools. Keys are <b>write-only</b> — stored encrypted, never shown again, never logged.
       </p>
+
+      <BillingSection />
 
       {!data.writable && (
         <div style={css('display:flex;gap:10px;align-items:flex-start;margin:14px 0 4px;padding:12px 14px;background:rgba(240,180,60,.1);border:1px solid rgba(240,180,60,.3);border-radius:9px;')}>
