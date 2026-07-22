@@ -10,6 +10,7 @@ import { FollowUpBossAdapter } from '../crm/followupboss.mjs'
 import { GoHighLevelAdapter } from '../crm/gohighlevel.mjs'
 import { WebhookAdapter } from '../crm/webhook.mjs'
 import { splitName, brokerLines, leadLines, dealTitle, leadContact } from '../crm/base.mjs'
+import { isBlockedIp, assertPublicHttpsUrl } from '../crm/safeUrl.mjs'
 
 const savedFetch = globalThis.fetch
 afterEach(() => { globalThis.fetch = savedFetch; delete process.env.PIPEDRIVE_API_TOKEN })
@@ -47,7 +48,7 @@ test('resolveTenantCrm: first configured CRM wins; none configured → null (nev
 })
 
 test('WebhookAdapter: dryRun previews; send POSTs canonical JSON; unconfigured throws', async () => {
-  const wh = new WebhookAdapter({ url: 'https://hook.test/x' })
+  const wh = new WebhookAdapter({ url: 'https://203.0.113.10/hook' })
   assert.equal(wh.configured(), true)
   const dry = await wh.pushLead({ addr: '1 A St', channel: 'off', owner: 'O' }, { dryRun: true })
   assert.equal(dry.status, 'dry_run')
@@ -58,7 +59,7 @@ test('WebhookAdapter: dryRun previews; send POSTs canonical JSON; unconfigured t
   globalThis.fetch = async (url, opts) => { sent = { url: String(url), body: JSON.parse(opts.body) }; return { ok: true, status: 200, text: async () => '' } }
   const r = await wh.syncBroker({ name: 'Jane', firm: 'Acme' })
   assert.equal(r.status, 'sent')
-  assert.equal(sent.url, 'https://hook.test/x')
+  assert.equal(sent.url, 'https://203.0.113.10/hook')
   assert.equal(sent.body.type, 'broker')
   assert.equal(sent.body.broker.name, 'Jane')
 
@@ -107,4 +108,22 @@ test('PipedriveAdapter: real-tenant token is strict; legacy (no token key) uses 
   process.env.PIPEDRIVE_API_TOKEN = 'ENV'
   assert.equal(new PipedriveAdapter({ token: null }).configured(), false) // real tenant w/ null token never borrows env
   assert.equal(new PipedriveAdapter({}).configured(), true)               // legacy uses env
+})
+
+test('safeUrl: blocks internal/metadata/non-https, allows public https (SSRF guard)', async () => {
+  for (const ip of ['127.0.0.1', '169.254.169.254', '10.1.2.3', '172.16.0.1', '192.168.1.1', '::1', 'fd00::1', '100.64.0.1'])
+    assert.equal(isBlockedIp(ip), true, `${ip} must be blocked`)
+  assert.equal(isBlockedIp('8.8.8.8'), false)
+  assert.equal(isBlockedIp('203.0.113.10'), false)
+  await assert.rejects(() => assertPublicHttpsUrl('http://example.com'), /https/i)          // must be https
+  await assert.rejects(() => assertPublicHttpsUrl('https://127.0.0.1/x'), /internal/i)       // loopback
+  await assert.rejects(() => assertPublicHttpsUrl('https://169.254.169.254/latest'), /internal/i) // cloud metadata
+  assert.equal(await assertPublicHttpsUrl('https://203.0.113.10/ok'), 'https://203.0.113.10/ok') // public IP passes
+})
+
+test('FUB & GHL: a lead with no email or phone is skipped, never duplicated', async () => {
+  globalThis.fetch = async () => { throw new Error('adapter must not call out for a keyless lead') }
+  const lead = { addr: '1 A St', channel: 'off', owner: 'Some Owner' } // no email, no phone
+  assert.equal((await new FollowUpBossAdapter({ api_key: 'K' }).pushLead(lead)).status, 'skipped')
+  assert.equal((await new GoHighLevelAdapter({ api_key: 'K' }).pushLead(lead)).status, 'skipped')
 })

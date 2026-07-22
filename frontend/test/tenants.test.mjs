@@ -3,8 +3,16 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   _pickTenant, resolveTenant, DEFAULT_TENANT, _clearCache,
-  resolveTenantByWebhookSecret, getTenantWebhookSecret,
+  resolveTenantByWebhookSecret, getTenantWebhookSecret, isLegacyTenant,
 } from '../tenants.mjs'
+
+test('isLegacyTenant: the default workspace matches by source OR id (router/secret-layer agreement)', () => {
+  assert.equal(isLegacyTenant(null), true)
+  assert.equal(isLegacyTenant(DEFAULT_TENANT), true)
+  assert.equal(isLegacyTenant({ source: 'legacy', id: 'x' }), true)
+  assert.equal(isLegacyTenant({ source: 'db', id: 'default' }), true) // the divergence a real tenant must not exploit
+  assert.equal(isLegacyTenant({ source: 'db', id: 't1' }), false)
+})
 
 const T = (over = {}) => ({ id: 't1', slug: 'acme', name: 'Acme', status: 'active', ...over })
 

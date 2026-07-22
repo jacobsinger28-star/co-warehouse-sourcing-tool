@@ -102,7 +102,7 @@ function leadNote(p) {
 // ── per-tenant client: binds one token + its own owner/label caches ──────────
 // A Pipedrive owner id and the "sourcing-console" label id are per-account, so
 // these MUST NOT be shared across tenants — they live inside the client.
-function pdClient(tok) {
+function pdClient(tok, { legacy = false } = {}) {
   if (!tok) throw new Error('PIPEDRIVE_API_TOKEN not configured')
 
   async function pd(path, { method = 'GET', body } = {}) {
@@ -121,7 +121,10 @@ function pdClient(tok) {
   let _ownerId
   async function ownerId() {
     if (_ownerId !== undefined) return _ownerId
-    const env = process.env.PIPEDRIVE_OWNER_USER_ID
+    // PIPEDRIVE_OWNER_USER_ID is a per-account id that only makes sense in the
+    // legacy/house workspace — a real tenant must derive its OWN owner from its
+    // token, never stamp the platform operator's env id onto its records.
+    const env = legacy ? process.env.PIPEDRIVE_OWNER_USER_ID : ''
     if (env && /^\d+$/.test(env)) { _ownerId = Number(env); return _ownerId }
     try { _ownerId = (await pd('/users/me')).data?.id ?? null } catch { _ownerId = null }
     return _ownerId
@@ -179,7 +182,8 @@ function pdClient(tok) {
     if (dryRun) return { status: 'dry_run', would_create: payload, note }
     const lid = await labelId('personFields', true); if (lid) payload.label = lid
     const created = await pd('/persons', { method: 'POST', body: payload })
-    const id = created.data.id
+    const id = created?.data?.id
+    if (id == null) throw new Error('unexpected Pipedrive response creating a person')
     await addNote(note, { person_id: id })
     return { personId: id, url: personUrl(id), status: 'created' }
   }
@@ -191,12 +195,13 @@ function pdClient(tok) {
 export const pdConfigured = (opts) => Boolean(tokenFrom(opts))
 
 export async function syncBroker(b = {}, opts = {}) {
-  const c = pdClient(tokenFrom(opts))
+  const c = pdClient(tokenFrom(opts), { legacy: !('token' in opts) })
   return c.upsertPerson({ name: b.name, cell: b.cell, phone: b.phone, email: b.email, note: brokerNote(b), dryRun: opts.dryRun })
 }
 
 export async function pushLead(p = {}, opts = {}) {
-  const c = pdClient(tokenFrom(opts))
+  const legacy = !('token' in opts)
+  const c = pdClient(tokenFrom(opts), { legacy })
   const dryRun = Boolean(opts.dryRun)
   const onMkt = p.channel === 'on'
   const contactPhone = Array.isArray(p.phones) ? p.phones[0] : p.phone
@@ -214,13 +219,17 @@ export async function pushLead(p = {}, opts = {}) {
   const existing = await c.searchDealIdByTitle(title)
   if (existing) return { dealId: existing, url: dealUrl(existing), status: 'exists', personId: person?.personId }
   const oid = await c.ownerId()
-  const payload = { title, stage_id: SOURCING_STAGE_ID, status: 'open' }
+  // stage 33 is the house workspace's "Tracking" stage — per-account, so only
+  // stamp it for legacy; a real tenant's deal defaults into its own pipeline.
+  const payload = { title, status: 'open' }
+  if (legacy) payload.stage_id = SOURCING_STAGE_ID
   if (oid) payload.user_id = oid
   if (person?.personId) payload.person_id = person.personId
   if (dryRun) return { status: 'dry_run', would_create: payload, note: leadNote(p), person }
   const lid = await c.labelId('dealFields', true); if (lid) payload.label = lid
   const created = await c.pd('/deals', { method: 'POST', body: payload })
-  const id = created.data.id
+  const id = created?.data?.id
+  if (id == null) throw new Error('unexpected Pipedrive response creating a deal')
   await c.addNote(leadNote(p), { deal_id: id })
   return { dealId: id, url: dealUrl(id), status: 'created', personId: person?.personId }
 }
@@ -229,13 +238,14 @@ export async function pushLead(p = {}, opts = {}) {
 export async function pdStatusInfo(opts) {
   const tok = tokenFrom(opts)
   if (!tok) return { configured: false }
-  const c = pdClient(tok)
+  const legacy = !('token' in (opts || {}))
+  const c = pdClient(tok, { legacy })
   try {
     const me = (await c.pd('/users/me')).data || {}
     let stageName = ''
-    try { stageName = (((await c.pd('/stages')).data || []).find((s) => s.id === SOURCING_STAGE_ID))?.name?.trim() || '' }
-    catch { /* stage name is cosmetic */ }
-    return { configured: true, owner: { id: me.id, name: me.name }, stageId: SOURCING_STAGE_ID, stageName }
+    // The forced sourcing stage is legacy-only, so only report it there.
+    if (legacy) { try { stageName = (((await c.pd('/stages')).data || []).find((s) => s.id === SOURCING_STAGE_ID))?.name?.trim() || '' } catch { /* cosmetic */ } }
+    return { configured: true, owner: { id: me.id, name: me.name }, stageId: legacy ? SOURCING_STAGE_ID : null, stageName }
   } catch (e) {
     return { configured: true, error: e.message }
   }

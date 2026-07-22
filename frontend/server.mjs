@@ -38,7 +38,8 @@ import {
   oauthAuthorizeUrl, oauthExchange, recordCallEvent, recentCalls,
   isWarm, pushWarmDisposition,
 } from './phoneburner.mjs'
-import { resolveTenant, DEFAULT_TENANT, resolveTenantByWebhookSecret, getTenantWebhookSecret } from './tenants.mjs'
+import { resolveTenant, DEFAULT_TENANT, resolveTenantByWebhookSecret, getTenantWebhookSecret, isLegacyTenant } from './tenants.mjs'
+import { timingSafeEqual, createHash, randomBytes } from 'node:crypto'
 import { tenancyEnabled } from './db.mjs'
 import { resolveTenantCrm, legacyCrm } from './crm/registry.mjs'
 import { demoRouter, demoLoaded } from './demo.mjs'
@@ -53,6 +54,13 @@ import {
 // Route all console output through the secret redactor before anything can log —
 // so a decrypted key can never reach the logs, a traceback, or summary output.
 installRedaction()
+
+// Constant-time equality for secret/password/webhook-secret checks — hash both
+// sides to a fixed length so the compare leaks neither length nor match position.
+const safeEqual = (a, b) => timingSafeEqual(
+  createHash('sha256').update(String(a)).digest(),
+  createHash('sha256').update(String(b)).digest(),
+)
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 8080
@@ -183,7 +191,7 @@ async function requireAuth(req, res, next) {
     req.userEmail = email
     return next()
   }
-  if (PASSWORD && (req.body?.password || '') === PASSWORD) {
+  if (PASSWORD && safeEqual(req.body?.password || '', PASSWORD)) {
     // Legacy shared password has no per-person identity → the default tenant.
     req.tenant = { ...DEFAULT_TENANT }
     return next()
@@ -259,7 +267,7 @@ const CONNECTORS = [
     note: 'A PhoneBurner access token (Professional tier). Unlocks the power dialer; warm call outcomes post back to your Pipedrive.' },
 ]
 const CONNECTOR_FIELD = new Set(CONNECTORS.flatMap((c) => c.fields.map((f) => `${c.provider}/${f}`)))
-const isRealTenant = (t) => Boolean(t && t.source !== 'legacy' && t.id !== 'default')
+const isRealTenant = (t) => !isLegacyTenant(t)
 
 app.use('/api/tenant', rateLimit(60))
 
@@ -372,7 +380,7 @@ app.post('/api/billing/webhook', rateLimit(120), async (req, res) => {
 // key falls back to the platform key ("use ours") when the tenant hasn't BYO'd one.
 async function dealsCreds(req) {
   const tenant = req.tenant
-  if (!tenant || tenant.source === 'legacy') return undefined
+  if (isLegacyTenant(tenant)) return undefined
   const resolver = new SecretResolver(tenant)
   const pipedriveToken = await resolver.get('crm.pipedrive', 'api_token')
   if (!pipedriveToken) { const e = new Error('Pipedrive not configured for this workspace'); e.code = 'not_configured'; throw e }
@@ -486,7 +494,7 @@ app.use('/api/phoneburner', rateLimit(60))
 // unconfigured → pbConfigured(creds) is false → the route 503s, never the env token).
 async function pbCreds(req) {
   const tenant = req.tenant
-  if (!tenant || tenant.source === 'legacy') return null
+  if (isLegacyTenant(tenant)) return null
   const r = new SecretResolver(tenant)
   const [accessToken, pipedriveToken] = await Promise.all([
     r.get('dialer.phoneburner', 'access_token'),
@@ -494,8 +502,8 @@ async function pbCreds(req) {
   ])
   return { accessToken: accessToken ?? null, pipedriveToken: pipedriveToken ?? null }
 }
-const pbTenantKey = (req) => (req.tenant && req.tenant.source !== 'legacy' ? req.tenant.id : 'default')
-const pbUnconfiguredMsg = (req) => (req.tenant && req.tenant.source !== 'legacy')
+const pbTenantKey = (req) => (!isLegacyTenant(req.tenant) ? req.tenant.id : 'default')
+const pbUnconfiguredMsg = (req) => (!isLegacyTenant(req.tenant))
   ? 'PhoneBurner not connected — add your access token in Settings.'
   : 'PhoneBurner not configured (set PHONEBURNER_ACCESS_TOKEN or the OAuth vars).'
 // The dial-session callback base for this workspace — its own webhook secret, so
@@ -503,7 +511,7 @@ const pbUnconfiguredMsg = (req) => (req.tenant && req.tenant.source !== 'legacy'
 async function pbCallbackBase(req) {
   if (!PUBLIC_BASE) return ''
   const tenant = req.tenant
-  if (!tenant || tenant.source === 'legacy')
+  if (isLegacyTenant(tenant))
     return PB_WEBHOOK_SECRET ? `${PUBLIC_BASE}/api/phoneburner/hook/${PB_WEBHOOK_SECRET}` : ''
   const secret = await getTenantWebhookSecret(tenant.id)
   return secret ? `${PUBLIC_BASE}/api/phoneburner/hook/${secret}` : ''
@@ -542,12 +550,25 @@ app.post('/api/phoneburner/recent', requireAuth, (req, res) => res.json({ calls:
 // by the env webhook secret (?k=) so it isn't publicly triggerable. Real tenants
 // use a pasted access token in Settings; per-tenant OAuth-app connect is a follow-up.
 // Set PHONEBURNER_REDIRECT_URI = {PUBLIC_BASE_URL}/api/phoneburner/oauth/callback.
+// A one-time CSRF state per connect attempt. The callback is unauthenticated
+// (PhoneBurner redirects the browser to it), so state is what proves the callback
+// belongs to an admin-initiated /start — not an attacker binding their own
+// PhoneBurner account as this workspace's dialer.
+const pbOauthStates = new Map() // state -> expiry ms
 app.get('/api/phoneburner/oauth/start', (req, res) => {
-  if (!PB_WEBHOOK_SECRET || req.query.k !== PB_WEBHOOK_SECRET) return res.status(403).send('forbidden')
+  if (!PB_WEBHOOK_SECRET || !safeEqual(req.query.k || '', PB_WEBHOOK_SECRET)) return res.status(403).send('forbidden')
   if (pbMode() !== 'oauth') return res.status(400).send('personal-token mode — no OAuth needed')
-  res.redirect(oauthAuthorizeUrl('connect'))
+  const now = Date.now()
+  for (const [s, exp] of pbOauthStates) if (exp < now) pbOauthStates.delete(s) // prune expired
+  const state = randomBytes(16).toString('hex')
+  pbOauthStates.set(state, now + 10 * 60_000)
+  res.redirect(oauthAuthorizeUrl(state))
 })
 app.get('/api/phoneburner/oauth/callback', async (req, res) => {
+  const state = String(req.query.state || '')
+  const exp = pbOauthStates.get(state)
+  pbOauthStates.delete(state) // one-time use
+  if (!exp || exp < Date.now()) return res.status(403).send('invalid or expired state — restart the connect flow')
   try { await oauthExchange(String(req.query.code || '')); res.send('PhoneBurner connected — you can close this tab.') }
   catch (e) { res.status(502).send(`connect failed: ${e.message}`) }
 })
@@ -562,7 +583,7 @@ app.post('/api/phoneburner/hook/:secret/:event', async (req, res) => {
   if (!['callbegin', 'calldone', 'contact-displayed'].includes(event)) return res.status(404).json({ error: 'unknown event' })
   let tenantKey = 'default'
   let pipedriveToken = null
-  if (PB_WEBHOOK_SECRET && secret === PB_WEBHOOK_SECRET) {
+  if (PB_WEBHOOK_SECRET && safeEqual(secret, PB_WEBHOOK_SECRET)) {
     pipedriveToken = process.env.PIPEDRIVE_API_TOKEN || null // the default/legacy workspace
   } else {
     const t = await resolveTenantByWebhookSecret(secret)
@@ -594,7 +615,7 @@ app.use('/api/pipedrive', rateLimit(60))
 // → the route 503s, never the env token — the BYOK isolation guarantee).
 async function tenantCrm(req) {
   const tenant = req.tenant
-  if (!tenant || tenant.source === 'legacy') return legacyCrm()
+  if (isLegacyTenant(tenant)) return legacyCrm()
   return await resolveTenantCrm(new SecretResolver(tenant))
 }
 const NO_CRM = 'No CRM connected for this workspace — add one (Pipedrive, Follow Up Boss, GoHighLevel, or a webhook) in Settings.'

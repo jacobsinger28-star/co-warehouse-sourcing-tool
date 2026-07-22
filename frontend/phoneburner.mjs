@@ -147,17 +147,24 @@ export async function pbStatus(creds) {
 // Push ALREADY-SCRUBBED contacts. Each: {first_name,last_name,phone,email?,
 // address?,city?,state?,notes?,external_id?}. Returns [{external_id,phone,id}].
 export async function pushContacts(creds, contacts = []) {
+  await bearer(creds) // fail fast if this workspace has no usable token — never a per-contact env leak
   const out = []
   for (const c of contacts) {
-    const payload = {
-      first_name: c.first_name || '', last_name: c.last_name || '', phone_number: c.phone,
-      email_address: c.email || undefined,
-      address: c.address || undefined, city: c.city || undefined, state: c.state || undefined,
-      notes: c.notes || undefined, custom1: c.external_id || undefined,
+    // Per-contact guard: a mid-batch failure must not discard the ids already
+    // created (returning nothing → the user re-pushes → duplicate dialer contacts).
+    try {
+      const payload = {
+        first_name: c.first_name || '', last_name: c.last_name || '', phone_number: c.phone,
+        email_address: c.email || undefined,
+        address: c.address || undefined, city: c.city || undefined, state: c.state || undefined,
+        notes: c.notes || undefined, custom1: c.external_id || undefined,
+      }
+      const res = await pbFetch(creds, '/contacts', { method: 'POST', body: payload })
+      const id = res?.contacts?.[0]?.contact_id ?? res?.contact?.contact_id ?? res?.contact_id ?? res?.id ?? null
+      out.push({ external_id: c.external_id || null, phone: c.phone, id })
+    } catch (e) {
+      out.push({ external_id: c.external_id || null, phone: c.phone, id: null, error: e.message })
     }
-    const res = await pbFetch(creds, '/contacts', { method: 'POST', body: payload })
-    const id = res?.contacts?.[0]?.contact_id ?? res?.contact?.contact_id ?? res?.contact_id ?? res?.id ?? null
-    out.push({ external_id: c.external_id || null, phone: c.phone, id })
   }
   return out
 }

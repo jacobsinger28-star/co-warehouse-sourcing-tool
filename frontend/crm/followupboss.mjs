@@ -23,6 +23,7 @@ export class FollowUpBossAdapter extends CrmAdapter {
     const r = await fetch(`${API}${path}`, {
       method,
       headers: { authorization: `Basic ${auth}`, accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) },
+      signal: AbortSignal.timeout(12_000),
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
     const j = await r.json().catch(() => ({}))
@@ -70,16 +71,18 @@ export class FollowUpBossAdapter extends CrmAdapter {
   async syncBroker(b = {}, { dryRun } = {}) {
     if (dryRun) return { status: 'dry_run', would_create: { ...splitName(b.name), email: b.email, phone: b.cell || b.phone }, note: brokerLines(b).join('\n') }
     const person = await this.#upsertPerson({ name: b.name, email: b.email, phone: b.phone, cell: b.cell })
-    await this.#note(person.id, brokerLines(b).join('\n'))
+    if (person.status === 'created') await this.#note(person.id, brokerLines(b).join('\n')) // note once, not on every re-sync
     return { id: person.id, status: person.status }
   }
 
   async pushLead(p = {}, { dryRun } = {}) {
     const c = leadContact(p)
     if (dryRun) return { status: 'dry_run', would_create: { ...splitName(c.name), email: c.email, phone: c.phone }, note: leadLines(p).join('\n') }
-    let personId = null
-    if (c.name || c.email || c.phone) personId = (await this.#upsertPerson({ name: c.name, email: c.email, phone: c.phone })).id
-    await this.#note(personId, leadLines(p).join('\n'))
-    return { status: personId ? 'created' : 'sent', personId }
+    // Only upsert when there's a real dedup key — otherwise every un-skip-traced
+    // owner spawns a duplicate contact literally named "Property owner".
+    if (!c.email && !c.phone) return { status: 'skipped', reason: 'lead has no email or phone to match on' }
+    const person = await this.#upsertPerson({ name: c.name, email: c.email, phone: c.phone })
+    if (person.status === 'created') await this.#note(person.id, leadLines(p).join('\n'))
+    return { status: person.status, personId: person.id }
   }
 }

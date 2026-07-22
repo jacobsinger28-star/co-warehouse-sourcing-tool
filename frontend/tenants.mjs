@@ -17,6 +17,14 @@ export const DEFAULT_TENANT = Object.freeze({
   id: 'default', slug: 'simicapital', name: 'SimiCapital', role: 'owner', source: 'legacy',
 })
 
+/**
+ * The single source of truth for "is this the legacy/default house workspace".
+ * MUST match SecretResolver.isLegacy (secrets.mjs) exactly — the router resolvers
+ * and the secret/billing layers have to agree, or a real tenant could be routed as
+ * legacy and handed the platform env credentials. Checks BOTH source and id.
+ */
+export const isLegacyTenant = (t) => !t || t.source === 'legacy' || t.id === 'default'
+
 const domainOf = (email) => '@' + email.slice(email.lastIndexOf('@') + 1)
 
 /** Choose the tenant for `email` from membership rows (exact match beats a
@@ -60,6 +68,7 @@ export async function resolveTenant(email, { legacyAllowed } = {}) {
   const enc = encodeURIComponent
   const q = `select=email,role,tenants(id,slug,name,status)`
     + `&or=(email.eq.${enc(email)},email.eq.${enc(domainOf(email))})`
+    + `&order=tenant_id.asc` // deterministic when an email matches >1 tenant (shared consultant)
   let tenant = null
   try {
     tenant = _pickTenant(await dbSelect('tenant_members', q), email)
@@ -82,9 +91,10 @@ export async function resolveTenant(email, { legacyAllowed } = {}) {
 export async function resolveTenantByWebhookSecret(secret) {
   if (!tenancyEnabled() || !secret) return null
   try {
-    const rows = await dbSelect('tenants', `select=id,slug,name&webhook_secret=eq.${encodeURIComponent(secret)}&limit=1`)
+    const rows = await dbSelect('tenants', `select=id,slug,name,status&webhook_secret=eq.${encodeURIComponent(secret)}&limit=1`)
     const t = rows[0]
-    return t?.id ? { id: t.id, slug: t.slug, name: t.name, source: 'db' } : null
+    if (!t?.id || (t.status && t.status !== 'active')) return null // a suspended tenant's webhooks stop writing
+    return { id: t.id, slug: t.slug, name: t.name, source: 'db' }
   } catch (e) { console.error('[tenant] webhook-secret lookup failed', e.message); return null }
 }
 

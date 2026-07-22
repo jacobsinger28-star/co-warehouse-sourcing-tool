@@ -23,6 +23,7 @@ export class GoHighLevelAdapter extends CrmAdapter {
     const r = await fetch(`${API}${path}`, {
       method,
       headers: { authorization: `Bearer ${this.key}`, accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) },
+      signal: AbortSignal.timeout(12_000),
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
     const j = await r.json().catch(() => ({}))
@@ -59,16 +60,18 @@ export class GoHighLevelAdapter extends CrmAdapter {
   async syncBroker(b = {}, { dryRun } = {}) {
     if (dryRun) return { status: 'dry_run', would_create: { ...splitName(b.name), email: b.email, phone: b.cell || b.phone }, note: brokerLines(b).join('\n') }
     const c = await this.#upsertContact({ name: b.name, email: b.email, phone: b.phone, cell: b.cell })
-    await this.#note(c.id, brokerLines(b).join('\n'))
+    if (c.status === 'created') await this.#note(c.id, brokerLines(b).join('\n')) // note once, not on every re-sync
     return { id: c.id, status: c.status }
   }
 
   async pushLead(p = {}, { dryRun } = {}) {
     const ct = leadContact(p)
     if (dryRun) return { status: 'dry_run', would_create: { ...splitName(ct.name), email: ct.email, phone: ct.phone }, note: leadLines(p).join('\n') }
-    let contactId = null
-    if (ct.name || ct.email || ct.phone) contactId = (await this.#upsertContact({ name: ct.name, email: ct.email, phone: ct.phone })).id
-    await this.#note(contactId, leadLines(p).join('\n'))
-    return { status: contactId ? 'created' : 'sent', personId: contactId }
+    // Only upsert when there's a real dedup key — otherwise every un-skip-traced
+    // owner spawns a duplicate contact literally named "Property owner".
+    if (!ct.email && !ct.phone) return { status: 'skipped', reason: 'lead has no email or phone to match on' }
+    const c = await this.#upsertContact({ name: ct.name, email: ct.email, phone: ct.phone })
+    if (c.status === 'created') await this.#note(c.id, leadLines(p).join('\n'))
+    return { status: c.status, personId: c.id }
   }
 }
