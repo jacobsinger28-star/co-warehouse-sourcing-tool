@@ -38,7 +38,7 @@ import {
   oauthAuthorizeUrl, oauthExchange, recordCallEvent, recentCalls,
   isWarm, pushWarmDisposition,
 } from './phoneburner.mjs'
-import { resolveTenant, DEFAULT_TENANT } from './tenants.mjs'
+import { resolveTenant, DEFAULT_TENANT, resolveTenantByWebhookSecret, getTenantWebhookSecret } from './tenants.mjs'
 import { tenancyEnabled } from './db.mjs'
 import { pdConfigured, pdStatusInfo, syncBroker, pushLead } from './pipedrive.mjs'
 import { demoRouter, demoLoaded } from './demo.mjs'
@@ -249,9 +249,8 @@ const CONNECTORS = [
   { provider: 'crm.zoho', label: 'Zoho CRM', category: 'CRM', authModel: 'oauth2',
     fields: ['client_id', 'client_secret', 'refresh_token'],
     note: 'A Zoho self-client (api-console.zoho.com): create it, then paste its credentials and a refresh token. CRM sync lands here next.' },
-  { provider: 'dialer.phoneburner', label: 'PhoneBurner', category: 'Outreach', authModel: 'oauth2',
-    fields: ['client_id', 'client_secret', 'redirect_uri'],
-    note: 'Your PhoneBurner OAuth app (Professional tier). Unlocks the power dialer.' },
+  { provider: 'dialer.phoneburner', label: 'PhoneBurner', category: 'Outreach', authModel: 'static', fields: ['access_token'],
+    note: 'A PhoneBurner access token (Professional tier). Unlocks the power dialer; warm call outcomes post back to your Pipedrive.' },
 ]
 const CONNECTOR_FIELD = new Set(CONNECTORS.flatMap((c) => c.fields.map((f) => `${c.provider}/${f}`)))
 const isRealTenant = (t) => Boolean(t && t.source !== 'legacy' && t.id !== 'default')
@@ -462,42 +461,80 @@ app.post('/api/live/:action', requireAuth, async (req, res) => {
 })
 
 // ── PhoneBurner: single-line power dialer + live human handoff ─────────────
-// Client-facing routes are POST (so both auth modes work, same as /api/data);
-// webhooks are POST but gated by a path secret (PhoneBurner can't send our JWT).
+// Per-tenant BYOK (Phase 2c). Client routes resolve pbCreds(req): a real tenant
+// runs on its own pasted access token + its own Pipedrive; the legacy/default
+// workspace (source:'legacy') falls back to the process-env credentials below —
+// byte-identical to before. A webhook can't send our JWT, so its path <secret>
+// is what identifies the workspace: the env secret is the default workspace, and
+// each tenant has its own webhook_secret (migration 0004). A warm call outcome is
+// therefore always written into the Pipedrive of the workspace that owns the call.
 //   PHONEBURNER_ACCESS_TOKEN  (personal token)  OR  PHONEBURNER_CLIENT_ID/_SECRET/_REDIRECT_URI
-//   PHONEBURNER_WEBHOOK_SECRET — random string; gates webhooks + oauth start
+//   PHONEBURNER_WEBHOOK_SECRET — the default workspace's secret; gates its webhooks + oauth start
 //   PUBLIC_BASE_URL — https base of this app, used to build webhook callback URLs
 const PB_WEBHOOK_SECRET = process.env.PHONEBURNER_WEBHOOK_SECRET || ''
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '')
 app.use('/api/phoneburner', rateLimit(60))
 
-app.post('/api/phoneburner/status', requireAuth, async (_req, res) => {
-  try { res.json(await pbStatus()) }
+// Per-tenant PhoneBurner creds: legacy/default → null (module uses env, unchanged);
+// real tenant → { accessToken, pipedriveToken } from tenant_secrets (null when
+// unconfigured → pbConfigured(creds) is false → the route 503s, never the env token).
+async function pbCreds(req) {
+  const tenant = req.tenant
+  if (!tenant || tenant.source === 'legacy') return null
+  const r = new SecretResolver(tenant)
+  const [accessToken, pipedriveToken] = await Promise.all([
+    r.get('dialer.phoneburner', 'access_token'),
+    r.get('crm.pipedrive', 'api_token'),
+  ])
+  return { accessToken: accessToken ?? null, pipedriveToken: pipedriveToken ?? null }
+}
+const pbTenantKey = (req) => (req.tenant && req.tenant.source !== 'legacy' ? req.tenant.id : 'default')
+const pbUnconfiguredMsg = (req) => (req.tenant && req.tenant.source !== 'legacy')
+  ? 'PhoneBurner not connected — add your access token in Settings.'
+  : 'PhoneBurner not configured (set PHONEBURNER_ACCESS_TOKEN or the OAuth vars).'
+// The dial-session callback base for this workspace — its own webhook secret, so
+// PhoneBurner posts outcomes back to a path that resolves to this tenant.
+async function pbCallbackBase(req) {
+  if (!PUBLIC_BASE) return ''
+  const tenant = req.tenant
+  if (!tenant || tenant.source === 'legacy')
+    return PB_WEBHOOK_SECRET ? `${PUBLIC_BASE}/api/phoneburner/hook/${PB_WEBHOOK_SECRET}` : ''
+  const secret = await getTenantWebhookSecret(tenant.id)
+  return secret ? `${PUBLIC_BASE}/api/phoneburner/hook/${secret}` : ''
+}
+
+app.post('/api/phoneburner/status', requireAuth, async (req, res) => {
+  try { res.json(await pbStatus(await pbCreds(req))) }
   catch (e) { console.error('[pb status]', e); res.status(502).json({ error: e.message }) }
 })
 
 // Push already-DNC-scrubbed contacts into PhoneBurner. Body: { contacts:[...] }.
 app.post('/api/phoneburner/push', requireAuth, async (req, res) => {
-  if (!pbConfigured()) return res.status(503).json({ error: 'PhoneBurner not configured (set PHONEBURNER_ACCESS_TOKEN or the OAuth vars)' })
+  const creds = await pbCreds(req)
+  if (!pbConfigured(creds)) return res.status(503).json({ error: pbUnconfiguredMsg(req) })
   const contacts = Array.isArray(req.body?.contacts) ? req.body.contacts.slice(0, 500) : []
   if (!contacts.length) return res.status(400).json({ error: 'contacts[] required' })
-  try { res.json({ pushed: await pushContacts(contacts) }) }
+  try { res.json({ pushed: await pushContacts(creds, contacts) }) }
   catch (e) { console.error('[pb push]', e); res.status(502).json({ error: e.message }) }
 })
 
 // Mint a dial session; returns { redirect_url } to launch (iframe or new tab).
 app.post('/api/phoneburner/dial', requireAuth, async (req, res) => {
-  if (!pbConfigured()) return res.status(503).json({ error: 'PhoneBurner not configured' })
+  const creds = await pbCreds(req)
+  if (!pbConfigured(creds)) return res.status(503).json({ error: pbUnconfiguredMsg(req) })
   const contactIds = Array.isArray(req.body?.contactIds) ? req.body.contactIds : []
-  const callbackBase = PB_WEBHOOK_SECRET && PUBLIC_BASE ? `${PUBLIC_BASE}/api/phoneburner/hook/${PB_WEBHOOK_SECRET}` : ''
-  try { res.json(await createDialSession({ contactIds, callbackBase })) }
-  catch (e) { console.error('[pb dial]', e); res.status(502).json({ error: e.message }) }
+  try {
+    const callbackBase = await pbCallbackBase(req)
+    res.json(await createDialSession(creds, { contactIds, callbackBase }))
+  } catch (e) { console.error('[pb dial]', e); res.status(502).json({ error: e.message }) }
 })
 
-app.post('/api/phoneburner/recent', requireAuth, (_req, res) => res.json({ calls: recentCalls() }))
+app.post('/api/phoneburner/recent', requireAuth, (req, res) => res.json({ calls: recentCalls(pbTenantKey(req)) }))
 
-// OAuth connect — one-time admin setup (browser GET redirects). The start route
-// is gated by the webhook secret (?k=) so it isn't publicly triggerable.
+// OAuth connect — the DEFAULT/legacy workspace's one-time admin setup (browser GET
+// redirects), operating on the process-env OAuth app + DATA_DIR token store. Gated
+// by the env webhook secret (?k=) so it isn't publicly triggerable. Real tenants
+// use a pasted access token in Settings; per-tenant OAuth-app connect is a follow-up.
 // Set PHONEBURNER_REDIRECT_URI = {PUBLIC_BASE_URL}/api/phoneburner/oauth/callback.
 app.get('/api/phoneburner/oauth/start', (req, res) => {
   if (!PB_WEBHOOK_SECRET || req.query.k !== PB_WEBHOOK_SECRET) return res.status(403).send('forbidden')
@@ -509,17 +546,30 @@ app.get('/api/phoneburner/oauth/callback', async (req, res) => {
   catch (e) { res.status(502).send(`connect failed: ${e.message}`) }
 })
 
-// Webhooks — PhoneBurner calls these (no user auth); the path secret is the gate.
-// Body is untrusted: log the outcome + do your own lookups, never act on it blindly.
-app.post('/api/phoneburner/hook/:secret/:event', (req, res) => {
-  if (!PB_WEBHOOK_SECRET || req.params.secret !== PB_WEBHOOK_SECRET) return res.status(403).json({ error: 'forbidden' })
-  if (!['callbegin', 'calldone', 'contact-displayed'].includes(req.params.event)) return res.status(404).json({ error: 'unknown event' })
+// Webhooks — PhoneBurner calls these (no user auth); the path secret is the gate
+// AND the workspace selector. The env secret is the default workspace (matched
+// first); otherwise it must resolve to a tenant's own secret, else 403 — never a
+// silent cross-tenant write. Body is untrusted: log the outcome + do our own
+// lookups, never act on it blindly.
+app.post('/api/phoneburner/hook/:secret/:event', async (req, res) => {
+  const { secret, event } = req.params
+  if (!['callbegin', 'calldone', 'contact-displayed'].includes(event)) return res.status(404).json({ error: 'unknown event' })
+  let tenantKey = 'default'
+  let pipedriveToken = null
+  if (PB_WEBHOOK_SECRET && secret === PB_WEBHOOK_SECRET) {
+    pipedriveToken = process.env.PIPEDRIVE_API_TOKEN || null // the default/legacy workspace
+  } else {
+    const t = await resolveTenantByWebhookSecret(secret)
+    if (!t) return res.status(403).json({ error: 'forbidden' })
+    tenantKey = t.id
+    pipedriveToken = (await new SecretResolver(t).get('crm.pipedrive', 'api_token')) ?? null
+  }
   try {
-    const rec = recordCallEvent(req.params.event, req.body || {})
-    // On a warm/qualified live-call outcome, create a Pipedrive activity so the
-    // lead surfaces in the deal book (fire-and-forget — never fail the webhook).
-    if (req.params.event === 'calldone' && isWarm(rec?.disposition)) {
-      pushWarmDisposition(rec).catch((e) => console.error('[pb→pipedrive]', e.message))
+    const rec = recordCallEvent(tenantKey, event, req.body || {})
+    // On a warm/qualified live-call outcome, create a Pipedrive activity in THIS
+    // workspace's CRM (fire-and-forget — never fail the webhook).
+    if (event === 'calldone' && isWarm(rec?.disposition)) {
+      pushWarmDisposition(rec, { pipedriveToken }).catch((e) => console.error('[pb→pipedrive]', e.message))
     }
   } catch (e) { console.error('[pb hook]', e) }
   res.json({ ok: true })

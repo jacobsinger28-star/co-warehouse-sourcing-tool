@@ -71,3 +71,29 @@ export async function resolveTenant(email, { legacyAllowed } = {}) {
   cache.set(email, { tenant, exp: Date.now() + TTL_MS })
   return tenant
 }
+
+// ── per-tenant webhook secret (Phase 2c) ────────────────────────────────────
+// PhoneBurner posts call outcomes to /api/phoneburner/hook/<secret>/<event>; the
+// secret is what tells us which tenant the call belongs to (a webhook can't send
+// our JWT). Each tenant row carries a unique webhook_secret (migration 0004).
+
+/** Resolve a webhook path secret to its tenant, or null. Never returns the
+ *  legacy env secret's tenant — that path is matched directly in the server. */
+export async function resolveTenantByWebhookSecret(secret) {
+  if (!tenancyEnabled() || !secret) return null
+  try {
+    const rows = await dbSelect('tenants', `select=id,slug,name&webhook_secret=eq.${encodeURIComponent(secret)}&limit=1`)
+    const t = rows[0]
+    return t?.id ? { id: t.id, slug: t.slug, name: t.name, source: 'db' } : null
+  } catch (e) { console.error('[tenant] webhook-secret lookup failed', e.message); return null }
+}
+
+/** The webhook secret for a tenant (used to build its dial-session callback URL),
+ *  or null when tenancy is off / the row has none. */
+export async function getTenantWebhookSecret(tenantId) {
+  if (!tenancyEnabled() || !tenantId) return null
+  try {
+    const rows = await dbSelect('tenants', `select=webhook_secret&id=eq.${encodeURIComponent(tenantId)}&limit=1`)
+    return rows[0]?.webhook_secret || null
+  } catch (e) { console.error('[tenant] webhook-secret read failed', e.message); return null }
+}
