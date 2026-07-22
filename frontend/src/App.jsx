@@ -28,7 +28,12 @@ const MODULE_SUB = { properties: 'Off-market + on-market universe', supply: 'CoS
 // dataset + sourcing state the top bar shares with the Properties module. Each
 // feature screen lives in src/modules/* (Properties, AICaller, DealsDB, …).
 export default function App() {
-  const [theme, setTheme] = useState('dark')
+  // Theme defaults to light (client preference); a manual toggle persists to
+  // localStorage — same device-local, try/catch posture as the rest of the app.
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('sc.theme') || 'light' } catch { return 'light' }
+  })
+  useEffect(() => { try { localStorage.setItem('sc.theme', theme) } catch { /* private mode / quota — non-fatal */ } }, [theme])
   const [module, setModule] = useState('properties')
   // Properties view/filter state — shared with the top bar (markets dropdown,
   // sample pill, global search), so it lives here and is passed into <Properties>.
