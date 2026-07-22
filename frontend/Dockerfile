@@ -40,5 +40,20 @@ RUN chmod +x start.sh
 # module that isn't in the image — so a broken image is rejected and Railway
 # keeps serving the last healthy deploy instead of taking the site down.
 RUN node tools/check-imports.mjs server.mjs
+# Boot smoke test: actually start the Node server and hit /health, so an image
+# that BUILDS but can't BOOT — a missing npm dep (devDep dropped by --omit=dev),
+# a syntax error, a bad import the static check can't see — is rejected here at
+# build time instead of crash-looping in prod. /health needs no auth/DB; the
+# server is designed to boot fail-closed without runtime env. Exits the instant
+# /health answers (~1s); hard-fails after 15s.
+RUN node server.mjs & SVR=$! ; \
+    ok=0 ; \
+    for i in $(seq 1 30); do \
+      if curl -sf http://127.0.0.1:8080/health >/dev/null 2>&1; then ok=1; break; fi ; \
+      sleep 0.5 ; \
+    done ; \
+    kill "$SVR" 2>/dev/null || true ; \
+    if [ "$ok" = 1 ]; then echo "✓ boot smoke test passed — server answered /health" ; \
+    else echo "✗ boot smoke test failed — server did not answer /health in 15s" ; exit 1 ; fi
 EXPOSE 8080
 CMD ["./start.sh"]
