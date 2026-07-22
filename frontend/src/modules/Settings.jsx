@@ -67,6 +67,58 @@ const RETURN_NOTICE = {
   managed: { ok: true, text: 'Billing updated.' },
 }
 
+// One billing card — plan, status, metered-usage bar, and actions. Rendered live
+// for a provisioned (paying) tenant, and as a disabled illustration in the
+// internal workspace so SimiCapital can see exactly how it looks for clients.
+function BillingCard({ view, disabled = false, busy = '', msg = '', onUpgrade, onManage }) {
+  const { aiCalls = 0, aiCallsIncluded = 0 } = view.usage || {}
+  const pct = aiCallsIncluded ? Math.min(100, Math.round((aiCalls / aiCallsIncluded) * 100)) : 0
+  const statusColor = view.status === 'active' ? 'var(--accent)' : view.status === 'past_due' ? '#ffb454' : 'var(--text3)'
+  const btn = 'height:32px;padding:0 14px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-weight:600;background:var(--surface);color:var(--text);'
+  return (
+    <div style={css('padding:14px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:11px;')}>
+      <div style={css('display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;')}>
+        <div style={css('font-size:14px;font-weight:600;color:var(--text);')}>{view.plans?.[view.plan]?.label || view.plan} plan</div>
+        <span style={css(`display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;background:var(--surface);color:${statusColor};`)}>
+          <span style={css(`width:6px;height:6px;border-radius:50%;background:${statusColor};`)} />{view.status}
+        </span>
+      </div>
+      {view.renewsAt && (
+        <div style={css('font-size:11.5px;color:var(--text3);margin-top:4px;')}>Renews {new Date(view.renewsAt).toLocaleDateString()}</div>
+      )}
+      <div style={css('margin-top:12px;')}>
+        <div style={css('display:flex;justify-content:space-between;font-size:11.5px;color:var(--text3);margin-bottom:5px;')}>
+          <span>Metered AI calls this month</span>
+          <span style={css('font-family:var(--mono);')}>{aiCalls} / {aiCallsIncluded}</span>
+        </div>
+        <div style={css('height:6px;background:var(--surface);border-radius:4px;overflow:hidden;')}>
+          <div style={css(`height:100%;width:${pct}%;background:${pct >= 90 ? '#ffb454' : 'var(--accent)'};border-radius:4px;`)} />
+        </div>
+        <div style={css('font-size:11px;color:var(--text3);margin-top:5px;')}>Bring your own LLM key to go unmetered.</div>
+      </div>
+      <div style={css('display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;')}>
+        {view.canManage && (
+          <button className={disabled ? '' : 'hov'} disabled={disabled || busy !== ''} onClick={disabled ? undefined : onManage}
+            style={css(btn + (disabled ? 'opacity:.6;cursor:default;' : ''))}>
+            {busy === '__portal__' ? 'Opening…' : 'Manage billing'}
+          </button>
+        )}
+        {Object.values(view.plans || {}).filter((p) => p.priceMonthly > 0).map((p) => {
+          const current = p.id === view.plan
+          return (
+            <button key={p.id} className={disabled ? '' : 'hov'} disabled={disabled || current || busy !== ''}
+              onClick={disabled ? undefined : () => onUpgrade(p.id)}
+              style={css(btn + (current || disabled ? 'opacity:.6;cursor:default;' : ''))}>
+              {busy === p.id ? 'Opening checkout…' : current ? `${p.label} · current` : `${p.label} · $${p.priceMonthly}/mo`}
+            </button>
+          )
+        })}
+        {msg && <span style={css('font-size:11px;color:var(--text3);align-self:center;')}>{msg}</span>}
+      </div>
+    </div>
+  )
+}
+
 function BillingSection() {
   const [b, setB] = useState(null)
   const [msg, setMsg] = useState('')
@@ -90,11 +142,26 @@ function BillingSection() {
     <div style={css('font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;')}>Plan &amp; billing</div>
   )
   if (b.internal) {
+    // SimiCapital's own (legacy/house) workspace isn't billed — but show a
+    // disabled sample of the client billing surface so we can see how it looks.
+    const preview = {
+      plan: 'starter', status: 'active',
+      renewsAt: new Date(Date.now() + 21 * 86400000).toISOString(),
+      usage: { aiCalls: 340, aiCallsIncluded: b.plans?.starter?.meteredAiCalls || 500 },
+      canManage: true, plans: b.plans,
+    }
     return (
       <section style={css('margin-top:22px;')}>
         {head}
         <div style={css('padding:14px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:11px;font-size:12.5px;color:var(--text3);')}>
-          Internal workspace — billing does not apply here.
+          Internal workspace — billing does not apply to SimiCapital.
+        </div>
+        <div style={css('display:flex;align-items:center;gap:8px;margin:18px 0 8px;')}>
+          <span style={css('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text3);')}>Preview · how a client workspace sees billing</span>
+          <span style={css('padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:rgba(240,180,60,.14);color:#e0a83a;')}>Sample</span>
+        </div>
+        <div style={css('opacity:.9;pointer-events:none;')} aria-hidden="true">
+          <BillingCard view={preview} disabled />
         </div>
       </section>
     )
@@ -116,10 +183,6 @@ function BillingSection() {
     } catch (e) { setMsg(e.message) }
     finally { setBusy('') }
   }
-  const { aiCalls = 0, aiCallsIncluded = 0 } = b.usage || {}
-  const pct = aiCallsIncluded ? Math.min(100, Math.round((aiCalls / aiCallsIncluded) * 100)) : 0
-  const statusColor = b.status === 'active' ? 'var(--accent)' : b.status === 'past_due' ? '#ffb454' : 'var(--text3)'
-
   return (
     <section style={css('margin-top:22px;')}>
       {head}
@@ -128,45 +191,7 @@ function BillingSection() {
           {notice.text}
         </div>
       )}
-      <div style={css('padding:14px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:11px;')}>
-        <div style={css('display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;')}>
-          <div style={css('font-size:14px;font-weight:600;color:var(--text);')}>
-            {(b.plans?.[b.plan]?.label || b.plan)} plan
-          </div>
-          <span style={css(`display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;background:var(--surface);color:${statusColor};`)}>
-            <span style={css(`width:6px;height:6px;border-radius:50%;background:${statusColor};`)} />{b.status}
-          </span>
-        </div>
-        {b.renewsAt && (
-          <div style={css('font-size:11.5px;color:var(--text3);margin-top:4px;')}>Renews {new Date(b.renewsAt).toLocaleDateString()}</div>
-        )}
-        <div style={css('margin-top:12px;')}>
-          <div style={css('display:flex;justify-content:space-between;font-size:11.5px;color:var(--text3);margin-bottom:5px;')}>
-            <span>Metered AI calls this month (on SimiCapital's key)</span>
-            <span style={css('font-family:var(--mono);')}>{aiCalls} / {aiCallsIncluded}</span>
-          </div>
-          <div style={css('height:6px;background:var(--surface);border-radius:4px;overflow:hidden;')}>
-            <div style={css(`height:100%;width:${pct}%;background:${pct >= 90 ? '#ffb454' : 'var(--accent)'};border-radius:4px;`)} />
-          </div>
-          <div style={css('font-size:11px;color:var(--text3);margin-top:5px;')}>Bring your own LLM key below to go unmetered.</div>
-        </div>
-        <div style={css('display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;')}>
-          {b.canManage && (
-            <button className="hov" disabled={busy !== ''} onClick={manage}
-              style={css('height:32px;padding:0 14px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-weight:600;background:var(--surface);color:var(--text);')}>
-              {busy === '__portal__' ? 'Opening…' : 'Manage billing'}
-            </button>
-          )}
-          {Object.values(b.plans || {}).filter((p) => p.priceMonthly > 0).map((p) => (
-            <button key={p.id} className="hov" disabled={p.id === b.plan || busy !== ''} onClick={() => upgrade(p.id)}
-              style={css('height:32px;padding:0 14px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-weight:600;background:var(--surface);color:var(--text);'
-                + (p.id === b.plan ? 'opacity:.5;cursor:default;' : ''))}>
-              {busy === p.id ? 'Opening checkout…' : p.id === b.plan ? `${p.label} · current` : `${p.label} · $${p.priceMonthly}/mo`}
-            </button>
-          ))}
-          {msg && <span style={css('font-size:11px;color:var(--text3);align-self:center;')}>{msg}</span>}
-        </div>
-      </div>
+      <BillingCard view={b} busy={busy} msg={msg} onUpgrade={upgrade} onManage={manage} />
     </section>
   )
 }
@@ -182,7 +207,11 @@ export default function Settings() {
 
   const cats = [...new Set(data.connectors.map((c) => c.category))]
   return (
-    <div style={css('max-width:820px;margin:0 auto;padding:24px 20px 60px;')}>
+    // The module container (App.jsx) is overflow:hidden and each module owns its
+    // own scroll. Settings is plain flow content, so it needs this scroll wrapper
+    // or its lower sections (billing, connectors) get clipped instead of scrolling.
+    <div style={css('flex:1;height:100%;overflow-y:auto;')}>
+      <div style={css('max-width:820px;margin:0 auto;padding:24px 20px 60px;')}>
       <h2 style={css('font-size:19px;font-weight:700;color:var(--text);margin:0 0 4px;')}>Integrations</h2>
       <p style={css('font-size:12.5px;color:var(--text3);margin:0 0 4px;')}>
         Connect this workspace to your own tools. Keys are <b>write-only</b> — stored encrypted, never shown again, never logged.
@@ -217,6 +246,7 @@ export default function Settings() {
           ))}
         </section>
       ))}
+      </div>
     </div>
   )
 }
