@@ -124,28 +124,58 @@ and search." The scraper was already nationwide (`markets=[]`); the app was
   non-buybox US metros present, `firstSeen` 67/67. Committed on branch
   `claude/funny-heyrovsky-86d93c` (`7e02e8b`); **NOT merged/deployed** (see Git state).
 
-## Git state (updated at close-out)
+## Update — sourcing UI reframe (button → live indicator)
 
-- **`general-scraping`:** all scraper changes (incl. autorun) committed on `main`
-  (`8aea329`) and **pushed** to `korteraz/simicap-onmarket-scrapping`. Pushing does
-  NOT deploy (the service runs from `railway up`, not GitHub) — this is durability.
-- **`sourcing-platform` frontend:** committed on branch
-  `claude/funny-heyrovsky-86d93c` (`7e02e8b`) and pushed to origin (branch only —
-  Railway deploys from `main`, so no deploy). **Merge into `main` + app redeploy
-  is DEFERRED**: `main` is being actively churned by another agent (concurrent
-  commits/reset at 17:36 discarded an earlier doc commit of mine), and deploying
-  needs an explicit go-ahead. Branch left intact (unmerged), not deleted.
-- This session log lives on the branch (not `main`) to survive that churn.
+Client: "if the scraping works in the background nonstop, do we even need the Keep
+Sourcing button?" Correct — with autorun running and a separate "Full refresh"
+control already present, the manual *start* was redundant.
+
+- `App.jsx`: replaced the "Keep Sourcing" start button with a passive
+  **"Sourcing · live · updated Nm ago"** indicator (click opens the status sheet).
+  Kept the "+N new" pill, the "Full refresh" (on-demand full re-scan), and Stop
+  (only while a run is active). Status sheet: idle label "Sourcing paused" →
+  "Auto-sourcing on"; its action row drops the manual start (idle → "Full refresh
+  now"; running → "Stop sourcing"). `startSourcing` is retained only for
+  force-refresh.
+
+## Update — data freshness (global + per-row "Updated")
+
+Client: "add an indication of when the data was updated, also for the rows."
+
+- Global: the top-bar indicator already wired to the real scrape `finished_at`
+  (`App.jsx:149`); made it explicit — "Sourcing · live · updated Nm ago".
+- Per-row: `listings_view.to_prop` now emits `updated` (from the row's
+  `scraped_at`, refreshed on every upsert). Surfaced as **"Updated {date}"** in the
+  list card, detail drawer, and map popup — shown only when it differs from the
+  "Added" date, to avoid "Added Jul 22 · Updated Jul 22" redundancy.
+
+## Git state (final — everything committed, pushed, deployed & verified)
+
+- **`general-scraping`** (`korteraz/simicap-onmarket-scrapping`), `main`, pushed:
+  `8aea329` (/live/rows + first_seen + autorun + Railway fixes) → `d7e5fe8`
+  (per-row `updated`). Redeployed to `simicap-onmarket-scraper` via `railway up`.
+- **`sourcing-platform`** (`co-warehouse-sourcing-tool`), landed on `main` by plain
+  fast-forward push from the isolated worktree (rebased over the other agent's
+  concurrent `main` work each time — never resetting the shared tree):
+  `de6e54b` (US-wide markets) → `ab2d19c` (sourcing UI reframe) → `4493951`
+  (data freshness). Railway auto-deployed each.
+- **Verified live in prod**: bundle `index-DGCKv5SV.js` contains `Other US markets`,
+  `Auto-sourcing on`, and ` · Updated `; `/api/live/rows` returns the `updated`
+  field; autorun scraping nationwide hands-off; app HTTP 200. Build clean, 66/66
+  tests pass.
+- This session log lives on branch `claude/funny-heyrovsky-86d93c` (its code
+  commits are already merged into `main`); the branch is the active worktree, left
+  intact (not deleted). `main` is being co-edited by another agent — land only via
+  worktree + plain push, never reset the shared tree.
 
 ## Open follow-ups
 
-1. **Deploy the US-wide frontend change**: merge `claude/funny-heyrovsky-86d93c`
-   into `main` + push (Railway auto-deploys). Coordinate with the other agent on
-   `main` first; needs deploy go-ahead.
-2. `off-market-os-scrapers` — investigated: it's the LIVE off-market backend
+1. `off-market-os-scrapers` — investigated: it's the LIVE off-market backend
    feeding `build_real_data` (own IP, not NextAutomation's). Keep it. Same for the
    `content-celebration` service (= the email→Pipedrive Graph watcher, own IP).
-3. CBRE scraper selectors no longer match its site — separate fix if CBRE
+2. CBRE scraper selectors no longer match its site — separate fix if CBRE
    coverage matters.
-4. No healthcheck on the scraper now → Railway won't auto-restart a hung
+3. No healthcheck on the scraper now → Railway won't auto-restart a hung
    container. Re-add once a target port / domain strategy is settled.
+4. Autorun runs nationwide scrapes continuously (steady Railway compute by
+   design). Tune via `AUTORUN_INTERVAL_HOURS` or pause with `AUTORUN=0`.
